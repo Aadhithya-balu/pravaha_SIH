@@ -1,0 +1,13 @@
+{
+  "name": "ps4-aicte-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AICTE Approval Workflow Automation & Compliance Monitoring Platform",
+  "scripts": {
+    "dev:all": "node scripts/dev-all.js",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && .venv\\Scripts\\python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000",
+    "build:frontend": "cd frontend && npm run build",
+    "test:backend": "cd backend && .venv\\Scripts\\python -m pytest -v tests/test_ps4.py"
+  }
+}
