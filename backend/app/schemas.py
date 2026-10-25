@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel, Field
 
 
@@ -25,12 +25,24 @@ class ApplicationCreate(BaseModel):
     due_date: Optional[date] = None
     notes: str = ""
     academic_year: str = "2026-2027"
+    form_data: Optional[Union[Dict[str, Any], str]] = None
+
+
+class ApplicationPatch(BaseModel):
+    notes: Optional[str] = None
+    due_date: Optional[date] = None
+    academic_year: Optional[str] = None
+    form_data: Optional[Union[Dict[str, Any], str]] = None
 
 
 class ApplicationTransition(BaseModel):
     action: str  # SCRUTINY_PASS, SEND_EVC, SCHEDULE_EVC, COMPLETE_EVC, SAC_APPROVE, COMPLIANCE_CLEAR, APPROVE_FINAL, RETURN, RESUBMIT
     reason: str = ""
     assigned_to: Optional[str] = None
+
+
+class ApplicationResubmit(BaseModel):
+    response_text: str = Field(min_length=3, description="Detailed institutional explanation addressing cited deficiencies")
 
 
 class ApplicationOut(BaseModel):
@@ -48,6 +60,11 @@ class ApplicationOut(BaseModel):
     notes: str
     deficiency_count: int
     academic_year: str
+    form_data: Optional[str] = None
+    decision_outcome: Optional[str] = None
+    decision_remarks: Optional[str] = None
+    decision_by: Optional[str] = None
+    decision_date: Optional[datetime] = None
     created_at: datetime
 
 
@@ -143,6 +160,7 @@ class AlertOut(BaseModel):
     target_role: str
     institution_name: Optional[str] = None
     application_id: Optional[int] = None
+    recipient_user_id: Optional[int] = None
     is_read: bool
     trigger_type: str
     created_at: datetime
@@ -160,3 +178,31 @@ class DashboardMetrics(BaseModel):
     evc_pending_count: int
     compliance_pending_count: int
     urgent_alerts: List[Dict[str, Any]]
+
+
+# --- Officer Specific Schemas ---
+
+class OfficerScrutinyRequest(BaseModel):
+    run_type: str = "INITIAL"  # INITIAL or RE_SCRUTINY
+
+
+class OfficerCorrectionRequest(BaseModel):
+    reason: str = Field(min_length=5, description="Clear mandatory justification for returning application")
+    deficiencies: Optional[List[Dict[str, Any]]] = None
+
+
+class OfficerRescrutinyComplete(BaseModel):
+    decision: str = "CLEARED"  # CLEARED or DEFICIENT
+    remarks: str = ""
+
+
+class OfficerAdvanceStage(BaseModel):
+    target_stage: str
+    reason: str = ""
+    assigned_to: Optional[str] = None
+
+
+class OfficerDecisionRequest(BaseModel):
+    decision: str = "APPROVED"  # APPROVED or REJECTED
+    remarks: str = ""
+    approval_order_reference: Optional[str] = None

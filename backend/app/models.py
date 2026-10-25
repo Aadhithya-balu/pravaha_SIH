@@ -48,6 +48,11 @@ class Application(Base):
     notes: Mapped[str] = mapped_column(Text, default="")
     deficiency_count: Mapped[int] = mapped_column(Integer, default=0)
     academic_year: Mapped[str] = mapped_column(String(20), default="2026-2027")
+    form_data: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON structure containing detailed form fields
+    decision_outcome: Mapped[str | None] = mapped_column(String(40), nullable=True)  # APPROVED, REJECTED
+    decision_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decision_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    decision_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -85,6 +90,54 @@ class Document(Base):
     reviewer_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ScrutinyRun(Base):
+    __tablename__ = "scrutiny_runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    application_id: Mapped[int] = mapped_column(ForeignKey("applications.id"), index=True)
+    run_type: Mapped[str] = mapped_column(String(40), default="INITIAL")  # INITIAL, RE_SCRUTINY
+    conducted_by: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(40), default="PASSED")  # PASSED, DEFICIENCIES_FOUND, PENDING_REVIEW
+    summary: Mapped[str] = mapped_column(Text, default="")
+    missing_docs: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
+    rule_results: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON summary
+    ai_assisted: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ScrutinyFinding(Base):
+    __tablename__ = "scrutiny_findings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scrutiny_run_id: Mapped[int | None] = mapped_column(ForeignKey("scrutiny_runs.id"), nullable=True, index=True)
+    application_id: Mapped[int] = mapped_column(ForeignKey("applications.id"), index=True)
+    rule_id: Mapped[str] = mapped_column(String(80), index=True)  # e.g. APH-2024-LAND-TENURE
+    document_type: Mapped[str] = mapped_column(String(80))
+    severity: Mapped[str] = mapped_column(String(30), default="DEFICIENCY")  # INFO, WARNING, DEFICIENCY
+    category: Mapped[str] = mapped_column(String(60), default="VALIDATION")  # MISSING_DOCUMENT, REGULATORY_NON_COMPLIANCE, INCONSISTENCY
+    description: Mapped[str] = mapped_column(Text)
+    evidence_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
+    suggested_action: Mapped[str | None] = mapped_column(Text, nullable=True)
+    officer_disposition: Mapped[str] = mapped_column(String(40), default="PENDING")  # PENDING, ACCEPTED, WAIVED, CORRECTION_REQUESTED
+    disposition_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    disposed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    disposed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CorrectionRequest(Base):
+    __tablename__ = "correction_requests"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    application_id: Mapped[int] = mapped_column(ForeignKey("applications.id"), index=True)
+    requested_by: Mapped[str] = mapped_column(String(255))
+    reason: Mapped[str] = mapped_column(Text)
+    deficiencies_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON array of deficiencies
+    status: Mapped[str] = mapped_column(String(40), default="PENDING")  # PENDING, RESUBMITTED, RESOLVED
+    institution_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    response_submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    resolved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -129,6 +182,7 @@ class Alert(Base):
     target_role: Mapped[str] = mapped_column(String(30), default="officer", index=True)  # all, officer, institution, bureau, evc_expert, admin
     institution_name: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
     application_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recipient_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     trigger_type: Mapped[str] = mapped_column(String(40), default="DEADLINE")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
