@@ -25,6 +25,28 @@ class ApplicationCreate(BaseModel):
     due_date: Optional[date] = None
     notes: str = ""
     academic_year: str = "2026-2027"
+    is_draft: bool = False
+
+
+class ApplicationUpdate(BaseModel):
+    application_type: Optional[str] = None
+    academic_year: Optional[str] = None
+    region: Optional[str] = None
+    due_date: Optional[date] = None
+    notes: Optional[str] = None
+
+
+class ApplicationResubmit(BaseModel):
+    reason: str = Field(min_length=3)
+    explanation: Optional[str] = None
+
+
+class CorrectionItemOut(BaseModel):
+    source: str
+    reason: str
+    document_id: Optional[int] = None
+    document_name: Optional[str] = None
+    created_at: datetime
 
 
 class ApplicationTransition(BaseModel):
@@ -49,6 +71,7 @@ class ApplicationOut(BaseModel):
     deficiency_count: int
     academic_year: str
     created_at: datetime
+    updated_at: Optional[datetime] = None
 
 
 class AuditEventOut(BaseModel):

@@ -16,7 +16,7 @@ export interface Application {
   institution_name: string;
   application_type: string;
   current_stage: string;
-  status: 'IN_PROGRESS' | 'RETURNED' | 'OVERDUE' | 'COMPLETED' | 'REJECTED';
+  status: 'DRAFT' | 'IN_PROGRESS' | 'RETURNED' | 'OVERDUE' | 'COMPLETED' | 'REJECTED';
   assigned_to: string;
   assigned_role: string;
   region: string;
@@ -26,6 +26,24 @@ export interface Application {
   deficiency_count: number;
   academic_year: string;
   created_at: string;
+  updated_at?: string;
+}
+
+export interface CorrectionRequest {
+  source: 'RETURN_DEFICIENCY' | 'DOCUMENT_CORRECTION';
+  reason: string;
+  document_id?: number | null;
+  document_name?: string | null;
+  created_at: string;
+}
+
+export interface ApplicationDetailResponse {
+  application: Application;
+  available_transitions: AvailableTransition[];
+  audit_history: AuditEvent[];
+  documents: DocumentRecord[];
+  evc_visit?: EVCVisit | null;
+  correction_requests?: CorrectionRequest[];
 }
 
 export interface AuditEvent {

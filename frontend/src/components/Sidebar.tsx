@@ -29,16 +29,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
   unreadAlertsCount,
   onSignOut
 }) => {
-  const navItems = [
-    { id: 'Overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'Applications', label: 'Applications', icon: ClipboardList },
-    { id: 'AI Assistant', label: 'AI Document Review', icon: Sparkles },
-    { id: 'EVC Inspections', label: 'EVC Inspections', icon: Calendar },
-    { id: 'Compliance', label: 'Compliance & Expiry', icon: FileCheck2 },
-    { id: 'Alerts', label: 'Alerts & Escalations', icon: Bell, badge: unreadAlertsCount },
-    { id: 'Reports', label: 'Reports & Export', icon: BarChart3 },
-    { id: 'Role Matrix', label: 'Roles & Access Guide', icon: Shield },
-  ];
+  const isInst = user?.role === 'institution';
+
+  const navItems = isInst
+    ? [
+        { id: 'Overview', label: 'Institution Overview', icon: LayoutDashboard },
+        { id: 'Applications', label: 'My Applications', icon: ClipboardList },
+        { id: 'Compliance', label: 'Compliance Evidence', icon: FileCheck2 },
+        { id: 'Alerts', label: 'Notifications', icon: Bell, badge: unreadAlertsCount },
+        { id: 'Role Matrix', label: 'Evaluation Roles', icon: Shield },
+      ]
+    : [
+        { id: 'Overview', label: 'Overview', icon: LayoutDashboard },
+        { id: 'Applications', label: 'Applications', icon: ClipboardList },
+        { id: 'AI Assistant', label: 'AI Document Review', icon: Sparkles },
+        { id: 'EVC Inspections', label: 'EVC Inspections', icon: Calendar },
+        { id: 'Compliance', label: 'Compliance & Expiry', icon: FileCheck2 },
+        { id: 'Alerts', label: 'Alerts & Escalations', icon: Bell, badge: unreadAlertsCount },
+        { id: 'Reports', label: 'Reports & Export', icon: BarChart3 },
+        { id: 'Role Matrix', label: 'Roles & Access Guide', icon: Shield },
+      ];
 
   return (
     <aside className="sidebar">
