@@ -1,9 +1,10 @@
 import os
 import csv
 import io
+import json
 from datetime import date, timedelta, datetime, timezone
 from uuid import uuid4
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 
 from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Form, Response, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,17 +13,23 @@ from sqlalchemy import or_, and_, desc
 from jose import jwt, JWTError
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from .db import Base, engine, get_db
-from .models import User, Institution, Application, AuditEvent, Document, EVCVisit, ComplianceItem, Alert
-from .schemas import (
-    LoginRequest, UserOut, ApplicationCreate, ApplicationUpdate, ApplicationResubmit,
-    CorrectionItemOut, ApplicationTransition, ApplicationOut, AuditEventOut,
-    ComplianceCreate, ComplianceEvidenceSubmit, ComplianceVerify, ComplianceOut,
-    EVCVisitCreate, EVCVisitUpdate, EVCVisitOut, DocumentUploadCheck,
-    DocumentReviewAction, AlertOut, DashboardMetrics
+from .db import Base, engine, get_db, run_schema_migrations
+from .models import (
+    User, Institution, Application, AuditEvent, Document, EVCVisit,
+    ComplianceItem, Alert, ScrutinyRun, ScrutinyFinding, CorrectionRequest
 )
-from .workflow import get_available_transitions, validate_transition, TRANSITION_RULES, WORKFLOW_STAGES
+from .schemas import (
+    LoginRequest, UserOut, ApplicationCreate, ApplicationPatch, ApplicationTransition,
+    ApplicationUpdate, ApplicationResubmit, ApplicationOut, AuditEventOut, ComplianceCreate,
+    ComplianceEvidenceSubmit, ComplianceVerify, ComplianceOut, EVCVisitCreate,
+    EVCVisitUpdate, EVCVisitOut, DocumentUploadCheck, DocumentReviewAction,
+    AlertOut, DashboardMetrics, OfficerScrutinyRequest, OfficerCorrectionRequest,
+    OfficerRescrutinyComplete, OfficerAdvanceStage, OfficerDecisionRequest
+)
+from .workflow import get_available_transitions, validate_transition, TRANSITION_RULES, WORKFLOW_STAGES, APPLICATION_STATUSES
 from .ai_service import review_document
+from .doc_extractor import process_and_store_upload
+from .scrutiny import execute_scrutiny_pipeline, normalize_application_route, ROUTE_EOA, ROUTE_NEW_PROGRAMME
 from .escalation import run_escalation_engine
 from .seed import seed_database, password_hash
 
@@ -43,9 +50,9 @@ def password_verify(password: str, stored: str) -> bool:
 
 
 app = FastAPI(
-    title="PS4 — AICTE Approval Workflow & Compliance Monitoring Platform",
-    description="Full-stack SIH Prototype API for AICTE Approval Automation, EVC Scheduling, and Compliance Monitoring.",
-    version="1.0.0"
+    title="Pravaha — AICTE Approval Workflow & Scrutiny Engine",
+    description="Full-stack Backend, Workflow Engine, AI Scrutiny and Officer Portal for AICTE Regulatory Approvals.",
+    version="2.0.0"
 )
 
 cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
@@ -96,6 +103,7 @@ admin_only = require_roles(["admin"])
 @app.on_event("startup")
 def startup():
     Base.metadata.create_all(engine)
+    run_schema_migrations(engine)
     with next(get_db()) as db:
         seed_database(db)
 
@@ -103,15 +111,18 @@ def startup():
 # --- Health & Auth Endpoints ---
 
 @app.get("/api/health")
+@app.get("/api/v1/health")
 def health():
     return {
         "status": "ok",
-        "service": "PS4 AICTE Regulatory Operations Platform",
-        "timestamp": datetime.utcnow().isoformat()
+        "service": "Pravaha AICTE Regulatory Workflow & Scrutiny Engine",
+        "timestamp": datetime.utcnow().isoformat(),
+        "routes_supported": ["Extension of Approval (EoA)", "New Programme / Level"]
     }
 
 
 @app.post("/api/auth/login")
+@app.post("/api/v1/auth/login")
 def login(req: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == req.email.lower().strip()).first()
     if not user or not password_verify(req.password, user.password_hash):
@@ -140,6 +151,7 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
 
 
 @app.get("/api/auth/me", response_model=UserOut)
+@app.get("/api/v1/auth/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
     return user
 
@@ -147,6 +159,7 @@ def me(user: User = Depends(get_current_user)):
 # --- Dashboard Analytics ---
 
 @app.get("/api/dashboard", response_model=DashboardMetrics)
+@app.get("/api/v1/dashboard", response_model=DashboardMetrics)
 def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     q = db.query(Application)
     cq = db.query(ComplianceItem)
@@ -201,7 +214,9 @@ def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_us
     }
 
 
-# --- Applications & Workflow Endpoints ---
+# ==============================================================================
+# --- Institution-Facing Application APIs ---
+# ==============================================================================
 
 @app.get("/api/applications", response_model=List[ApplicationOut])
 def list_applications(
@@ -214,7 +229,7 @@ def list_applications(
 ):
     q = db.query(Application)
 
-    # Server-side institution isolation
+    # Server-side institution data isolation
     if user.role == "institution":
         q = q.filter(Application.institution_name == user.institution_name)
     elif user.role == "officer" and user.region and user.region != "HQ":
@@ -225,7 +240,7 @@ def list_applications(
     if status:
         q = q.filter(Application.status == status)
     if app_type:
-        q = q.filter(Application.application_type == app_type)
+        q = q.filter(Application.application_type.ilike(f"%{app_type}%"))
     if search:
         s = f"%{search.strip()}%"
         q = q.filter(or_(Application.reference.ilike(s), Application.institution_name.ilike(s)))
@@ -251,6 +266,10 @@ def create_application(
     reference = f"AICTE-{date.today().year}-{uuid4().hex[:6].upper()}"
     default_due = req.due_date or (date.today() + timedelta(days=14))
 
+    # Serialize form_data if passed as dict
+    form_data_str = None
+    if req.form_data:
+        form_data_str = json.dumps(req.form_data) if isinstance(req.form_data, dict) else str(req.form_data)
     is_draft = getattr(req, "is_draft", False)
     stage = "DRAFT" if is_draft else "SCRUTINY"
     status = "DRAFT" if is_draft else "IN_PROGRESS"
@@ -268,7 +287,8 @@ def create_application(
         region=region,
         submission_date=date.today(),
         due_date=default_due,
-        notes=req.notes or ("Draft application registered via online portal." if is_draft else "Fresh application registered via online portal."),
+        notes=req.notes or ("Draft application registered via online portal." if is_draft else f"Application registered for {req.application_type} via online portal."),
+        form_data=form_data_str,
         academic_year=req.academic_year,
         created_by=user.id
     )
@@ -282,9 +302,22 @@ def create_application(
         action="DRAFT_SAVED" if is_draft else "SUBMITTED",
         from_stage=None,
         to_stage=stage,
-        details=f"Draft application created by {user.name}." if is_draft else f"Application registered by {user.name} ({user.role}). Initial scrutiny workflow initiated."
+        details=f"Draft application created by {user.name}." if is_draft else f"Application registered by {user.name} ({user.role}) for {req.application_type}. Initial scrutiny workflow initiated."
     )
     db.add(audit)
+
+    # Trigger officer alert
+    if not is_draft:
+        db.add(Alert(
+            title=f"New Application Submitted: {app_record.reference}",
+            message=f"{institution_name} filed '{req.application_type}' for academic year {req.academic_year}.",
+            severity="INFO",
+            target_role="officer",
+            institution_name=institution_name,
+            application_id=app_record.id,
+            trigger_type="APPLICATION_SUBMITTED"
+        ))
+
     db.commit()
     db.refresh(app_record)
     return app_record
@@ -300,7 +333,7 @@ def get_application_details(aid: int, db: Session = Depends(get_db), user: User 
         raise HTTPException(status_code=403, detail="Forbidden. You can only inspect your own institution's cases.")
 
     # Fetch transitions available to this role
-    transitions = get_available_transitions(a.current_stage, user.role)
+    transitions = get_available_transitions(a.current_stage, user.role, a.application_type)
 
     # Fetch audit events
     audit_history = db.query(AuditEvent).filter(AuditEvent.application_id == aid).order_by(desc(AuditEvent.created_at)).all()
@@ -311,31 +344,36 @@ def get_application_details(aid: int, db: Session = Depends(get_db), user: User 
     # Fetch EVC visits if any
     evc = db.query(EVCVisit).filter(EVCVisit.application_id == aid).order_by(desc(EVCVisit.created_at)).first()
 
-    # Extract correction requests if application was returned or has documents needing correction
-    correction_requests = []
-    for e in audit_history:
-        if e.action == "RETURN":
-            reason_text = e.details
-            if "Justification: " in reason_text:
-                reason_text = reason_text.split("Justification: ", 1)[1].strip()
-            correction_requests.append({
-                "source": "RETURN_DEFICIENCY",
-                "reason": reason_text,
-                "document_id": None,
-                "document_name": None,
-                "created_at": e.created_at
-            })
-            break
+    # Fetch Scrutiny Runs & Findings
+    scrutiny_runs = db.query(ScrutinyRun).filter(ScrutinyRun.application_id == aid).order_by(desc(ScrutinyRun.created_at)).all()
+    scrutiny_findings = db.query(ScrutinyFinding).filter(ScrutinyFinding.application_id == aid).order_by(desc(ScrutinyFinding.created_at)).all()
 
-    for doc in docs:
-        if doc.review_status == "CORRECTION_REQUIRED":
-            correction_requests.append({
-                "source": "DOCUMENT_CORRECTION",
-                "reason": doc.reviewer_notes or f"Correction requested for {doc.document_name}.",
-                "document_id": doc.id,
-                "document_name": doc.document_name,
-                "created_at": doc.reviewed_at or doc.created_at
-            })
+    # Fetch Correction Requests
+    correction_requests = db.query(CorrectionRequest).filter(CorrectionRequest.application_id == aid).order_by(desc(CorrectionRequest.created_at)).all()
+    if not correction_requests:
+        for e in audit_history:
+            if e.action == "RETURN":
+                reason_text = e.details
+                if "Justification: " in reason_text:
+                    reason_text = reason_text.split("Justification: ", 1)[1].strip()
+                correction_requests.append({
+                    "source": "RETURN_DEFICIENCY",
+                    "reason": reason_text,
+                    "document_id": None,
+                    "document_name": None,
+                    "created_at": e.created_at
+                })
+                break
+
+        for doc in docs:
+            if doc.review_status == "CORRECTION_REQUIRED":
+                correction_requests.append({
+                    "source": "DOCUMENT_CORRECTION",
+                    "reason": doc.reviewer_notes or f"Correction requested for {doc.document_name}.",
+                    "document_id": doc.id,
+                    "document_name": doc.document_name,
+                    "created_at": doc.reviewed_at or doc.created_at
+                })
 
     return {
         "application": a,
@@ -343,8 +381,246 @@ def get_application_details(aid: int, db: Session = Depends(get_db), user: User 
         "audit_history": audit_history,
         "documents": docs,
         "evc_visit": evc,
+        "scrutiny_runs": scrutiny_runs,
+        "scrutiny_findings": scrutiny_findings,
         "correction_requests": correction_requests
     }
+
+
+@app.patch("/api/applications/{aid}", response_model=ApplicationOut)
+def patch_application(
+    aid: int,
+    req: ApplicationPatch,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Allows applicant institution or officer to update draft form fields or notes."""
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    if user.role == "institution" and a.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden. Cannot modify another institution's application.")
+
+    if a.status in ["COMPLETED", "REJECTED"]:
+        raise HTTPException(status_code=400, detail="Cannot edit an application that has already reached final decision.")
+
+    if req.notes is not None:
+        a.notes = req.notes
+    if req.due_date is not None:
+        a.due_date = req.due_date
+    if req.academic_year is not None:
+        a.academic_year = req.academic_year
+    if req.form_data is not None:
+        a.form_data = json.dumps(req.form_data) if isinstance(req.form_data, dict) else str(req.form_data)
+
+    db.add(AuditEvent(
+        application_id=aid,
+        actor=user.email,
+        actor_role=user.role,
+        action="APPLICATION_UPDATED",
+        from_stage=a.current_stage,
+        to_stage=a.current_stage,
+        details=f"Application metadata / form fields updated by {user.name}."
+    ))
+
+    db.commit()
+    db.refresh(a)
+    return a
+
+
+@app.post("/api/applications/{aid}/documents")
+async def upload_application_document(
+    aid: int,
+    file: UploadFile = File(...),
+    document_type: str = Form("LEASE_DEED"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """
+    Institution uploads a document linked to an application.
+    Validates file type & size, extracts text (PDF/DOCX/TXT), runs AI screening, and saves Document.
+    """
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    if user.role == "institution" and a.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden. Cannot upload documents for another institution's case.")
+
+    # Ingest file safely via doc_extractor
+    upload_res = await process_and_store_upload(file)
+
+    # Run AI / deterministic document screening
+    ai_result = await review_document(
+        document_name=upload_res["original_filename"],
+        document_type=document_type,
+        text=upload_res["extracted_text"]
+    )
+
+    doc = Document(
+        application_id=aid,
+        institution_name=a.institution_name,
+        document_name=upload_res["original_filename"],
+        document_type=document_type,
+        file_path=upload_res["stored_filepath"],
+        file_size=upload_res["file_size"],
+        mime_type=upload_res["mime_type"],
+        uploaded_by=user.email,
+        extracted_text=upload_res["extracted_text"][:10000],
+        ai_summary=ai_result.get("summary"),
+        ai_findings=json.dumps(ai_result),
+        ai_confidence=float(ai_result.get("confidence_score", 0.9)),
+        review_status="PENDING"
+    )
+    db.add(doc)
+
+    db.add(AuditEvent(
+        application_id=aid,
+        actor=user.email,
+        actor_role=user.role,
+        action="DOC_UPLOADED",
+        from_stage=a.current_stage,
+        to_stage=a.current_stage,
+        details=f"Uploaded '{upload_res['original_filename']}' ({document_type}, {round(upload_res['file_size']/1024, 1)} KB)."
+    ))
+
+    db.commit()
+    db.refresh(doc)
+
+    return {
+        "document": {
+            "id": doc.id,
+            "application_id": doc.application_id,
+            "document_name": doc.document_name,
+            "document_type": doc.document_type,
+            "file_size": doc.file_size,
+            "review_status": doc.review_status,
+            "created_at": doc.created_at.isoformat()
+        },
+        "ai_analysis": ai_result
+    }
+
+
+@app.post("/api/applications/{aid}/submit", response_model=ApplicationOut)
+def submit_application(
+    aid: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Institution formally submits application for scrutiny."""
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    if user.role == "institution" and a.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden. Cannot submit another institution's case.")
+
+    prev_stage = a.current_stage
+    a.current_stage = "SCRUTINY"
+    a.status = "IN_PROGRESS"
+    a.submission_date = date.today()
+
+    db.add(AuditEvent(
+        application_id=aid,
+        actor=user.email,
+        actor_role=user.role,
+        action="SUBMITTED",
+        from_stage=prev_stage,
+        to_stage="SCRUTINY",
+        details="Application formally submitted by institution for regulatory scrutiny."
+    ))
+
+    db.add(Alert(
+        title=f"Application Submitted: {a.reference}",
+        message=f"{a.institution_name} submitted case for initial scrutiny.",
+        severity="INFO",
+        target_role="officer",
+        institution_name=a.institution_name,
+        application_id=aid,
+        trigger_type="APPLICATION_SUBMITTED"
+    ))
+
+    db.commit()
+    db.refresh(a)
+    return a
+
+
+@app.post("/api/applications/{aid}/resubmit", response_model=ApplicationOut)
+def resubmit_application(
+    aid: int,
+    req: ApplicationResubmit,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Institution resubmits application after rectifying deficiencies."""
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    if user.role == "institution" and a.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden. Cannot resubmit another institution's case.")
+
+    if a.current_stage != "RETURNED_FOR_CLARIFICATION":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot resubmit application from stage '{a.current_stage}'. Application must be in 'RETURNED_FOR_CLARIFICATION'."
+        )
+
+    prev_stage = a.current_stage
+    a.current_stage = "RE_SCRUTINY"
+    a.status = "IN_PROGRESS"
+    a.assigned_to = "Regional Officer"
+    response_text = (req.response_text or req.reason or req.explanation or "").strip()
+    if len(response_text) < 3:
+        raise HTTPException(
+            status_code=422,
+            detail="A detailed institutional clarification (minimum 3 characters) is required for resubmission."
+        )
+
+    # Resolve pending correction request if any
+    pending_cr = db.query(CorrectionRequest).filter(
+        CorrectionRequest.application_id == aid,
+        CorrectionRequest.status == "PENDING"
+    ).order_by(desc(CorrectionRequest.created_at)).first()
+    if pending_cr:
+        pending_cr.status = "RESUBMITTED"
+        pending_cr.institution_response = response_text
+        pending_cr.response_submitted_at = datetime.utcnow()
+
+    db.add(AuditEvent(
+        application_id=aid,
+        actor=user.email,
+        actor_role=user.role,
+        action="RESUBMIT",
+        from_stage=prev_stage,
+        to_stage="RE_SCRUTINY",
+        details=f"Institutional Clarification: {response_text}"
+    ))
+
+    db.add(Alert(
+        title=f"Application Resubmitted: {a.reference}",
+        message=f"{a.institution_name} responded to correction request and resubmitted case for re-scrutiny.",
+        severity="INFO",
+        target_role="officer",
+        institution_name=a.institution_name,
+        application_id=aid,
+        trigger_type="APPLICATION_RESUBMITTED"
+    ))
+
+    db.commit()
+    db.refresh(a)
+    return a
+
+
+@app.get("/api/applications/{aid}/audit", response_model=List[AuditEventOut])
+def get_application_timeline(aid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+    if user.role == "institution" and a.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden.")
+    return db.query(AuditEvent).filter(AuditEvent.application_id == aid).order_by(desc(AuditEvent.created_at)).all()
 
 
 @app.post("/api/applications/{aid}/transition", response_model=ApplicationOut)
@@ -354,6 +630,7 @@ def transition_application(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
+    """Generic workflow state transition endpoint."""
     a = db.get(Application, aid)
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
@@ -364,12 +641,12 @@ def transition_application(
         if req.action.upper() != "RESUBMIT":
             raise HTTPException(status_code=403, detail="Institutions are only permitted to resubmit returned cases.")
 
-    # Validate transition against state machine rules
     rule = validate_transition(
         current_stage=a.current_stage,
         action=req.action,
         user_role=user.role,
-        reason=req.reason
+        reason=req.reason,
+        application_type=a.application_type
     )
 
     prev_stage = a.current_stage
@@ -399,6 +676,7 @@ def transition_application(
 
     # If returned, notify institution
     if new_status == "RETURNED":
+        a.deficiency_count += 1
         db.add(Alert(
             title=f"Application Returned: {a.reference}",
             message=f"Case returned by {user.name}: {req.reason.strip()}",
@@ -414,17 +692,414 @@ def transition_application(
     return a
 
 
-@app.get("/api/applications/{aid}/audit", response_model=List[AuditEventOut])
-def get_application_audit(aid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+# ==============================================================================
+# --- Officer-Facing Workflow & Scrutiny APIs ---
+# ==============================================================================
+
+@app.get("/api/v1/officer/applications")
+def officer_list_applications(
+    stage: Optional[str] = None,
+    status: Optional[str] = None,
+    app_type: Optional[str] = None,
+    region: Optional[str] = None,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(officer_or_admin)
+):
+    """Officer queue for inspecting institutional applications."""
+    q = db.query(Application)
+
+    if user.role == "officer" and user.region and user.region != "HQ":
+        q = q.filter(Application.region == user.region)
+    elif region:
+        q = q.filter(Application.region == region)
+
+    if stage:
+        q = q.filter(Application.current_stage == stage)
+    if status:
+        q = q.filter(Application.status == status)
+    if app_type:
+        q = q.filter(Application.application_type.ilike(f"%{app_type}%"))
+    if search:
+        s = f"%{search.strip()}%"
+        q = q.filter(or_(Application.reference.ilike(s), Application.institution_name.ilike(s)))
+
+    return q.order_by(desc(Application.created_at)).all()
+
+
+@app.get("/api/v1/officer/applications/{aid}")
+def officer_get_application(
+    aid: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(officer_or_admin)
+):
+    """Detailed view for scrutinizing officer with scrutiny runs and correction history."""
     a = db.get(Application, aid)
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
-    if user.role == "institution" and a.institution_name != user.institution_name:
-        raise HTTPException(status_code=403, detail="Forbidden.")
-    return db.query(AuditEvent).filter(AuditEvent.application_id == aid).order_by(desc(AuditEvent.created_at)).all()
+
+    transitions = get_available_transitions(a.current_stage, user.role, a.application_type)
+    audit_history = db.query(AuditEvent).filter(AuditEvent.application_id == aid).order_by(desc(AuditEvent.created_at)).all()
+    docs = db.query(Document).filter(Document.application_id == aid).order_by(desc(Document.created_at)).all()
+    evc = db.query(EVCVisit).filter(EVCVisit.application_id == aid).order_by(desc(EVCVisit.created_at)).first()
+    scrutiny_runs = db.query(ScrutinyRun).filter(ScrutinyRun.application_id == aid).order_by(desc(ScrutinyRun.created_at)).all()
+    scrutiny_findings = db.query(ScrutinyFinding).filter(ScrutinyFinding.application_id == aid).order_by(desc(ScrutinyFinding.created_at)).all()
+    correction_requests = db.query(CorrectionRequest).filter(CorrectionRequest.application_id == aid).order_by(desc(CorrectionRequest.created_at)).all()
+
+    return {
+        "application": a,
+        "available_transitions": transitions,
+        "audit_history": audit_history,
+        "documents": docs,
+        "evc_visit": evc,
+        "scrutiny_runs": scrutiny_runs,
+        "scrutiny_findings": scrutiny_findings,
+        "correction_requests": correction_requests
+    }
 
 
-# --- Documents & AI Review Endpoints ---
+@app.post("/api/v1/officer/applications/{aid}/scrutiny")
+async def officer_run_scrutiny(
+    aid: int,
+    req: OfficerScrutinyRequest = OfficerScrutinyRequest(),
+    db: Session = Depends(get_db),
+    user: User = Depends(officer_or_admin)
+):
+    """
+    Executes automated regulatory scrutiny against APH 2024-2027 route requirements.
+    Extracts text, checks mandatory documents, evaluates rules, runs AI review, and persists findings.
+    """
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    res = await execute_scrutiny_pipeline(
+        application_id=aid,
+        db=db,
+        actor_email=user.email,
+        run_type=req.run_type
+    )
+
+    db.add(AuditEvent(
+        application_id=aid,
+        actor=user.email,
+        actor_role=user.role,
+        action="SCRUTINY_RUN",
+        from_stage=a.current_stage,
+        to_stage=a.current_stage,
+        details=f"Automated regulatory scrutiny completed. Found {res['deficiency_count']} deficiency/deficiencies."
+    ))
+    db.commit()
+
+    return res
+
+
+@app.post("/api/v1/officer/applications/{aid}/request-corrections")
+def officer_request_corrections(
+    aid: int,
+    req: OfficerCorrectionRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(officer_or_admin)
+):
+    """
+    Officer returns application to institution with mandatory cited reason and deficiency memo.
+    """
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    rule = validate_transition(
+        current_stage=a.current_stage,
+        action="RETURN",
+        user_role=user.role,
+        reason=req.reason,
+        application_type=a.application_type
+    )
+
+    prev_stage = a.current_stage
+    a.current_stage = "RETURNED_FOR_CLARIFICATION"
+    a.status = "RETURNED"
+    a.assigned_to = "Institution"
+    a.deficiency_count += 1
+
+    # Persist CorrectionRequest
+    cr = CorrectionRequest(
+        application_id=aid,
+        requested_by=user.email,
+        reason=req.reason.strip(),
+        deficiencies_json=json.dumps(req.deficiencies or []),
+        status="PENDING",
+        created_at=datetime.utcnow()
+    )
+    db.add(cr)
+
+    db.add(AuditEvent(
+        application_id=aid,
+        actor=user.email,
+        actor_role=user.role,
+        action="RETURN",
+        from_stage=prev_stage,
+        to_stage="RETURNED_FOR_CLARIFICATION",
+        details=f"Deficiency Memo / Clarification Request: {req.reason.strip()}"
+    ))
+
+    db.add(Alert(
+        title=f"Action Required: Clarifications Demanded for {a.reference}",
+        message=f"Regional Officer {user.name} returned your application for rectification: {req.reason.strip()}",
+        severity="WARNING",
+        target_role="institution",
+        institution_name=a.institution_name,
+        application_id=aid,
+        trigger_type="CORRECTION_REQUESTED"
+    ))
+
+    db.commit()
+    db.refresh(a)
+    return {
+        "application": a,
+        "correction_request": cr
+    }
+
+
+@app.post("/api/v1/officer/applications/{aid}/complete-rescrutiny")
+def officer_complete_rescrutiny(
+    aid: int,
+    req: OfficerRescrutinyComplete,
+    db: Session = Depends(get_db),
+    user: User = Depends(officer_or_admin)
+):
+    """
+    Officer completes review of institutional resubmission.
+    If CLEARED -> Advances to COMPLIANCE_PENDING (for EoA) or EVC_PENDING (for New Programme).
+    If DEFICIENT -> Returns for clarification or forwards to committee.
+    """
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    if a.current_stage not in ["RE_SCRUTINY", "SCRUTINY"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Application is in stage '{a.current_stage}'. Re-scrutiny disposition requires 'RE_SCRUTINY' or 'SCRUTINY'."
+        )
+
+    prev_stage = a.current_stage
+    is_new_prog = "new" in a.application_type.lower() or "programme" in a.application_type.lower()
+
+    if req.decision.upper() == "CLEARED":
+        # Resolve correction requests
+        pending_crs = db.query(CorrectionRequest).filter(
+            CorrectionRequest.application_id == aid,
+            CorrectionRequest.status.in_(["PENDING", "RESUBMITTED"])
+        ).all()
+        for cr in pending_crs:
+            cr.status = "RESOLVED"
+            cr.resolved_at = datetime.utcnow()
+            cr.resolved_by = user.email
+
+        # Route-aware next stage:
+        # EoA goes to COMPLIANCE_PENDING; New Programme mandatorily goes to EVC_PENDING
+        next_stage = "EVC_PENDING" if is_new_prog else "COMPLIANCE_PENDING"
+        a.current_stage = next_stage
+        a.status = "IN_PROGRESS"
+        a.deficiency_count = 0
+
+        details = f"Re-scrutiny cleared by {user.name}. Case routed to {next_stage}."
+        if req.remarks:
+            details += f" Remarks: {req.remarks}"
+
+        db.add(AuditEvent(
+            application_id=aid,
+            actor=user.email,
+            actor_role=user.role,
+            action="RESCRUTINY_CLEARED",
+            from_stage=prev_stage,
+            to_stage=next_stage,
+            details=details
+        ))
+
+        db.add(Alert(
+            title=f"Re-Scrutiny Cleared: {a.reference}",
+            message=f"Deficiencies resolved. Application advanced to {next_stage}.",
+            severity="INFO",
+            target_role="institution",
+            institution_name=a.institution_name,
+            application_id=aid,
+            trigger_type="STAGE_CHANGE"
+        ))
+
+    else:
+        # Re-scrutiny failed / still deficient
+        a.current_stage = "RETURNED_FOR_CLARIFICATION"
+        a.status = "RETURNED"
+        a.deficiency_count += 1
+        reason = req.remarks or "Re-scrutiny revealed outstanding deficiencies requiring further resolution."
+
+        cr = CorrectionRequest(
+            application_id=aid,
+            requested_by=user.email,
+            reason=reason,
+            status="PENDING",
+            created_at=datetime.utcnow()
+        )
+        db.add(cr)
+
+        db.add(AuditEvent(
+            application_id=aid,
+            actor=user.email,
+            actor_role=user.role,
+            action="RETURN",
+            from_stage=prev_stage,
+            to_stage="RETURNED_FOR_CLARIFICATION",
+            details=f"Re-scrutiny Deficiencies: {reason}"
+        ))
+
+        db.add(Alert(
+            title=f"Re-Scrutiny Deficiencies Flagged: {a.reference}",
+            message=reason,
+            severity="WARNING",
+            target_role="institution",
+            institution_name=a.institution_name,
+            application_id=aid,
+            trigger_type="CORRECTION_REQUESTED"
+        ))
+
+    db.commit()
+    db.refresh(a)
+    return a
+
+
+@app.post("/api/v1/officer/applications/{aid}/advance", response_model=ApplicationOut)
+def officer_advance_stage(
+    aid: int,
+    req: OfficerAdvanceStage,
+    db: Session = Depends(get_db),
+    user: User = Depends(officer_or_admin)
+):
+    """Advances application to a valid next stage in the regulatory workflow."""
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    # Find matching action that achieves target_stage
+    stage_rules = TRANSITION_RULES.get(a.current_stage, {})
+    matched_action = None
+    for action, rule in stage_rules.items():
+        if rule["target_stage"] == req.target_stage:
+            if user.role in rule["allowed_roles"] or user.role == "admin":
+                matched_action = action
+                break
+
+    if not matched_action:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot advance from stage '{a.current_stage}' to '{req.target_stage}'. Transition not permitted for role '{user.role}'."
+        )
+
+    return transition_application(
+        aid=aid,
+        req=ApplicationTransition(
+            action=matched_action,
+            reason=req.reason,
+            assigned_to=req.assigned_to
+        ),
+        db=db,
+        user=user
+    )
+
+
+@app.post("/api/v1/officer/applications/{aid}/decision", response_model=ApplicationOut)
+def officer_record_decision(
+    aid: int,
+    req: OfficerDecisionRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(officer_or_admin)
+):
+    """
+    Records statutory decision (APPROVED or REJECTED) on application.
+    Generates approval order or speaking order of rejection.
+    """
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    dec = req.decision.upper().strip()
+    if dec not in ["APPROVED", "REJECTED"]:
+        raise HTTPException(status_code=400, detail="Decision must be 'APPROVED' or 'REJECTED'.")
+
+    prev_stage = a.current_stage
+    a.current_stage = "COMPLETED"
+    a.status = "COMPLETED" if dec == "APPROVED" else "REJECTED"
+    a.decision_outcome = dec
+    a.decision_remarks = req.remarks or f"Statutory order issued by {user.name} ({user.designation})."
+    a.decision_by = user.email
+    a.decision_date = datetime.utcnow()
+    a.assigned_to = "Closed"
+
+    order_ref = req.approval_order_reference or f"AICTE/AB/{date.today().year}/{a.reference}"
+
+    db.add(AuditEvent(
+        application_id=aid,
+        actor=user.email,
+        actor_role=user.role,
+        action=f"DECISION_{dec}",
+        from_stage=prev_stage,
+        to_stage="COMPLETED",
+        details=f"Statutory Verdict: {dec} | Order Ref: {order_ref} | Remarks: {a.decision_remarks}"
+    ))
+
+    db.add(Alert(
+        title=f"AICTE Decision Order Issued: {dec} ({a.reference})",
+        message=f"Application has been {dec.lower()}. Order Ref: {order_ref}. Remarks: {a.decision_remarks}",
+        severity="INFO" if dec == "APPROVED" else "HIGH",
+        target_role="all",
+        institution_name=a.institution_name,
+        application_id=aid,
+        trigger_type="FINAL_DECISION"
+    ))
+
+    db.commit()
+    db.refresh(a)
+    return a
+
+
+# ==============================================================================
+# --- Notifications & Alerts APIs ---
+# ==============================================================================
+
+@app.get("/api/notifications", response_model=List[AlertOut])
+@app.get("/api/alerts", response_model=List[AlertOut])
+def list_notifications(
+    unread_only: bool = False,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    q = db.query(Alert)
+    if user.role == "institution":
+        q = q.filter(or_(Alert.target_role == "institution", Alert.institution_name == user.institution_name))
+    elif user.role != "admin":
+        q = q.filter(or_(Alert.target_role == user.role, Alert.target_role == "all", Alert.target_role == "officer"))
+
+    if unread_only:
+        q = q.filter(Alert.is_read == False)
+
+    return q.order_by(desc(Alert.created_at)).all()
+
+
+@app.patch("/api/notifications/{aid}/read")
+@app.post("/api/alerts/{aid}/read")
+def mark_notification_read(aid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    al = db.get(Alert, aid)
+    if not al:
+        raise HTTPException(status_code=404, detail="Notification not found.")
+    al.is_read = True
+    db.commit()
+    return {"id": aid, "is_read": True}
+
+
+# ==============================================================================
+# --- Supporting Working Services (Documents, Compliance, EVC, Reports) ---
+# ==============================================================================
 
 @app.get("/api/documents")
 def list_documents(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -452,31 +1127,13 @@ async def upload_document(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """
-    Accepts document upload (PDF, TXT, DOCX), validates file size (<10MB),
-    extracts available text, runs AI assistance, and stores document record.
-    """
-    MAX_SIZE = 10 * 1024 * 1024  # 10MB
-    content = await file.read()
-    if len(content) > MAX_SIZE:
-        raise HTTPException(status_code=400, detail="File size exceeds maximum permitted limit of 10MB.")
+    """General document upload supporting PDF, DOCX, TXT."""
+    upload_res = await process_and_store_upload(file)
 
-    # Safe text extraction
-    extracted_text = ""
-    try:
-        # Check text or utf-8 decode
-        extracted_text = content.decode("utf-8", errors="ignore")
-    except Exception:
-        extracted_text = f"Binary content ({len(content)} bytes) extracted from {file.filename}."
-
-    if not extracted_text.strip():
-        extracted_text = f"Sample text representation of uploaded regulatory document '{file.filename}'."
-
-    # Run AI review
     ai_result = await review_document(
-        document_name=file.filename or "uploaded_document.pdf",
+        document_name=upload_res["original_filename"],
         document_type=document_type,
-        text=extracted_text
+        text=upload_res["extracted_text"]
     )
 
     institution_name = user.institution_name or "Applicant Institution"
@@ -488,16 +1145,16 @@ async def upload_document(
     doc = Document(
         application_id=application_id,
         institution_name=institution_name,
-        document_name=file.filename or "uploaded_doc.pdf",
+        document_name=upload_res["original_filename"],
         document_type=document_type,
-        file_path=None,
-        file_size=len(content),
-        mime_type=file.content_type or "application/pdf",
+        file_path=upload_res["stored_filepath"],
+        file_size=upload_res["file_size"],
+        mime_type=upload_res["mime_type"],
         uploaded_by=user.email,
-        extracted_text=extracted_text[:10000],
+        extracted_text=upload_res["extracted_text"][:10000],
         ai_summary=ai_result.get("summary"),
-        ai_findings=str(ai_result),
-        ai_confidence=ai_result.get("confidence_score", 0.9),
+        ai_findings=json.dumps(ai_result),
+        ai_confidence=float(ai_result.get("confidence_score", 0.9)),
         review_status="PENDING"
     )
     db.add(doc)
@@ -529,7 +1186,6 @@ def review_document_action(
     doc.reviewed_by = user.email
     doc.reviewed_at = datetime.utcnow()
 
-    # Record in audit event if linked to an application
     if doc.application_id:
         db.add(AuditEvent(
             application_id=doc.application_id,
@@ -543,8 +1199,6 @@ def review_document_action(
     db.refresh(doc)
     return doc
 
-
-# --- Compliance & Expiry Tracker Endpoints ---
 
 @app.get("/api/compliance", response_model=List[ComplianceOut])
 def list_compliance(
@@ -638,8 +1292,6 @@ def verify_compliance(
     return {"id": cid, "status": c.status, "verified_by": c.verified_by, "comments": c.officer_comments}
 
 
-# --- EVC Scheduling Endpoints ---
-
 @app.get("/api/evc", response_model=List[EVCVisitOut])
 def list_evc_visits(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     q = db.query(EVCVisit)
@@ -669,7 +1321,6 @@ def schedule_evc_visit(
     )
     db.add(visit)
 
-    # Advance stage to EVC_SCHEDULED if currently in EVC_PENDING
     if app_rec.current_stage == "EVC_PENDING":
         app_rec.current_stage = "EVC_SCHEDULED"
         db.add(AuditEvent(
@@ -722,44 +1373,12 @@ def update_evc_visit(
     return v
 
 
-# --- Alerts & Escalations Endpoints ---
-
-@app.get("/api/alerts", response_model=List[AlertOut])
-def list_alerts(
-    unread_only: bool = False,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user)
-):
-    q = db.query(Alert)
-    if user.role == "institution":
-        q = q.filter(or_(Alert.target_role == "institution", Alert.institution_name == user.institution_name))
-    elif user.role != "admin":
-        q = q.filter(or_(Alert.target_role == user.role, Alert.target_role == "all", Alert.target_role == "officer"))
-
-    if unread_only:
-        q = q.filter(Alert.is_read == False)
-
-    return q.order_by(desc(Alert.created_at)).all()
-
-
-@app.post("/api/alerts/{aid}/read")
-def mark_alert_read(aid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    al = db.get(Alert, aid)
-    if not al:
-        raise HTTPException(status_code=404, detail="Alert not found.")
-    al.is_read = True
-    db.commit()
-    return {"id": aid, "is_read": True}
-
-
 @app.post("/api/escalation/run-check")
 def trigger_escalation_check(db: Session = Depends(get_db), user: User = Depends(officer_or_admin)):
     """Manual trigger endpoint for SIH demo to evaluate deadlines and trigger alerts."""
     result = run_escalation_engine(db)
     return result
 
-
-# --- Reports & Safe CSV Export Endpoints ---
 
 @app.get("/api/reports/export-csv")
 def export_csv(
@@ -775,7 +1394,6 @@ def export_csv(
 
     def sanitize_csv_cell(val: Any) -> str:
         s = str(val or "")
-        # Prevent spreadsheet formula injection (=, +, -, @, tab, CR)
         if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
             return f"'{s}"
         return s
@@ -1080,7 +1698,7 @@ def v1_resubmit_application(
             detail=f"Application cannot be resubmitted. Current status: '{a.status}', stage: '{a.current_stage}'. Resubmission is only allowed for returned cases."
         )
 
-    reason = req.reason or req.explanation or ""
+    reason = req.reason or req.explanation or req.response_text or ""
     if len(reason.strip()) < 3:
         raise HTTPException(
             status_code=422,

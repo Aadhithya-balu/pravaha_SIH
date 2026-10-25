@@ -2,6 +2,7 @@ from typing import Dict, Any, List, Optional
 from fastapi import HTTPException
 
 
+# Shared Status Constants
 WORKFLOW_STAGES = [
     "DRAFT",
     "SUBMITTED",
@@ -16,8 +17,17 @@ WORKFLOW_STAGES = [
     "RETURNED_FOR_CLARIFICATION"
 ]
 
+APPLICATION_STATUSES = [
+    "DRAFT",
+    "IN_PROGRESS",
+    "RETURNED",
+    "OVERDUE",
+    "COMPLETED",
+    "REJECTED"
+]
+
 # Transition rules per stage
-# Maps current_stage -> { action: (target_stage, target_status, allowed_roles, default_assignee) }
+# Maps current_stage -> { action: { target_stage, target_status, allowed_roles, assigned_to, description } }
 TRANSITION_RULES: Dict[str, Dict[str, Dict[str, Any]]] = {
     "DRAFT": {
         "SUBMIT": {
@@ -25,7 +35,7 @@ TRANSITION_RULES: Dict[str, Dict[str, Dict[str, Any]]] = {
             "target_status": "IN_PROGRESS",
             "allowed_roles": ["institution", "admin"],
             "assigned_to": "Regional Officer",
-            "description": "Application submitted by institution for regulatory scrutiny"
+            "description": "Application submitted by institution for regulatory processing"
         }
     },
     "SUBMITTED": {
@@ -181,6 +191,13 @@ TRANSITION_RULES: Dict[str, Dict[str, Dict[str, Any]]] = {
             "assigned_to": "Closed",
             "description": "Approval granted by Competent Authority / AICTE Council"
         },
+        "REJECT_FINAL": {
+            "target_stage": "COMPLETED",
+            "target_status": "REJECTED",
+            "allowed_roles": ["bureau", "admin"],
+            "assigned_to": "Closed",
+            "description": "Application rejected by Competent Authority following committee hearing"
+        },
         "RETURN": {
             "target_stage": "RETURNED_FOR_CLARIFICATION",
             "target_status": "RETURNED",
@@ -204,6 +221,13 @@ TRANSITION_RULES: Dict[str, Dict[str, Dict[str, Any]]] = {
             "assigned_to": "Bureau Officer",
             "description": "Compliance shortfall forwarded to SAC for determination"
         },
+        "REJECT_FINAL": {
+            "target_stage": "COMPLETED",
+            "target_status": "REJECTED",
+            "allowed_roles": ["officer", "bureau", "admin"],
+            "assigned_to": "Closed",
+            "description": "Rejected due to statutory non-compliance."
+        },
         "RETURN": {
             "target_stage": "RETURNED_FOR_CLARIFICATION",
             "target_status": "RETURNED",
@@ -214,31 +238,43 @@ TRANSITION_RULES: Dict[str, Dict[str, Dict[str, Any]]] = {
     },
     "RETURNED_FOR_CLARIFICATION": {
         "RESUBMIT": {
-            "target_stage": "SCRUTINY",
+            "target_stage": "RE_SCRUTINY",
             "target_status": "IN_PROGRESS",
             "allowed_roles": ["institution", "admin"],
             "assigned_to": "Regional Officer",
-            "description": "Institution submitted response and clarification"
+            "description": "Institution submitted response and rectification for re-scrutiny"
         }
     }
 }
 
 
-def get_available_transitions(current_stage: str, user_role: str) -> List[Dict[str, Any]]:
+def get_available_transitions(current_stage: str, user_role: str, application_type: str = "") -> List[Dict[str, Any]]:
     stage_rules = TRANSITION_RULES.get(current_stage, {})
     available = []
+    is_new_prog = "new" in application_type.lower() or "programme" in application_type.lower()
+    
     for action, rule in stage_rules.items():
         if user_role in rule["allowed_roles"] or user_role == "admin":
+            # For new programme route, note if EVC is required before direct approval
+            desc = rule["description"]
+            if is_new_prog and action == "SCRUTINY_PASS":
+                desc = "Primary scrutiny cleared (Note: EVC inspection required for New Programme before final approval)"
             available.append({
                 "action": action,
                 "target_stage": rule["target_stage"],
                 "target_status": rule["target_status"],
-                "description": rule["description"]
+                "description": desc
             })
     return available
 
 
-def validate_transition(current_stage: str, action: str, user_role: str, reason: str = "") -> Dict[str, Any]:
+def validate_transition(
+    current_stage: str,
+    action: str,
+    user_role: str,
+    reason: str = "",
+    application_type: str = ""
+) -> Dict[str, Any]:
     action_key = action.upper().strip()
     stage_rules = TRANSITION_RULES.get(current_stage, {})
     
