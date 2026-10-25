@@ -26,6 +26,7 @@ class ApplicationCreate(BaseModel):
     notes: str = ""
     academic_year: str = "2026-2027"
     form_data: Optional[Union[Dict[str, Any], str]] = None
+    is_draft: bool = False
 
 
 class ApplicationPatch(BaseModel):
@@ -35,6 +36,22 @@ class ApplicationPatch(BaseModel):
     form_data: Optional[Union[Dict[str, Any], str]] = None
 
 
+class ApplicationUpdate(BaseModel):
+    application_type: Optional[str] = None
+    academic_year: Optional[str] = None
+    region: Optional[str] = None
+    due_date: Optional[date] = None
+    notes: Optional[str] = None
+
+
+class CorrectionItemOut(BaseModel):
+    source: str
+    reason: str
+    document_id: Optional[int] = None
+    document_name: Optional[str] = None
+    created_at: datetime
+
+
 class ApplicationTransition(BaseModel):
     action: str  # SCRUTINY_PASS, SEND_EVC, SCHEDULE_EVC, COMPLETE_EVC, SAC_APPROVE, COMPLIANCE_CLEAR, APPROVE_FINAL, RETURN, RESUBMIT
     reason: str = ""
@@ -42,7 +59,9 @@ class ApplicationTransition(BaseModel):
 
 
 class ApplicationResubmit(BaseModel):
-    response_text: str = Field(min_length=3, description="Detailed institutional explanation addressing cited deficiencies")
+    response_text: Optional[str] = Field(default=None, min_length=3, description="Detailed institutional explanation addressing cited deficiencies")
+    reason: Optional[str] = None
+    explanation: Optional[str] = None
 
 
 class ApplicationOut(BaseModel):
@@ -66,6 +85,7 @@ class ApplicationOut(BaseModel):
     decision_by: Optional[str] = None
     decision_date: Optional[datetime] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
 
 
 class AuditEventOut(BaseModel):

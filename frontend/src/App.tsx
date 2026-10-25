@@ -7,7 +7,7 @@ import {
   Mail,
   ArrowRight
 } from 'lucide-react';
-import { api, token } from './api';
+import { api, token, fetchApplications, fetchNotifications } from './api';
 import { User, Application, AlertItem, DashboardMetrics } from './types';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -45,8 +45,8 @@ export default function App() {
       const [u, m, a, al] = await Promise.all([
         api<User>('/auth/me'),
         api<DashboardMetrics>('/dashboard'),
-        api<Application[]>('/applications'),
-        api<AlertItem[]>('/alerts')
+        fetchApplications(),
+        fetchNotifications()
       ]);
       setUser(u);
       setMetrics(m);
