@@ -3,6 +3,7 @@ from fastapi import HTTPException
 
 
 WORKFLOW_STAGES = [
+    "DRAFT",
     "SUBMITTED",
     "SCRUTINY",
     "RE_SCRUTINY",
@@ -18,6 +19,15 @@ WORKFLOW_STAGES = [
 # Transition rules per stage
 # Maps current_stage -> { action: (target_stage, target_status, allowed_roles, default_assignee) }
 TRANSITION_RULES: Dict[str, Dict[str, Dict[str, Any]]] = {
+    "DRAFT": {
+        "SUBMIT": {
+            "target_stage": "SCRUTINY",
+            "target_status": "IN_PROGRESS",
+            "allowed_roles": ["institution", "admin"],
+            "assigned_to": "Regional Officer",
+            "description": "Application submitted by institution for regulatory scrutiny"
+        }
+    },
     "SUBMITTED": {
         "START_SCRUTINY": {
             "target_stage": "SCRUTINY",

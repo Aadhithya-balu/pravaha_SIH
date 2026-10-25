@@ -5,7 +5,7 @@ from datetime import date, timedelta, datetime, timezone
 from uuid import uuid4
 from typing import Optional, List, Any
 
-from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Form, Response
+from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Form, Response, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, desc
@@ -15,9 +15,10 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from .db import Base, engine, get_db
 from .models import User, Institution, Application, AuditEvent, Document, EVCVisit, ComplianceItem, Alert
 from .schemas import (
-    LoginRequest, UserOut, ApplicationCreate, ApplicationTransition, ApplicationOut,
-    AuditEventOut, ComplianceCreate, ComplianceEvidenceSubmit, ComplianceVerify,
-    ComplianceOut, EVCVisitCreate, EVCVisitUpdate, EVCVisitOut, DocumentUploadCheck,
+    LoginRequest, UserOut, ApplicationCreate, ApplicationUpdate, ApplicationResubmit,
+    CorrectionItemOut, ApplicationTransition, ApplicationOut, AuditEventOut,
+    ComplianceCreate, ComplianceEvidenceSubmit, ComplianceVerify, ComplianceOut,
+    EVCVisitCreate, EVCVisitUpdate, EVCVisitOut, DocumentUploadCheck,
     DocumentReviewAction, AlertOut, DashboardMetrics
 )
 from .workflow import get_available_transitions, validate_transition, TRANSITION_RULES, WORKFLOW_STAGES
@@ -250,18 +251,24 @@ def create_application(
     reference = f"AICTE-{date.today().year}-{uuid4().hex[:6].upper()}"
     default_due = req.due_date or (date.today() + timedelta(days=14))
 
+    is_draft = getattr(req, "is_draft", False)
+    stage = "DRAFT" if is_draft else "SCRUTINY"
+    status = "DRAFT" if is_draft else "IN_PROGRESS"
+    assigned_to = "Applicant Institution" if is_draft else "Regional Officer"
+    assigned_role = "institution" if is_draft else "officer"
+
     app_record = Application(
         reference=reference,
         institution_name=institution_name,
         application_type=req.application_type,
-        current_stage="SCRUTINY",
-        status="IN_PROGRESS",
-        assigned_to="Regional Officer",
-        assigned_role="officer",
+        current_stage=stage,
+        status=status,
+        assigned_to=assigned_to,
+        assigned_role=assigned_role,
         region=region,
         submission_date=date.today(),
         due_date=default_due,
-        notes=req.notes or "Fresh application registered via online portal.",
+        notes=req.notes or ("Draft application registered via online portal." if is_draft else "Fresh application registered via online portal."),
         academic_year=req.academic_year,
         created_by=user.id
     )
@@ -272,10 +279,10 @@ def create_application(
         application_id=app_record.id,
         actor=user.email,
         actor_role=user.role,
-        action="SUBMITTED",
+        action="DRAFT_SAVED" if is_draft else "SUBMITTED",
         from_stage=None,
-        to_stage="SCRUTINY",
-        details=f"Application registered by {user.name} ({user.role}). Initial scrutiny workflow initiated."
+        to_stage=stage,
+        details=f"Draft application created by {user.name}." if is_draft else f"Application registered by {user.name} ({user.role}). Initial scrutiny workflow initiated."
     )
     db.add(audit)
     db.commit()
@@ -304,12 +311,39 @@ def get_application_details(aid: int, db: Session = Depends(get_db), user: User 
     # Fetch EVC visits if any
     evc = db.query(EVCVisit).filter(EVCVisit.application_id == aid).order_by(desc(EVCVisit.created_at)).first()
 
+    # Extract correction requests if application was returned or has documents needing correction
+    correction_requests = []
+    for e in audit_history:
+        if e.action == "RETURN":
+            reason_text = e.details
+            if "Justification: " in reason_text:
+                reason_text = reason_text.split("Justification: ", 1)[1].strip()
+            correction_requests.append({
+                "source": "RETURN_DEFICIENCY",
+                "reason": reason_text,
+                "document_id": None,
+                "document_name": None,
+                "created_at": e.created_at
+            })
+            break
+
+    for doc in docs:
+        if doc.review_status == "CORRECTION_REQUIRED":
+            correction_requests.append({
+                "source": "DOCUMENT_CORRECTION",
+                "reason": doc.reviewer_notes or f"Correction requested for {doc.document_name}.",
+                "document_id": doc.id,
+                "document_name": doc.document_name,
+                "created_at": doc.reviewed_at or doc.created_at
+            })
+
     return {
         "application": a,
         "available_transitions": transitions,
         "audit_history": audit_history,
         "documents": docs,
-        "evc_visit": evc
+        "evc_visit": evc,
+        "correction_requests": correction_requests
     }
 
 
@@ -789,3 +823,346 @@ def export_csv(
 def list_users(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Returns users for demo role switching and administrative oversight."""
     return db.query(User).filter(User.is_active == True).all()
+
+
+# --- V1 REST API Router (SIH Agreed API Contract) ---
+
+v1_router = APIRouter(prefix="/api/v1", tags=["v1"])
+
+
+@v1_router.get("/applications", response_model=List[ApplicationOut])
+def v1_list_applications(
+    stage: Optional[str] = None,
+    status: Optional[str] = None,
+    app_type: Optional[str] = None,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    return list_applications(stage=stage, status=status, app_type=app_type, search=search, db=db, user=user)
+
+
+@v1_router.post("/applications", response_model=ApplicationOut, status_code=201)
+def v1_create_application(
+    req: ApplicationCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    valid_types = [
+        "Extension of Approval",
+        "Extension of Approval (EOA)",
+        "New Programme/Level",
+        "New Course",
+        "Compliance Submission",
+        "New Institution",
+        "Institutional Change"
+    ]
+    if not req.application_type or req.application_type.strip() not in valid_types:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid application type '{req.application_type}'. Must be one of: {valid_types}."
+        )
+
+    if not req.is_draft:
+        if not req.notes or len(req.notes.strip()) < 5:
+            raise HTTPException(
+                status_code=422,
+                detail="Application notes/details are required (minimum 5 characters)."
+            )
+        if not req.academic_year or len(req.academic_year.strip()) < 4:
+            raise HTTPException(
+                status_code=422,
+                detail="Valid academic year is required (e.g. 2026-2027)."
+            )
+
+    return create_application(req=req, db=db, user=user)
+
+
+@v1_router.get("/applications/{aid}")
+def v1_get_application(aid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return get_application_details(aid=aid, db=db, user=user)
+
+
+@v1_router.patch("/applications/{aid}", response_model=ApplicationOut)
+def v1_patch_application(
+    aid: int,
+    req: ApplicationUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    if user.role == "institution":
+        if a.institution_name != user.institution_name:
+            raise HTTPException(status_code=403, detail="Forbidden. Cannot modify other institutions' records.")
+        if a.status not in ["DRAFT", "RETURNED"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot edit application while in status '{a.status}'. Editing is only permitted for drafts or returned cases."
+            )
+
+    if req.application_type is not None:
+        a.application_type = req.application_type
+    if req.academic_year is not None:
+        a.academic_year = req.academic_year
+    if req.notes is not None:
+        a.notes = req.notes
+    if req.due_date is not None:
+        a.due_date = req.due_date
+    if req.region is not None and user.role != "institution":
+        a.region = req.region
+
+    a.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(a)
+    return a
+
+
+@v1_router.post("/applications/{aid}/documents")
+async def v1_upload_application_document(
+    aid: int,
+    file: UploadFile = File(...),
+    document_type: str = Form("LEASE_DEED"),
+    document_name: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    if user.role == "institution" and a.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden. You can only attach documents to your own applications.")
+
+    MAX_SIZE = 10 * 1024 * 1024  # 10MB
+    content = await file.read()
+    if len(content) > MAX_SIZE:
+        raise HTTPException(status_code=400, detail="File size exceeds maximum permitted limit of 10MB.")
+
+    extracted_text = ""
+    try:
+        extracted_text = content.decode("utf-8", errors="ignore")
+    except Exception:
+        extracted_text = f"Binary content ({len(content)} bytes) extracted from {file.filename}."
+
+    if not extracted_text.strip():
+        extracted_text = f"Regulatory document upload: {file.filename}."
+
+    ai_result = await review_document(
+        document_name=document_name or file.filename or "uploaded_document.pdf",
+        document_type=document_type,
+        text=extracted_text
+    )
+
+    doc = Document(
+        application_id=aid,
+        institution_name=a.institution_name,
+        document_name=document_name or file.filename or "uploaded_doc.pdf",
+        document_type=document_type,
+        file_path=None,
+        file_size=len(content),
+        mime_type=file.content_type or "application/pdf",
+        uploaded_by=user.email,
+        extracted_text=extracted_text[:10000],
+        ai_summary=ai_result.get("summary"),
+        ai_findings=str(ai_result.get("potential_inconsistencies", [])),
+        ai_confidence=ai_result.get("confidence_score", 0.85),
+        review_status="PENDING"
+    )
+    db.add(doc)
+    db.flush()
+
+    db.add(AuditEvent(
+        application_id=aid,
+        actor=user.email,
+        actor_role=user.role,
+        action="DOC_UPLOADED",
+        details=f"Document '{doc.document_name}' ({doc.document_type}) uploaded by {user.name}."
+    ))
+    a.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(doc)
+
+    return {
+        "message": f"Document '{doc.document_name}' successfully attached to application {a.reference}.",
+        "document": doc,
+        "ai_analysis": ai_result
+    }
+
+
+@v1_router.post("/applications/{aid}/submit", response_model=ApplicationOut)
+def v1_submit_application(
+    aid: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    if user.role == "institution" and a.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden. Cannot submit other institutions' records.")
+
+    if a.status != "DRAFT" and a.current_stage != "DRAFT":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Application is already submitted (current status: {a.status}, stage: {a.current_stage})."
+        )
+
+    if not a.notes or len(a.notes.strip()) < 5:
+        raise HTTPException(
+            status_code=422,
+            detail="Application notes/details are required before submission."
+        )
+
+    doc_count = db.query(Document).filter(Document.application_id == aid).count()
+    if doc_count == 0:
+        raise HTTPException(
+            status_code=422,
+            detail="At least one required supporting document must be uploaded before submitting the application."
+        )
+
+    prev_stage = a.current_stage
+    a.current_stage = "SCRUTINY"
+    a.status = "IN_PROGRESS"
+    a.assigned_to = "Regional Officer"
+    a.assigned_role = "officer"
+    a.submission_date = date.today()
+    a.updated_at = datetime.utcnow()
+
+    db.add(AuditEvent(
+        application_id=aid,
+        actor=user.email,
+        actor_role=user.role,
+        action="SUBMITTED",
+        from_stage=prev_stage,
+        to_stage="SCRUTINY",
+        details=f"Application formally submitted for regulatory scrutiny by {user.name} ({user.role}) with {doc_count} document(s)."
+    ))
+
+    db.add(Alert(
+        title=f"New Application Submitted: {a.reference}",
+        message=f"{a.institution_name} submitted {a.application_type} for AY {a.academic_year}.",
+        severity="INFO",
+        target_role="officer",
+        institution_name=a.institution_name,
+        application_id=aid,
+        trigger_type="STAGE_CHANGE"
+    ))
+
+    db.commit()
+    db.refresh(a)
+    return a
+
+
+@v1_router.post("/applications/{aid}/resubmit", response_model=ApplicationOut)
+def v1_resubmit_application(
+    aid: int,
+    req: ApplicationResubmit,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    if user.role == "institution" and a.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden. Cannot resubmit other institutions' records.")
+
+    if user.role not in ["institution", "admin"]:
+        raise HTTPException(status_code=403, detail="Only applicant institutions or admins can resubmit returned cases.")
+
+    if a.current_stage != "RETURNED_FOR_CLARIFICATION" and a.status != "RETURNED":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Application cannot be resubmitted. Current status: '{a.status}', stage: '{a.current_stage}'. Resubmission is only allowed for returned cases."
+        )
+
+    reason = req.reason or req.explanation or ""
+    if len(reason.strip()) < 3:
+        raise HTTPException(
+            status_code=422,
+            detail="A detailed rectification explanation (minimum 3 characters) is mandatory when resubmitting an application."
+        )
+
+    prev_stage = a.current_stage
+    a.current_stage = "SCRUTINY"
+    a.status = "IN_PROGRESS"
+    a.assigned_to = "Regional Officer"
+    a.assigned_role = "officer"
+    a.updated_at = datetime.utcnow()
+
+    db.add(AuditEvent(
+        application_id=aid,
+        actor=user.email,
+        actor_role=user.role,
+        action="RESUBMIT",
+        from_stage=prev_stage,
+        to_stage="SCRUTINY",
+        details=f"Clarification resubmitted by {user.name} ({user.role}): {reason.strip()}"
+    ))
+
+    db.add(Alert(
+        title=f"Clarification Resubmitted: {a.reference}",
+        message=f"{a.institution_name} resubmitted application with justification: {reason.strip()}",
+        severity="INFO",
+        target_role="officer",
+        institution_name=a.institution_name,
+        application_id=aid,
+        trigger_type="STAGE_CHANGE"
+    ))
+
+    db.commit()
+    db.refresh(a)
+    return a
+
+
+@v1_router.get("/applications/{aid}/timeline", response_model=List[AuditEventOut])
+def v1_get_timeline(aid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+    if user.role == "institution" and a.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden.")
+    return db.query(AuditEvent).filter(AuditEvent.application_id == aid).order_by(AuditEvent.created_at.asc()).all()
+
+
+@v1_router.get("/notifications", response_model=List[AlertOut])
+def v1_list_notifications(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    q = db.query(Alert)
+    if user.role == "institution":
+        q = q.filter(
+            or_(
+                Alert.institution_name == user.institution_name,
+                and_(Alert.target_role == "institution", Alert.institution_name == None)
+            )
+        )
+    else:
+        q = q.filter(
+            or_(
+                Alert.target_role == user.role,
+                Alert.target_role == "ALL",
+                Alert.target_role == None
+            )
+        )
+    return q.order_by(desc(Alert.created_at)).all()
+
+
+@v1_router.patch("/notifications/{nid}/read", response_model=AlertOut)
+@v1_router.post("/notifications/{nid}/read", response_model=AlertOut)
+def v1_mark_notification_read(nid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    al = db.get(Alert, nid)
+    if not al:
+        raise HTTPException(status_code=404, detail="Notification not found.")
+    al.is_read = True
+    db.commit()
+    db.refresh(al)
+    return al
+
+
+app.include_router(v1_router)
