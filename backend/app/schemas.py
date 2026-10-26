@@ -42,6 +42,7 @@ class ApplicationUpdate(BaseModel):
     region: Optional[str] = None
     due_date: Optional[date] = None
     notes: Optional[str] = None
+    form_data: Optional[Union[Dict[str, Any], str]] = None
 
 
 class CorrectionItemOut(BaseModel):
@@ -226,3 +227,71 @@ class OfficerDecisionRequest(BaseModel):
     decision: str = "APPROVED"  # APPROVED or REJECTED
     remarks: str = ""
     approval_order_reference: Optional[str] = None
+
+
+# --- Structured Scrutiny Findings Schemas ---
+
+class ScrutinyFindingOut(BaseModel):
+    id: int
+    scrutiny_run_id: Optional[int] = None
+    application_id: int
+    document_id: Optional[int] = None
+    rule_id: str
+    document_type: str
+    severity: str
+    category: str
+    description: str
+    evidence_quote: Optional[str] = None
+    source_document: Optional[str] = None
+    page_number: Optional[int] = None
+    expected_requirement: Optional[str] = None
+    observed_value: Optional[str] = None
+    suggested_action: Optional[str] = None
+    is_provisional: bool = False
+    source_reference: Optional[str] = None
+    officer_disposition: str = "PENDING"
+    disposition_notes: Optional[str] = None
+    disposed_by: Optional[str] = None
+    disposed_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class ScrutinyFindingDispositionUpdate(BaseModel):
+    disposition: str = Field(description="Officer review disposition: ACCEPTED, WAIVED, CORRECTION_REQUESTED, or REJECTED")
+    remarks: str = Field(min_length=3, description="Officer recorded remarks or legal justification for disposition")
+
+
+class ScrutinyRunOut(BaseModel):
+    id: int
+    application_id: int
+    run_type: str
+    conducted_by: str
+    status: str
+    summary: str
+    missing_docs: Optional[str] = None
+    rule_results: Optional[str] = None
+    ai_assisted: bool
+    model_provider: Optional[str] = None
+    model_name: Optional[str] = None
+    ruleset_version: Optional[str] = None
+    created_at: datetime
+    findings: Optional[List[ScrutinyFindingOut]] = None
+
+
+class DocumentReviewOut(BaseModel):
+    document_id: int
+    application_id: Optional[int] = None
+    document_name: str
+    document_type: str
+    file_size: int
+    mime_type: str
+    uploaded_by: str
+    review_status: str
+    reviewer_notes: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    ai_summary: Optional[str] = None
+    ai_confidence: Optional[float] = None
+    ai_analysis: Optional[Dict[str, Any]] = None
+    findings: List[ScrutinyFindingOut] = []
+    created_at: datetime

@@ -104,6 +104,9 @@ class ScrutinyRun(Base):
     missing_docs: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
     rule_results: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON summary
     ai_assisted: Mapped[bool] = mapped_column(Boolean, default=False)
+    model_provider: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    model_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    ruleset_version: Mapped[str | None] = mapped_column(String(80), nullable=True, default="APH-2024-2027-v1.2")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -112,14 +115,21 @@ class ScrutinyFinding(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     scrutiny_run_id: Mapped[int | None] = mapped_column(ForeignKey("scrutiny_runs.id"), nullable=True, index=True)
     application_id: Mapped[int] = mapped_column(ForeignKey("applications.id"), index=True)
+    document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id"), nullable=True, index=True)
     rule_id: Mapped[str] = mapped_column(String(80), index=True)  # e.g. APH-2024-LAND-TENURE
     document_type: Mapped[str] = mapped_column(String(80))
     severity: Mapped[str] = mapped_column(String(30), default="DEFICIENCY")  # INFO, WARNING, DEFICIENCY
-    category: Mapped[str] = mapped_column(String(60), default="VALIDATION")  # MISSING_DOCUMENT, REGULATORY_NON_COMPLIANCE, INCONSISTENCY
+    category: Mapped[str] = mapped_column(String(60), default="VALIDATION")  # MISSING_DOCUMENT, REGULATORY_NON_COMPLIANCE, INCONSISTENCY, ABSENT_EVIDENCE, EXTRACTION_FAILURE, PROCEDURAL_REQUIREMENT
     description: Mapped[str] = mapped_column(Text)
     evidence_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_document: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    expected_requirement: Mapped[str | None] = mapped_column(Text, nullable=True)
+    observed_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     suggested_action: Mapped[str | None] = mapped_column(Text, nullable=True)
-    officer_disposition: Mapped[str] = mapped_column(String(40), default="PENDING")  # PENDING, ACCEPTED, WAIVED, CORRECTION_REQUESTED
+    is_provisional: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    officer_disposition: Mapped[str] = mapped_column(String(40), default="PENDING")  # PENDING, ACCEPTED, WAIVED, CORRECTION_REQUESTED, REJECTED
     disposition_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     disposed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     disposed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

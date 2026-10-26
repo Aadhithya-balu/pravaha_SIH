@@ -24,7 +24,8 @@ from .schemas import (
     ComplianceEvidenceSubmit, ComplianceVerify, ComplianceOut, EVCVisitCreate,
     EVCVisitUpdate, EVCVisitOut, DocumentUploadCheck, DocumentReviewAction,
     AlertOut, DashboardMetrics, OfficerScrutinyRequest, OfficerCorrectionRequest,
-    OfficerRescrutinyComplete, OfficerAdvanceStage, OfficerDecisionRequest
+    OfficerRescrutinyComplete, OfficerAdvanceStage, OfficerDecisionRequest,
+    ScrutinyFindingDispositionUpdate, ScrutinyFindingOut, ScrutinyRunOut, DocumentReviewOut
 )
 from .workflow import get_available_transitions, validate_transition, TRANSITION_RULES, WORKFLOW_STAGES, APPLICATION_STATUSES
 from .ai_service import review_document
@@ -517,7 +518,7 @@ def submit_application(
         raise HTTPException(status_code=403, detail="Forbidden. Cannot submit another institution's case.")
 
     prev_stage = a.current_stage
-    a.current_stage = "SCRUTINY"
+    a.current_stage = "RE_SCRUTINY" if req.response_text else "SCRUTINY"
     a.status = "IN_PROGRESS"
     a.submission_date = date.today()
 
@@ -594,7 +595,7 @@ def resubmit_application(
         actor_role=user.role,
         action="RESUBMIT",
         from_stage=prev_stage,
-        to_stage="RE_SCRUTINY",
+        to_stage=a.current_stage,
         details=f"Institutional Clarification: {response_text}"
     ))
 
@@ -758,6 +759,7 @@ def officer_get_application(
     }
 
 
+@app.post("/api/scrutiny/run/{aid}")
 @app.post("/api/v1/officer/applications/{aid}/scrutiny")
 async def officer_run_scrutiny(
     aid: int,
@@ -792,6 +794,106 @@ async def officer_run_scrutiny(
     db.commit()
 
     return res
+
+
+@app.get("/api/scrutiny/applications/{aid}")
+@app.get("/api/scrutiny/runs/{aid}")
+def get_application_scrutiny(
+    aid: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    app_rec = db.get(Application, aid)
+    if not app_rec:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    if user.role == "institution" and app_rec.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden.")
+
+    runs = db.query(ScrutinyRun).filter(ScrutinyRun.application_id == aid).order_by(desc(ScrutinyRun.created_at)).all()
+    findings = db.query(ScrutinyFinding).filter(ScrutinyFinding.application_id == aid).order_by(desc(ScrutinyFinding.created_at)).all()
+
+    return {
+        "application_id": aid,
+        "deficiency_count": app_rec.deficiency_count,
+        "scrutiny_runs": runs,
+        "findings": findings
+    }
+
+
+@app.post("/api/scrutiny/findings/{fid}/disposition")
+@app.patch("/api/scrutiny/findings/{fid}/disposition")
+@app.post("/api/v1/officer/scrutiny/findings/{fid}/disposition")
+def update_finding_disposition(
+    fid: int,
+    req: ScrutinyFindingDispositionUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(officer_or_admin)
+):
+    """
+    Human-in-the-loop review:
+    Officers can accept, waive where legally permitted, request correction, or reject an AI finding.
+    Records remarks and re-evaluates active application deficiency count.
+    """
+    finding = db.get(ScrutinyFinding, fid)
+    if not finding:
+        raise HTTPException(status_code=404, detail="Scrutiny finding not found.")
+
+    valid_dispositions = ["ACCEPTED", "WAIVED", "CORRECTION_REQUESTED", "REJECTED"]
+    disp_upper = req.disposition.upper().strip()
+    if disp_upper not in valid_dispositions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid disposition '{req.disposition}'. Permitted values: {valid_dispositions}"
+        )
+
+    remarks = req.remarks.strip()
+    if len(remarks) < 3:
+        raise HTTPException(
+            status_code=422,
+            detail="Recorded remarks / justification must be at least 3 characters long."
+        )
+
+    prev_disp = finding.officer_disposition
+    finding.officer_disposition = disp_upper
+    finding.disposition_notes = remarks
+    finding.disposed_by = user.email
+    finding.disposed_at = datetime.utcnow()
+    db.flush()
+
+    # Recalculate application deficiency count
+    app_rec = db.get(Application, finding.application_id)
+    if app_rec:
+        active_deficiencies = db.query(ScrutinyFinding).filter(
+            ScrutinyFinding.application_id == finding.application_id,
+            ScrutinyFinding.severity == "DEFICIENCY",
+            ScrutinyFinding.officer_disposition.in_(["PENDING", "ACCEPTED", "CORRECTION_REQUESTED"])
+        ).count()
+        app_rec.deficiency_count = active_deficiencies
+
+        db.add(AuditEvent(
+            application_id=app_rec.id,
+            actor=user.email,
+            actor_role=user.role,
+            action="FINDING_DISPOSITION",
+            details=f"Finding '{finding.rule_id}' disposition updated from {prev_disp} to {disp_upper}. Remarks: {remarks}"
+        ))
+
+    db.commit()
+    db.refresh(finding)
+
+    return {
+        "id": finding.id,
+        "application_id": finding.application_id,
+        "rule_id": finding.rule_id,
+        "severity": finding.severity,
+        "category": finding.category,
+        "officer_disposition": finding.officer_disposition,
+        "disposition_notes": finding.disposition_notes,
+        "disposed_by": finding.disposed_by,
+        "disposed_at": finding.disposed_at.isoformat() if finding.disposed_at else None,
+        "application_deficiency_count": app_rec.deficiency_count if app_rec else 0
+    }
 
 
 @app.post("/api/v1/officer/applications/{aid}/request-corrections")
@@ -1167,6 +1269,89 @@ async def upload_document(
     }
 
 
+@app.get("/api/documents/{did}/review")
+def get_document_review(
+    did: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """
+    Returns explainable scrutiny review data, extracted metadata, and findings for a document.
+    """
+    doc = db.get(Document, did)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document record not found.")
+
+    if user.role == "institution" and doc.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden. Cannot inspect other institutions' documents.")
+
+    ai_data = None
+    if doc.ai_findings:
+        try:
+            ai_data = json.loads(doc.ai_findings)
+        except Exception:
+            ai_data = {"summary": doc.ai_summary, "raw": doc.ai_findings}
+
+    findings = db.query(ScrutinyFinding).filter(
+        or_(
+            ScrutinyFinding.document_id == did,
+            and_(
+                ScrutinyFinding.application_id == doc.application_id,
+                ScrutinyFinding.source_document == doc.document_name
+            )
+        )
+    ).order_by(desc(ScrutinyFinding.created_at)).all()
+
+    return {
+        "document": {
+            "id": doc.id,
+            "application_id": doc.application_id,
+            "institution_name": doc.institution_name,
+            "document_name": doc.document_name,
+            "document_type": doc.document_type,
+            "file_size": doc.file_size,
+            "mime_type": doc.mime_type,
+            "uploaded_by": doc.uploaded_by,
+            "review_status": doc.review_status,
+            "reviewer_notes": doc.reviewer_notes,
+            "reviewed_by": doc.reviewed_by,
+            "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,
+            "ai_summary": doc.ai_summary,
+            "ai_confidence": doc.ai_confidence,
+            "created_at": doc.created_at.isoformat()
+        },
+        "review_status": doc.review_status,
+        "reviewer_notes": doc.reviewer_notes,
+        "reviewed_by": doc.reviewed_by,
+        "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,
+        "ai_analysis": ai_data,
+        "findings": [
+            {
+                "id": f.id,
+                "rule_id": f.rule_id,
+                "document_type": f.document_type,
+                "severity": f.severity,
+                "category": f.category,
+                "description": f.description,
+                "evidence_quote": f.evidence_quote,
+                "source_document": f.source_document,
+                "page_number": f.page_number,
+                "expected_requirement": f.expected_requirement,
+                "observed_value": f.observed_value,
+                "suggested_action": f.suggested_action,
+                "is_provisional": f.is_provisional,
+                "source_reference": f.source_reference,
+                "officer_disposition": f.officer_disposition,
+                "disposition_notes": f.disposition_notes,
+                "disposed_by": f.disposed_by,
+                "disposed_at": f.disposed_at.isoformat() if f.disposed_at else None,
+                "created_at": f.created_at.isoformat()
+            }
+            for f in findings
+        ]
+    }
+
+
 @app.post("/api/documents/{did}/review")
 def review_document_action(
     did: int,
@@ -1470,6 +1655,7 @@ def v1_create_application(
         "Extension of Approval",
         "Extension of Approval (EOA)",
         "New Programme/Level",
+        "New Programme / Level",
         "New Course",
         "Compliance Submission",
         "New Institution",
@@ -1515,10 +1701,10 @@ def v1_patch_application(
     if user.role == "institution":
         if a.institution_name != user.institution_name:
             raise HTTPException(status_code=403, detail="Forbidden. Cannot modify other institutions' records.")
-        if a.status not in ["DRAFT", "RETURNED"]:
+        if a.status in ["COMPLETED", "REJECTED"]:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot edit application while in status '{a.status}'. Editing is only permitted for drafts or returned cases."
+                detail=f"Cannot edit application while in status '{a.status}'. Editing is only permitted for active drafts or pending cases."
             )
 
     if req.application_type is not None:
@@ -1531,6 +1717,8 @@ def v1_patch_application(
         a.due_date = req.due_date
     if req.region is not None and user.role != "institution":
         a.region = req.region
+    if req.form_data is not None:
+        a.form_data = json.dumps(req.form_data) if isinstance(req.form_data, dict) else str(req.form_data)
 
     a.updated_at = datetime.utcnow()
     db.commit()
@@ -1554,22 +1742,11 @@ async def v1_upload_application_document(
     if user.role == "institution" and a.institution_name != user.institution_name:
         raise HTTPException(status_code=403, detail="Forbidden. You can only attach documents to your own applications.")
 
-    MAX_SIZE = 10 * 1024 * 1024  # 10MB
-    content = await file.read()
-    if len(content) > MAX_SIZE:
-        raise HTTPException(status_code=400, detail="File size exceeds maximum permitted limit of 10MB.")
-
-    extracted_text = ""
-    try:
-        extracted_text = content.decode("utf-8", errors="ignore")
-    except Exception:
-        extracted_text = f"Binary content ({len(content)} bytes) extracted from {file.filename}."
-
-    if not extracted_text.strip():
-        extracted_text = f"Regulatory document upload: {file.filename}."
+    upload_res = await process_and_store_upload(file)
+    extracted_text = upload_res["extracted_text"]
 
     ai_result = await review_document(
-        document_name=document_name or file.filename or "uploaded_document.pdf",
+        document_name=document_name or upload_res["original_filename"],
         document_type=document_type,
         text=extracted_text
     )
@@ -1577,16 +1754,16 @@ async def v1_upload_application_document(
     doc = Document(
         application_id=aid,
         institution_name=a.institution_name,
-        document_name=document_name or file.filename or "uploaded_doc.pdf",
+        document_name=document_name or upload_res["original_filename"],
         document_type=document_type,
-        file_path=None,
-        file_size=len(content),
-        mime_type=file.content_type or "application/pdf",
+        file_path=upload_res["stored_filepath"],
+        file_size=upload_res["file_size"],
+        mime_type=upload_res["mime_type"],
         uploaded_by=user.email,
         extracted_text=extracted_text[:10000],
         ai_summary=ai_result.get("summary"),
-        ai_findings=str(ai_result.get("potential_inconsistencies", [])),
-        ai_confidence=ai_result.get("confidence_score", 0.85),
+        ai_findings=json.dumps(ai_result),
+        ai_confidence=float(ai_result.get("confidence_score", 0.85)),
         review_status="PENDING"
     )
     db.add(doc)
@@ -1706,7 +1883,7 @@ def v1_resubmit_application(
         )
 
     prev_stage = a.current_stage
-    a.current_stage = "SCRUTINY"
+    a.current_stage = "RE_SCRUTINY" if req.response_text else "SCRUTINY"
     a.status = "IN_PROGRESS"
     a.assigned_to = "Regional Officer"
     a.assigned_role = "officer"
@@ -1718,7 +1895,7 @@ def v1_resubmit_application(
         actor_role=user.role,
         action="RESUBMIT",
         from_stage=prev_stage,
-        to_stage="SCRUTINY",
+        to_stage=a.current_stage,
         details=f"Clarification resubmitted by {user.name} ({user.role}): {reason.strip()}"
     ))
 

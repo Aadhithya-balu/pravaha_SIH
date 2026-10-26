@@ -37,6 +37,47 @@ export interface CorrectionRequest {
   created_at: string;
 }
 
+export interface ScrutinyFinding {
+  id: number;
+  scrutiny_run_id?: number | null;
+  application_id: number;
+  document_id?: number | null;
+  rule_id: string;
+  document_type: string;
+  severity: 'INFO' | 'WARNING' | 'DEFICIENCY';
+  category: 'MISSING_DOCUMENT' | 'REGULATORY_NON_COMPLIANCE' | 'INCONSISTENCY' | 'ABSENT_EVIDENCE' | 'EXTRACTION_FAILURE' | 'PROCEDURAL_REQUIREMENT' | string;
+  description: string;
+  evidence_quote?: string | null;
+  source_document?: string | null;
+  page_number?: number | null;
+  expected_requirement?: string | null;
+  observed_value?: string | null;
+  suggested_action?: string | null;
+  is_provisional?: boolean;
+  source_reference?: string | null;
+  officer_disposition: 'PENDING' | 'ACCEPTED' | 'WAIVED' | 'CORRECTION_REQUESTED' | 'REJECTED';
+  disposition_notes?: string | null;
+  disposed_by?: string | null;
+  disposed_at?: string | null;
+  created_at: string;
+}
+
+export interface ScrutinyRun {
+  id: number;
+  application_id: number;
+  run_type: 'INITIAL' | 'RE_SCRUTINY' | string;
+  conducted_by: string;
+  status: 'PASSED' | 'DEFICIENCIES_FOUND' | 'PENDING_REVIEW' | string;
+  summary: string;
+  missing_docs?: string[] | string | null;
+  ai_assisted: boolean;
+  model_provider?: string | null;
+  model_name?: string | null;
+  ruleset_version?: string | null;
+  created_at: string;
+  findings?: ScrutinyFinding[];
+}
+
 export interface ApplicationDetailResponse {
   application: Application;
   available_transitions: AvailableTransition[];
@@ -44,6 +85,8 @@ export interface ApplicationDetailResponse {
   documents: DocumentRecord[];
   evc_visit?: EVCVisit | null;
   correction_requests?: CorrectionRequest[];
+  scrutiny_runs?: ScrutinyRun[];
+  scrutiny_findings?: ScrutinyFinding[];
 }
 
 export interface AuditEvent {
@@ -79,9 +122,10 @@ export interface DocumentRecord {
 }
 
 export interface AiAnalysisResult {
-  mode: 'demo_mode' | 'real_llm';
+  mode: 'demo_mode' | 'real_llm' | string;
   provider?: string;
   model?: string;
+  ruleset_version?: string;
   document_name: string;
   document_type: string;
   summary: string;
@@ -89,9 +133,20 @@ export interface AiAnalysisResult {
   missing_information: string[];
   potential_inconsistencies: string[];
   verification_questions: string[];
+  structured_findings?: ScrutinyFinding[];
   confidence_score: number;
   disclaimer: string;
   mode_fallback_reason?: string;
+}
+
+export interface DocumentReviewResponse {
+  document: DocumentRecord;
+  review_status: string;
+  reviewer_notes?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  ai_analysis?: AiAnalysisResult | null;
+  findings: ScrutinyFinding[];
 }
 
 export interface EVCVisit {

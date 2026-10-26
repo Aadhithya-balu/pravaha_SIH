@@ -133,3 +133,27 @@ export async function downloadCsv(reportType: 'applications' | 'compliance'): Pr
   document.body.removeChild(a);
   window.URL.revokeObjectURL(url);
 }
+
+// --- Scrutiny & Explainable Evidence Review API Helpers ---
+
+export async function runScrutiny(applicationId: number, runType: string = 'INITIAL'): Promise<any> {
+  return api(`/scrutiny/run/${applicationId}`, {
+    method: 'POST',
+    body: JSON.stringify({ run_type: runType })
+  });
+}
+
+export async function fetchDocumentReview(documentId: number): Promise<any> {
+  return api(`/documents/${documentId}/review`);
+}
+
+export async function updateFindingDisposition(findingId: number, disposition: string, remarks: string): Promise<any> {
+  return api(`/scrutiny/findings/${findingId}/disposition`, {
+    method: 'POST',
+    body: JSON.stringify({ disposition, remarks })
+  });
+}
+
+export async function fetchApplicationScrutiny(applicationId: number): Promise<any> {
+  return api(`/scrutiny/applications/${applicationId}`);
+}
