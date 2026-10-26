@@ -4,8 +4,16 @@ import uuid
 import re
 from typing import Dict, Any, Tuple, List, Optional
 from fastapi import HTTPException, UploadFile
-import pypdf
-import docx
+
+try:
+    import pypdf
+except ImportError:
+    pypdf = None
+
+try:
+    import docx
+except ImportError:
+    docx = None
 
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads"))
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -26,6 +34,8 @@ def extract_pages_from_pdf(content: bytes) -> Tuple[str, int, List[Dict[str, Any
     """
     if not content:
         return ("", 0, [], False)
+    if pypdf is None:
+        return ("[Notice: pypdf library is not available for PDF text extraction]", 0, [], False)
     try:
         reader = pypdf.PdfReader(io.BytesIO(content))
         num_pages = len(reader.pages)
@@ -75,6 +85,8 @@ def extract_text_from_docx(content: bytes) -> Tuple[str, int]:
     """Safely extracts text and paragraph/table row count from DOCX binary data."""
     if not content:
         return ("", 0)
+    if docx is None:
+        return ("[Notice: python-docx library is not available for DOCX text extraction]", 0)
     try:
         doc = docx.Document(io.BytesIO(content))
         paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]

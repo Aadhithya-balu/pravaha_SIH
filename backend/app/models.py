@@ -68,6 +68,8 @@ class AuditEvent(Base):
     from_stage: Mapped[str | None] = mapped_column(String(60), nullable=True)
     to_stage: Mapped[str | None] = mapped_column(String(60), nullable=True)
     details: Mapped[str] = mapped_column(Text, default="")
+    prev_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

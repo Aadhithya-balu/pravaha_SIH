@@ -43,6 +43,9 @@ class ApplicationUpdate(BaseModel):
     due_date: Optional[date] = None
     notes: Optional[str] = None
     form_data: Optional[Union[Dict[str, Any], str]] = None
+class FindingDispositionRequest(BaseModel):
+    disposition: str = "ACCEPTED"  # ACCEPTED, WAIVED, CORRECTION_REQUESTED, REJECTED
+    disposition_notes: Optional[str] = None
 
 
 class CorrectionItemOut(BaseModel):
@@ -98,6 +101,8 @@ class AuditEventOut(BaseModel):
     from_stage: Optional[str] = None
     to_stage: Optional[str] = None
     details: str
+    prev_hash: Optional[str] = None
+    event_hash: Optional[str] = None
     created_at: datetime
 
 

@@ -27,13 +27,28 @@ export interface Application {
   academic_year: string;
   created_at: string;
   updated_at?: string;
+  created_by?: number | null;
+  form_data?: string | null;
+  decision_outcome?: string | null;
+  decision_remarks?: string | null;
+  decision_by?: string | null;
+  decision_date?: string | null;
 }
 
 export interface CorrectionRequest {
-  source: 'RETURN_DEFICIENCY' | 'DOCUMENT_CORRECTION';
+  id?: number;
+  application_id?: number;
+  requested_by?: string;
+  source?: 'RETURN_DEFICIENCY' | 'DOCUMENT_CORRECTION';
   reason: string;
   document_id?: number | null;
   document_name?: string | null;
+  deficiencies_json?: string | null;
+  status?: 'PENDING' | 'RESUBMITTED' | 'RESOLVED' | string;
+  institution_response?: string | null;
+  response_submitted_at?: string | null;
+  resolved_at?: string | null;
+  resolved_by?: string | null;
   created_at: string;
 }
 
@@ -70,23 +85,13 @@ export interface ScrutinyRun {
   status: 'PASSED' | 'DEFICIENCIES_FOUND' | 'PENDING_REVIEW' | string;
   summary: string;
   missing_docs?: string[] | string | null;
+  rule_results?: string | null;
   ai_assisted: boolean;
   model_provider?: string | null;
   model_name?: string | null;
   ruleset_version?: string | null;
   created_at: string;
   findings?: ScrutinyFinding[];
-}
-
-export interface ApplicationDetailResponse {
-  application: Application;
-  available_transitions: AvailableTransition[];
-  audit_history: AuditEvent[];
-  documents: DocumentRecord[];
-  evc_visit?: EVCVisit | null;
-  correction_requests?: CorrectionRequest[];
-  scrutiny_runs?: ScrutinyRun[];
-  scrutiny_findings?: ScrutinyFinding[];
 }
 
 export interface AuditEvent {
@@ -217,4 +222,15 @@ export interface AvailableTransition {
   target_stage: string;
   target_status: string;
   description: string;
+}
+
+export interface ApplicationDetailResponse {
+  application: Application;
+  available_transitions: AvailableTransition[];
+  audit_history: AuditEvent[];
+  documents: DocumentRecord[];
+  evc_visit?: EVCVisit | null;
+  scrutiny_runs?: ScrutinyRun[];
+  scrutiny_findings?: ScrutinyFinding[];
+  correction_requests?: CorrectionRequest[];
 }

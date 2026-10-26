@@ -42,6 +42,13 @@ def run_schema_migrations(eng):
                 if "recipient_user_id" not in cols:
                     conn.execute(text("ALTER TABLE alerts ADD COLUMN recipient_user_id INTEGER;"))
 
+            if "audit_events" in tables:
+                cols = get_cols("audit_events")
+                if "prev_hash" not in cols:
+                    conn.execute(text("ALTER TABLE audit_events ADD COLUMN prev_hash VARCHAR(64);"))
+                if "event_hash" not in cols:
+                    conn.execute(text("ALTER TABLE audit_events ADD COLUMN event_hash VARCHAR(64);"))
+
             if "scrutiny_runs" in tables:
                 cols = get_cols("scrutiny_runs")
                 if "model_provider" not in cols:

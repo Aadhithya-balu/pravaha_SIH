@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import {
-  Sparkles,
+  FileSearch,
   Upload,
   CheckCircle2,
   AlertTriangle,
   HelpCircle,
   FileText,
   ShieldCheck,
-  Send
+  Send,
+  AlertCircle
 } from 'lucide-react';
 import { AiAnalysisResult, User } from '../types';
-import { api } from '../api';
+import { api, apiUpload } from '../api';
 
 interface DocumentReviewTabProps {
   user: User | null;
@@ -22,8 +23,10 @@ export const DocumentReviewTab: React.FC<DocumentReviewTabProps> = ({ user }) =>
   const [docText, setDocText] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AiAnalysisResult | null>(null);
+  const [uploadedDocId, setUploadedDocId] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [isDispositionLoading, setIsDispositionLoading] = useState(false);
 
   // Pre-loaded realistic sample documents for 1-click evaluation
   const samples = [
@@ -80,13 +83,14 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
     setDocType(sample.type);
     setDocText(sample.text);
     setAnalysisResult(null);
+    setUploadedDocId(null);
     setErrorMsg('');
     setSuccessMsg('');
   }
 
   async function handleAnalyze() {
     if (!docText.trim()) {
-      setErrorMsg('Please paste document text or select a sample document above.');
+      setErrorMsg('Please paste document text or select an official sample document above.');
       return;
     }
     setIsAnalyzing(true);
@@ -103,7 +107,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
       });
       setAnalysisResult(res);
     } catch (err: any) {
-      setErrorMsg(err.message);
+      setErrorMsg(err.message || 'Scrutiny check failed.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -116,46 +120,61 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
     setDocName(file.name);
     setIsAnalyzing(true);
     setErrorMsg('');
+    setSuccessMsg('');
 
     try {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('document_type', docType);
 
-      const authTok = localStorage.getItem('ps4_token') || '';
-      const base = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-      const r = await fetch(`${base}/documents/upload`, {
-        method: 'POST',
-        headers: authTok ? { Authorization: `Bearer ${authTok}` } : {},
-        body: formData
-      });
-
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error(err.detail || 'Upload failed');
-      }
-
-      const data = await r.json();
+      const data = await apiUpload('/documents/upload', formData);
       setAnalysisResult(data.ai_analysis);
+      setUploadedDocId(data.document.id);
       setDocText(data.document.extracted_text || 'Text content extracted from file.');
-      setSuccessMsg(`Document '${file.name}' uploaded and analyzed successfully.`);
+      setSuccessMsg(`Document '${file.name}' ingested and evaluated by AI scrutiny pipeline.`);
     } catch (err: any) {
-      setErrorMsg(err.message);
+      setErrorMsg(err.message || 'Upload failed.');
     } finally {
       setIsAnalyzing(false);
+    }
+  }
+
+  async function handleRecordDisposition(reviewStatus: 'ACCEPTED' | 'CORRECTION_REQUIRED') {
+    if (!uploadedDocId) {
+      setErrorMsg('To record a binding statutory disposition, please upload an actual document file above.');
+      return;
+    }
+
+    setIsDispositionLoading(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      await api(`/documents/${uploadedDocId}/review`, {
+        method: 'POST',
+        body: JSON.stringify({
+          review_status: reviewStatus,
+          reviewer_notes: `Marked ${reviewStatus} by ${user?.name} (${user?.role}) via Scrutiny Console.`
+        })
+      });
+      setSuccessMsg(`Document disposition recorded in audit trail: ${reviewStatus}.`);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Disposition recording failed.');
+    } finally {
+      setIsDispositionLoading(false);
     }
   }
 
   return (
     <div className="page-container">
       {/* Sample Document Quick Selector */}
-      <div className="panel-card" style={{ padding: '16px 20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <b style={{ fontSize: 13, color: 'var(--text-main)' }}>
-            SIH Quick Evaluation: Load Pre-Formatted Regulatory Samples
+      <div className="panel-card" style={{ padding: '14px 18px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+          <b style={{ fontSize: 12, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <FileSearch size={14} color="var(--primary)" />
+            AICTE Regulatory Evaluation Samples
           </b>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-            Click to test instant domain validation
+            Load statutory test cases to evaluate automated rule checks
           </span>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -163,10 +182,10 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
             <button
               key={s.title}
               className="btn-secondary"
-              style={{ fontSize: 11, padding: '7px 11px' }}
+              style={{ fontSize: 11, padding: '6px 10px' }}
               onClick={() => loadSample(s)}
             >
-              <FileText size={13} color="var(--primary)" />
+              <FileText size={12} color="var(--primary)" />
               <span>{s.title}</span>
             </button>
           ))}
@@ -174,22 +193,22 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
       </div>
 
       {/* Main Input & Analysis Area */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 18 }}>
         {/* Left: Input & Upload */}
         <div className="panel-card">
           <div className="panel-header">
             <h3>
-              <Upload size={17} color="var(--primary)" />
-              Document Upload & Text Extraction
+              <Upload size={16} color="var(--primary)" />
+              Document Ingestion & Text Screening
             </h3>
           </div>
 
-          {errorMsg && <div className="alert-banner danger" style={{ marginBottom: 14 }}>{errorMsg}</div>}
-          {successMsg && <div className="alert-banner info" style={{ marginBottom: 14 }}>{successMsg}</div>}
+          {errorMsg && <div className="alert-banner danger" style={{ marginBottom: 12 }}>{errorMsg}</div>}
+          {successMsg && <div className="alert-banner info" style={{ marginBottom: 12 }}>{successMsg}</div>}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div className="form-group">
-              <label>Regulatory Document Type</label>
+              <label>Statutory Document Type *</label>
               <select value={docType} onChange={(e) => setDocType(e.target.value)}>
                 <option value="LEASE_DEED">Registered Land Lease Deed / Ownership</option>
                 <option value="FIRE_NOC">Fire & Life Safety Certificate (NOC)</option>
@@ -210,20 +229,20 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
             </div>
 
             <div className="form-group">
-              <label>Upload Sample File (PDF / TXT)</label>
+              <label>Upload File (PDF / DOCX / TXT)</label>
               <input
                 type="file"
                 accept=".pdf,.txt,.doc,.docx"
                 onChange={handleFileUpload}
-                style={{ padding: '8px' }}
+                style={{ padding: '6px' }}
               />
             </div>
 
             <div className="form-group">
-              <label>Extracted Document Text Content</label>
+              <label>Document Text Content (Extracted)</label>
               <textarea
-                rows={9}
-                placeholder="Paste sample legal text or OCR output here..."
+                rows={8}
+                placeholder="Paste legal text or extracted OCR output..."
                 value={docText}
                 onChange={(e) => setDocText(e.target.value)}
               />
@@ -231,126 +250,159 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
 
             <button
               className="btn-primary"
-              style={{ justifyContent: 'center', padding: '12px' }}
+              style={{ justifyContent: 'center', padding: '10px' }}
               disabled={isAnalyzing || !docText.trim()}
               onClick={handleAnalyze}
             >
-              <Sparkles size={16} />
-              <span>{isAnalyzing ? 'Analyzing Regulatory Norms...' : 'Run AI Compliance Check'}</span>
+              <FileSearch size={15} />
+              <span>{isAnalyzing ? 'Evaluating Regulatory Norms...' : 'Execute Compliance Screening'}</span>
             </button>
           </div>
         </div>
 
-        {/* Right: AI Review Findings */}
-        <div className="ai-panel">
-          <div className="ai-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Sparkles size={20} color="#7e22ce" />
-              <h3 style={{ margin: 0, fontFamily: 'Manrope', fontSize: 16, color: '#581c87' }}>
-                AI-Assisted Scrutiny Findings
+        {/* Right: Scrutiny Findings */}
+        <div className="panel-card" style={{ background: '#ffffff', display: 'flex', flexDirection: 'column' }}>
+          <div className="panel-header">
+            <div>
+              <h3>
+                <ShieldCheck size={16} color="var(--primary)" />
+                Regulatory Scrutiny Findings
               </h3>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                Automated rule checking & statutory discrepancy detection
+              </span>
             </div>
+
             {analysisResult && (
-              <span className="ai-mode-badge">
-                {analysisResult.mode === 'real_llm' ? `LIVE LLM (${analysisResult.model})` : 'DEMO MODE (Deterministic Fallback)'}
+              <span className="badge badge-stage">
+                {analysisResult.mode === 'real_llm' ? `LIVE LLM (${analysisResult.model})` : 'DETERMINISTIC FALLBACK'}
               </span>
             )}
           </div>
 
           {!analysisResult ? (
-            <div style={{ textAlign: 'center', padding: '60px 20px', color: '#7e22ce' }}>
-              <Sparkles size={36} style={{ margin: '0 auto 12px', opacity: 0.5 }} />
-              <p style={{ fontSize: 13, margin: 0, fontWeight: 500 }}>
-                Select a sample document on the left and click "Run AI Compliance Check" to view automated structured findings.
+            <div className="empty-state" style={{ padding: '60px 20px', margin: 'auto 0' }}>
+              <FileSearch size={32} color="#94a3b8" />
+              <h4>No Document Analyzed Yet</h4>
+              <p>
+                Select one of the pre-loaded regulatory samples or upload a document on the left, then click "Execute Compliance Screening".
               </p>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {/* Executive Summary */}
-              <div style={{ background: '#ffffff', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid #f3e8ff' }}>
-                <b style={{ fontSize: 11, color: '#7e22ce', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+              <div style={{
+                background: '#f8fafc',
+                padding: '12px 14px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border-subtle)'
+              }}>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block', marginBottom: 3 }}>
                   Executive Summary
-                </b>
-                <p style={{ margin: 0, fontSize: 13, lineHeight: 1.4, color: 'var(--text-main)' }}>
+                </span>
+                <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: 'var(--text-main)' }}>
                   {analysisResult.summary}
                 </p>
               </div>
 
               {/* Extracted Fields */}
-              <div className="ai-section">
-                <h4>Extracted Regulatory Metadata</h4>
-                <div className="ai-fields-grid">
+              <div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
+                  Extracted Regulatory Metadata
+                </span>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                  gap: 8,
+                  background: '#f8fafc',
+                  padding: '10px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-subtle)'
+                }}>
                   {Object.entries(analysisResult.extracted_fields || {}).map(([key, val]) => (
-                    <div key={key} className="ai-field-item">
-                      <b>{key}</b>
-                      <span>{val}</span>
+                    <div key={key} style={{ fontSize: 11 }}>
+                      <b style={{ color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: 10, display: 'block' }}>{key}</b>
+                      <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{val}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
               {/* Discrepancies and Inconsistencies */}
-              <div className="ai-section">
-                <h4>Discrepancies & Regulatory Inconsistencies</h4>
-                <div style={{ background: '#fff5f5', padding: '12px 14px', borderRadius: 'var(--radius-md)', border: '1px solid #fed7d7' }}>
-                  <ul className="ai-flags-list">
-                    {analysisResult.potential_inconsistencies.map((flag, idx) => (
-                      <li key={idx}>
-                        <AlertTriangle size={13} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />
-                        {flag}
-                      </li>
-                    ))}
-                  </ul>
+              {analysisResult.potential_inconsistencies && analysisResult.potential_inconsistencies.length > 0 && (
+                <div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#b91c1c', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
+                    Flagged Discrepancies & Regulatory Inconsistencies ({analysisResult.potential_inconsistencies.length})
+                  </span>
+                  <div style={{
+                    background: '#fef2f2',
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid #fecaca'
+                  }}>
+                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11, color: '#991b1b', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {analysisResult.potential_inconsistencies.map((flag, idx) => (
+                        <li key={idx}>{flag}</li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Human Verification Checklist */}
-              <div className="ai-section">
-                <h4>Human Officer Verification Checklist</h4>
-                <div style={{ background: '#eff6ff', padding: '12px 14px', borderRadius: 'var(--radius-md)', border: '1px solid #bfdbfe' }}>
-                  <ul className="ai-questions-list">
-                    {analysisResult.verification_questions.map((q, idx) => (
-                      <li key={idx}>
-                        <HelpCircle size={13} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />
-                        {q}
-                      </li>
-                    ))}
-                  </ul>
+              {analysisResult.verification_questions && analysisResult.verification_questions.length > 0 && (
+                <div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#1e40af', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
+                    Human Verification Checklist for Scrutinizing Officer
+                  </span>
+                  <div style={{
+                    background: '#eff6ff',
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid #bfdbfe'
+                  }}>
+                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11, color: '#1e3a8a', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {analysisResult.verification_questions.map((q, idx) => (
+                        <li key={idx}>{q}</li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
+              )}
+
+              {/* Statutory Disclaimer */}
+              <div style={{
+                padding: '8px 12px',
+                background: '#f8fafc',
+                borderLeft: '3px solid #64748b',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 11,
+                color: '#475569',
+                lineHeight: 1.4
+              }}>
+                <b>Statutory Guardrail:</b> {analysisResult.disclaimer}
               </div>
 
-              {/* Confidence Rating & Official Disclaimer */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
-                <span style={{ color: '#6b21a8' }}>
-                  Norms Matching Confidence: <b>{(analysisResult.confidence_score * 100).toFixed(0)}%</b>
-                </span>
-                <span style={{ color: '#6b21a8' }}>
-                  Evaluated under APH 2026-27 Norms
-                </span>
-              </div>
-
-              <div className="ai-disclaimer">
-                <b>Statutory Guardrail Notice:</b> {analysisResult.disclaimer}
-              </div>
-
-              {/* Official Review Action */}
-              {user?.role !== 'institution' && (
-                <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+              {/* Binding Officer Disposition Action */}
+              {user?.role !== 'institution' && uploadedDocId && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 4, paddingTop: 10, borderTop: '1px solid var(--border-subtle)' }}>
                   <button
                     className="btn-primary"
-                    style={{ background: '#16a34a', borderColor: '#16a34a', flex: 1, justifyContent: 'center' }}
-                    onClick={() => setSuccessMsg('Document marked as ACCEPTED by scrutiny officer.')}
+                    style={{ background: '#047857', borderColor: '#047857', flex: 1, justifyContent: 'center' }}
+                    disabled={isDispositionLoading}
+                    onClick={() => handleRecordDisposition('ACCEPTED')}
                   >
-                    <CheckCircle2 size={15} />
-                    <span>Accept Document Findings</span>
+                    <CheckCircle2 size={14} />
+                    <span>Accept Document (Compliant)</span>
                   </button>
                   <button
                     className="btn-secondary"
                     style={{ borderColor: '#ea580c', color: '#c2410c', flex: 1, justifyContent: 'center' }}
-                    onClick={() => setSuccessMsg('Document marked as requiring applicant correction.')}
+                    disabled={isDispositionLoading}
+                    onClick={() => handleRecordDisposition('CORRECTION_REQUIRED')}
                   >
-                    <AlertTriangle size={15} />
-                    <span>Demand Document Correction</span>
+                    <AlertTriangle size={14} />
+                    <span>Demand Rectification</span>
                   </button>
                 </div>
               )}
