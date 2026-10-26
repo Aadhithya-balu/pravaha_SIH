@@ -605,11 +605,41 @@ textarea:focus-visible,
 .badge-completed { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
 .badge-verified { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
 .badge-pending { background: #f8fafc; color: #475569; border-color: #cbd5e1; }
+.badge-draft { background: #f8fafc; color: #475569; border: 1px dashed #94a3b8; }
 .badge-stage { background: #f8fafc; color: #334155; border-color: #cbd5e1; font-weight: 700; }
 .badge-critical { background: #fef2f2; color: #991b1b; border-color: #f87171; }
 .badge-high { background: #fff7ed; color: #9a3412; border-color: #fdba74; }
 .badge-warning { background: #fffbeb; color: #92400e; border-color: #fcd34d; }
 .badge-info { background: #eff6ff; color: #1e40af; border-color: #93c5fd; }
+
+.form-tab-bar {
+  display: flex;
+  gap: 8px;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+}
+
+.form-tab-btn {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.form-tab-btn.active {
+  background: #ffffff;
+  color: var(--primary);
+  border-color: var(--border-subtle);
+  box-shadow: var(--shadow-sm);
+}
 
 /* --- Forms & Filter Bars --- */
 .filter-bar {

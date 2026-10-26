@@ -3,7 +3,6 @@ import {
   Search,
   Plus,
   Eye,
-  Filter,
   CheckCircle2,
   AlertTriangle,
   RotateCcw,
@@ -13,10 +12,15 @@ import {
   Building2,
   Calendar,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Filter,
+  BookOpen,
+  GraduationCap,
+  Upload,
+  FileText
 } from 'lucide-react';
 import { Application, User } from '../types';
-import { api } from '../api';
+import { createApplication, uploadApplicationDocument } from '../api';
 
 interface ApplicationsTabProps {
   applications: Application[];
@@ -51,12 +55,19 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Form fields
+  // Journey selection
+  const [journeyTab, setJourneyTab] = useState<'EOA' | 'NEW_PROGRAMME'>('EOA');
   const [institutionName, setInstitutionName] = useState(user?.institution_name || '');
-  const [appType, setAppType] = useState('Extension of Approval');
+  const [academicYear, setAcademicYear] = useState('2026-2027');
   const [region, setRegion] = useState(user?.region || 'Northern');
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
+  const [courseName, setCourseName] = useState('');
+  const [intakeCapacity, setIntakeCapacity] = useState('60');
+
+  // Attached document during creation
+  const [attachedDoc, setAttachedDoc] = useState<File | null>(null);
+  const [attachedDocType, setAttachedDocType] = useState('LEASE_DEED');
 
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -140,23 +151,33 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
     regionFilter !== 'ALL' ||
     slaFilter !== 'ALL';
 
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleCreate(isDraft: boolean = false) {
     setIsSubmitting(true);
     setErrorMsg('');
     try {
-      await api('/applications', {
-        method: 'POST',
-        body: JSON.stringify({
-          institution_name: user?.role === 'institution' ? user.institution_name : institutionName,
-          application_type: appType,
-          region,
-          due_date: dueDate || null,
-          notes,
-          academic_year: '2026-2027'
-        })
+      const typeLabel = journeyTab === 'EOA' ? 'Extension of Approval' : 'New Programme / Level';
+      const declaredNotes = notes || (journeyTab === 'NEW_PROGRAMME'
+        ? `Proposed New Course: ${courseName || 'B.Tech AI & Data Science'}, Approved Intake: ${intakeCapacity}`
+        : 'Regular Extension of Approval proposal for existing approved programmes.');
+
+      const created = await createApplication({
+        application_type: typeLabel,
+        academic_year: academicYear,
+        notes: declaredNotes,
+        region,
+        due_date: dueDate || null,
+        is_draft: isDraft
       });
+
+      // If document attached, upload it
+      if (attachedDoc && created && created.id) {
+        await uploadApplicationDocument(created.id, attachedDoc, attachedDocType, attachedDoc.name);
+      }
+
       setIsCreateOpen(false);
+      setAttachedDoc(null);
+      setNotes('');
+      setCourseName('');
       onRefresh();
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to create application.');
@@ -177,6 +198,8 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
     }
 
     switch (a.status) {
+      case 'DRAFT':
+        return <span className="badge badge-draft">Draft</span>;
       case 'IN_PROGRESS':
         return <span className="badge badge-in_progress">In Progress</span>;
       case 'RETURNED':
@@ -232,9 +255,11 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
         {/* Panel Header */}
         <div className="panel-header">
           <div>
-            <h3>Regulatory Applications Workbench</h3>
+            <h3>
+              {user?.role === 'institution' ? 'Institutional Applications Register' : 'Regulatory Applications Workbench'}
+            </h3>
             <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              Official registry of technical institute applications for scrutiny and statutory approval
+              Official registry of technical institute proposals for scrutiny and statutory approval
             </span>
           </div>
 
@@ -242,7 +267,7 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
             {user?.role !== 'evc_expert' && (
               <button className="btn-primary" onClick={() => setIsCreateOpen(true)}>
                 <Plus size={14} />
-                <span>Register Application</span>
+                <span>{user?.role === 'institution' ? 'File New Application' : 'Register Application'}</span>
               </button>
             )}
           </div>
@@ -296,6 +321,7 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
             aria-label="Filter by status"
           >
             <option value="ALL">All Statuses</option>
+            <option value="DRAFT">Draft</option>
             <option value="IN_PROGRESS">In Progress</option>
             <option value="RETURNED">Returned (Deficient)</option>
             <option value="OVERDUE">Overdue (SLA Breach)</option>
@@ -313,6 +339,7 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
           >
             <option value="ALL">All Application Types</option>
             <option value="Extension of Approval">Extension of Approval (EoA)</option>
+            <option value="New Programme">New Programme / Level</option>
             <option value="New Institution">New Institution</option>
             <option value="New Course">New Course / Intake</option>
             <option value="Institutional Change">Institutional Change</option>
@@ -365,7 +392,7 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
           )}
         </div>
 
-        {/* Data Table */}
+        {/* Applications Data Table */}
         <div className="table-responsive">
           <table className="data-table" aria-label="Applications table">
             <thead>
@@ -473,7 +500,7 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
                     </td>
                     <td>{getStatusBadge(a)}</td>
                     <td>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{a.submission_date}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{a.submission_date || 'Draft'}</span>
                     </td>
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -574,9 +601,28 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
       {/* New Application Modal */}
       {isCreateOpen && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
-          <div className="modal-dialog">
+          <div className="modal-dialog" style={{ width: 'min(760px, 95%)' }}>
             <div className="modal-header">
-              <h3>Register New Regulatory Application</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 'var(--radius-md)',
+                  background: '#dbeafe',
+                  color: '#1d4ed8',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Plus size={18} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16 }}>Register AICTE Regulatory Application</h3>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    Regulatory Workflow Automation · AICTE Approval Process Handbook (APH)
+                  </span>
+                </div>
+              </div>
               <button
                 style={{ background: 'transparent', border: 0, cursor: 'pointer' }}
                 onClick={() => setIsCreateOpen(false)}
@@ -585,86 +631,199 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
                 <X size={18} />
               </button>
             </div>
-            <form onSubmit={handleCreate}>
-              <div className="modal-body">
-                {errorMsg && <div className="alert-banner danger">{errorMsg}</div>}
 
-                {user?.role !== 'institution' ? (
-                  <div className="form-group">
-                    <label>Institution Name *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Government Engineering College"
-                      value={institutionName}
-                      onChange={(e) => setInstitutionName(e.target.value)}
-                    />
-                  </div>
-                ) : (
-                  <div className="form-group">
-                    <label>Applicant Institution</label>
-                    <input type="text" disabled value={user.institution_name || ''} />
-                  </div>
-                )}
+            <div className="modal-body" style={{ gap: 16 }}>
+              {errorMsg && <div className="alert-banner danger">{errorMsg}</div>}
 
+              {/* Institution Identity Banner */}
+              <div style={{
+                background: '#f8fafc',
+                padding: '12px 16px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 8
+              }}>
+                <div>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
+                    Applicant Institution
+                  </span>
+                  <b style={{ fontSize: 13, color: 'var(--text-main)' }}>
+                    {user?.institution_name || institutionName || 'Applicant College'}
+                  </b>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
+                    Jurisdiction
+                  </span>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>
+                    {user?.region || region} Region
+                  </span>
+                </div>
+              </div>
+
+              {/* Application Journey Switcher */}
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
+                  Select Application Journey Type *
+                </label>
+                <div className="form-tab-bar">
+                  <button
+                    type="button"
+                    className={`form-tab-btn ${journeyTab === 'EOA' ? 'active' : ''}`}
+                    onClick={() => {
+                      setJourneyTab('EOA');
+                      setAttachedDocType('LEASE_DEED');
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      <BookOpen size={15} />
+                      <span>1. Extension of Approval (EOA)</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    className={`form-tab-btn ${journeyTab === 'NEW_PROGRAMME' ? 'active' : ''}`}
+                    onClick={() => {
+                      setJourneyTab('NEW_PROGRAMME');
+                      setAttachedDocType('LAND_CONVERSION');
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      <GraduationCap size={15} />
+                      <span>2. New Programme / Level</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Form Fields */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <div className="form-group">
-                  <label>Application Type *</label>
-                  <select value={appType} onChange={(e) => setAppType(e.target.value)}>
-                    <option value="Extension of Approval">Extension of Approval (EoA)</option>
-                    <option value="New Institution">New Institution Approval</option>
-                    <option value="New Course">New Course / Intake Increase</option>
-                    <option value="Institutional Change">Institutional Change / Site Relocation</option>
-                    <option value="Compliance Submission">Statutory Compliance Submission</option>
-                  </select>
+                  <label>Academic Cycle *</label>
+                  <input
+                    type="text"
+                    required
+                    value={academicYear}
+                    onChange={(e) => setAcademicYear(e.target.value)}
+                    placeholder="2026-2027"
+                  />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                  <div className="form-group">
-                    <label>AICTE Region</label>
-                    <select value={region} onChange={(e) => setRegion(e.target.value)}>
-                      <option value="Northern">Northern Region (Kanpur/Noida)</option>
-                      <option value="Western">Western Region (Mumbai/Pune)</option>
-                      <option value="Southern">Southern Region (Bengaluru/Chennai)</option>
-                      <option value="Eastern">Eastern Region (Kolkata)</option>
-                      <option value="Central">Central Region (Bhopal)</option>
-                      <option value="HQ">AICTE Head Office (New Delhi)</option>
-                    </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label>Target Scrutiny Due Date</label>
-                    <input
-                      type="date"
-                      value={dueDate}
-                      onChange={(e) => setDueDate(e.target.value)}
-                    />
-                  </div>
-                </div>
-
                 <div className="form-group">
-                  <label>Application Notes & Scope</label>
-                  <textarea
-                    rows={3}
-                    placeholder="Brief description of application scope, programs, intake capacity..."
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
+                  <label>Target Scrutiny Completion Date</label>
+                  <input
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
                   />
                 </div>
               </div>
 
-              <div className="modal-footer">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setIsCreateOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary" disabled={isSubmitting}>
-                  {isSubmitting ? 'Registering...' : 'Register Application'}
-                </button>
+              {journeyTab === 'NEW_PROGRAMME' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 14 }}>
+                  <div className="form-group">
+                    <label>Proposed New Course / Programme *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. B.Tech Computer Science & AI"
+                      value={courseName}
+                      onChange={(e) => setCourseName(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Proposed Intake Capacity *</label>
+                    <input
+                      type="number"
+                      placeholder="60"
+                      value={intakeCapacity}
+                      onChange={(e) => setIntakeCapacity(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {user?.role !== 'institution' && (
+                <div className="form-group">
+                  <label>Institution Name *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Government Engineering College"
+                    value={institutionName}
+                    onChange={(e) => setInstitutionName(e.target.value)}
+                  />
+                </div>
+              )}
+
+              <div className="form-group">
+                <label>Institutional Declaration & Scope</label>
+                <textarea
+                  rows={2}
+                  placeholder="Summary of existing approved programmes, faculties, or site details..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                />
               </div>
-            </form>
+
+              {/* Initial Document Attachment */}
+              <div style={{ padding: '12px', background: '#f8fafc', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
+                  Attach Regulatory Document (Optional)
+                </span>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <select
+                    className="filter-select"
+                    value={attachedDocType}
+                    onChange={(e) => setAttachedDocType(e.target.value)}
+                  >
+                    <option value="LEASE_DEED">Registered Land Lease Deed</option>
+                    <option value="FIRE_NOC">Fire & Life Safety NOC</option>
+                    <option value="BUILDING_PLAN">Approved Building Plan</option>
+                    <option value="AFFIDAVIT">Mandatory Statutory Undertaking</option>
+                    <option value="LAND_CONVERSION">Land Use Conversion Certificate</option>
+                  </select>
+                  <input
+                    type="file"
+                    accept=".pdf,.docx,.txt"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        setAttachedDoc(e.target.files[0]);
+                      }
+                    }}
+                    style={{ fontSize: 12, padding: '4px' }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setIsCreateOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={isSubmitting}
+                onClick={() => handleCreate(true)}
+              >
+                {isSubmitting ? 'Saving...' : 'Save as Draft'}
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={isSubmitting}
+                onClick={() => handleCreate(false)}
+              >
+                {isSubmitting ? 'Submitting...' : 'Submit for Scrutiny'}
+              </button>
+            </div>
           </div>
         </div>
       )}

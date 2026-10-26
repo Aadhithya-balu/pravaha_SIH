@@ -34,7 +34,7 @@ import {
   CorrectionRequest,
   ApplicationDetailResponse
 } from '../types';
-import { api, apiUpload } from '../api';
+import { api, apiUpload, submitApplication } from '../api';
 
 interface ApplicationDetailModalProps {
   application: Application;
@@ -146,6 +146,23 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
       onRefresh();
     } catch (err: any) {
       setErrorMsg(err.message || 'Transition failed.');
+    } finally {
+      setIsActionLoading(false);
+    }
+  }
+
+  // Formal submit from draft
+  async function handleFormalSubmit() {
+    setIsActionLoading(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      await submitApplication(details.id);
+      setSuccessMsg('Application formally submitted for regulatory scrutiny.');
+      await loadDetails();
+      onRefresh();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Submission failed.');
     } finally {
       setIsActionLoading(false);
     }
@@ -356,6 +373,7 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
 
   const currentStageIndex = stageList.indexOf(details.current_stage);
   const isReturned = details.current_stage === 'RETURNED_FOR_CLARIFICATION' || details.status === 'RETURNED';
+  const isDraft = details.status === 'DRAFT';
   const isOfficerOrAdmin = user?.role === 'officer' || user?.role === 'bureau' || user?.role === 'admin';
   const isInstitution = user?.role === 'institution';
 
@@ -388,6 +406,7 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                 <span className={`badge ${
                   details.status === 'COMPLETED' ? 'badge-completed' :
                   details.status === 'RETURNED' ? 'badge-returned' :
+                  details.status === 'DRAFT' ? 'badge-draft' :
                   details.status === 'OVERDUE' ? 'badge-overdue' : 'badge-in_progress'
                 }`}>
                   {details.status}
@@ -495,6 +514,29 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
           {/* TAB 1: WORKFLOW & OVERVIEW */}
           {activeTab === 'OVERVIEW' && (
             <>
+              {/* Draft Banner */}
+              {isDraft && (
+                <div className="alert-banner info">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <FileText size={18} />
+                    <div>
+                      <b style={{ display: 'block' }}>Draft Application Proposal:</b>
+                      <span>This proposal is saved in draft mode. Upload all mandatory documents and click "Submit for Scrutiny" to initiate formal review.</span>
+                    </div>
+                  </div>
+                  {isInstitution && (
+                    <button
+                      className="btn-primary"
+                      disabled={isActionLoading}
+                      onClick={handleFormalSubmit}
+                    >
+                      <Send size={13} />
+                      <span>Formal Submit</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Returned Case Banner */}
               {isReturned && (
                 <div className="alert-banner warning">
@@ -533,12 +575,12 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
 
                 <div className="stepper-container">
                   {stageList.map((stg, idx) => {
-                    const isPassed = !isReturned && currentStageIndex > idx;
+                    const isPassed = !isReturned && !isDraft && currentStageIndex > idx;
                     const isCurrent = !isReturned && currentStageIndex === idx;
 
                     let stateClass = '';
                     if (isPassed || details.current_stage === 'COMPLETED') stateClass = 'completed';
-                    if (isCurrent) stateClass = 'current';
+                    if (isCurrent && !isDraft) stateClass = 'current';
                     if (isReturned && currentStageIndex === idx) stateClass = 'returned';
 
                     return (
@@ -598,7 +640,7 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                     <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
                       Submission Date
                     </span>
-                    <span>{details.submission_date}</span>
+                    <span>{details.submission_date || 'Draft'}</span>
                   </div>
                   <div>
                     <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
@@ -633,6 +675,18 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                       Contextual Actions ({user?.role})
                     </span>
                   </div>
+
+                  {/* Draft Formal Submit */}
+                  {isInstitution && isDraft && (
+                    <button
+                      className="btn-primary"
+                      disabled={isActionLoading}
+                      onClick={handleFormalSubmit}
+                    >
+                      <Send size={14} />
+                      <span>Formally Submit for Scrutiny</span>
+                    </button>
+                  )}
 
                   {/* Officer Scrutiny trigger */}
                   {isOfficerOrAdmin && (details.current_stage === 'SCRUTINY' || details.current_stage === 'RE_SCRUTINY') && (
@@ -916,9 +970,9 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {correctionRequests.map((cr) => (
+                  {correctionRequests.map((cr, idx) => (
                     <div
-                      key={cr.id}
+                      key={cr.id || idx}
                       style={{
                         padding: '16px',
                         borderRadius: 'var(--radius-md)',
@@ -932,13 +986,13 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                     >
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div>
-                          <b style={{ fontSize: 12, color: '#9a3412' }}>Correction Request #{cr.id}</b>
+                          <b style={{ fontSize: 12, color: '#9a3412' }}>Correction Request #{cr.id || idx + 1}</b>
                           <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>
-                            Requested by {cr.requested_by} on {new Date(cr.created_at).toLocaleString()}
+                            {cr.requested_by ? `Requested by ${cr.requested_by}` : ''} on {new Date(cr.created_at).toLocaleString()}
                           </span>
                         </div>
                         <span className={`badge ${cr.status === 'RESOLVED' ? 'badge-completed' : (cr.status === 'RESUBMITTED' ? 'badge-in_progress' : 'badge-returned')}`}>
-                          {cr.status}
+                          {cr.status || 'PENDING'}
                         </span>
                       </div>
 

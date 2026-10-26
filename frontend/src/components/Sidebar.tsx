@@ -35,7 +35,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const allNavItems = [
     {
       id: 'Overview',
-      label: 'Overview',
+      label: role === 'institution' ? 'Institution Overview' : 'Overview',
       icon: LayoutDashboard,
       roles: ['officer', 'bureau', 'institution', 'evc_expert', 'admin']
     },
@@ -60,13 +60,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'Compliance',
-      label: role === 'institution' ? 'Compliance & Undertakings' : 'Compliance & Expiry',
+      label: role === 'institution' ? 'Compliance Evidence' : 'Compliance & Expiry',
       icon: FileCheck2,
       roles: ['officer', 'bureau', 'institution', 'admin']
     },
     {
       id: 'Alerts',
-      label: 'Alerts & Escalations',
+      label: role === 'institution' ? 'Notifications' : 'Alerts & Escalations',
       icon: Bell,
       badge: unreadAlertsCount,
       roles: ['officer', 'bureau', 'institution', 'evc_expert', 'admin']

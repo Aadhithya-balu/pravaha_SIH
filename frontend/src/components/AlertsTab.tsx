@@ -9,7 +9,7 @@ import {
   Building2
 } from 'lucide-react';
 import { AlertItem, User } from '../types';
-import { api } from '../api';
+import { api, markNotificationRead } from '../api';
 
 interface AlertsTabProps {
   alerts: AlertItem[];
@@ -37,7 +37,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
 
   async function handleMarkRead(aid: number) {
     try {
-      await api(`/alerts/${aid}/read`, { method: 'POST' });
+      await markNotificationRead(aid);
       onRefresh();
     } catch (err: any) {
       console.error(err);

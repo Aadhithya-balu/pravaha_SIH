@@ -16,7 +16,7 @@ export interface Application {
   institution_name: string;
   application_type: string;
   current_stage: string;
-  status: 'IN_PROGRESS' | 'RETURNED' | 'OVERDUE' | 'COMPLETED' | 'REJECTED';
+  status: 'DRAFT' | 'IN_PROGRESS' | 'RETURNED' | 'OVERDUE' | 'COMPLETED' | 'REJECTED';
   assigned_to: string;
   assigned_role: string;
   region: string;
@@ -26,6 +26,7 @@ export interface Application {
   deficiency_count: number;
   academic_year: string;
   created_at: string;
+  updated_at?: string;
   created_by?: number | null;
   form_data?: string | null;
   decision_outcome?: string | null;
@@ -114,12 +115,15 @@ export interface ScrutinyFinding {
 }
 
 export interface CorrectionRequest {
-  id: number;
-  application_id: number;
-  requested_by: string;
+  id?: number;
+  application_id?: number;
+  requested_by?: string;
+  source?: 'RETURN_DEFICIENCY' | 'DOCUMENT_CORRECTION';
   reason: string;
+  document_id?: number | null;
+  document_name?: string | null;
   deficiencies_json?: string | null;
-  status: 'PENDING' | 'RESUBMITTED' | 'RESOLVED';
+  status?: 'PENDING' | 'RESUBMITTED' | 'RESOLVED' | string;
   institution_response?: string | null;
   response_submitted_at?: string | null;
   resolved_at?: string | null;
