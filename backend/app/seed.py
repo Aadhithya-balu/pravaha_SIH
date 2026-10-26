@@ -271,6 +271,16 @@ def seed_database(db: Session):
             details="Returned: Revenue department land conversion order (CLU) is incomplete; provide attested copy within 7 days."
         )
     ]
+    # Compute cryptographic hash chain for seeded audit events
+    import hashlib
+    app_prev_hashes = {}
+    for ev in audit_events:
+        prev = app_prev_hashes.get(ev.application_id, "GENESIS")
+        ev.prev_hash = prev
+        payload = f"{ev.application_id}|{ev.actor}|{ev.actor_role}|{ev.action}|{ev.from_stage or ''}|{ev.to_stage or ''}|{ev.details}|{ev.prev_hash}"
+        ev.event_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        app_prev_hashes[ev.application_id] = ev.event_hash
+
     db.add_all(audit_events)
 
     # 5. Seed Documents

@@ -24,11 +24,10 @@ def run_escalation_engine(db: Session) -> dict:
                     a.status = "OVERDUE"
                     updated_records += 1
 
-                # Check duplicate alert
+                # Check duplicate alert for unresolved overdue event
                 exists = db.query(Alert).filter(
                     Alert.application_id == a.id,
-                    Alert.trigger_type == "DEADLINE_OVERDUE",
-                    Alert.created_at >= datetime.utcnow() - timedelta(days=1)
+                    Alert.trigger_type == "DEADLINE_OVERDUE"
                 ).first()
 
                 if not exists:
@@ -47,8 +46,7 @@ def run_escalation_engine(db: Session) -> dict:
             elif 0 <= days_diff <= 7:
                 exists = db.query(Alert).filter(
                     Alert.application_id == a.id,
-                    Alert.trigger_type == "DEADLINE_APPROACHING",
-                    Alert.created_at >= datetime.utcnow() - timedelta(days=1)
+                    Alert.trigger_type == "DEADLINE_APPROACHING"
                 ).first()
 
                 if not exists:
@@ -67,8 +65,7 @@ def run_escalation_engine(db: Session) -> dict:
         if a.status == "RETURNED":
             exists = db.query(Alert).filter(
                 Alert.application_id == a.id,
-                Alert.trigger_type == "CLARIFICATION_PENDING",
-                Alert.created_at >= datetime.utcnow() - timedelta(days=2)
+                Alert.trigger_type == "CLARIFICATION_PENDING"
             ).first()
             if not exists:
                 db.add(Alert(
@@ -94,8 +91,8 @@ def run_escalation_engine(db: Session) -> dict:
 
             exists = db.query(Alert).filter(
                 Alert.institution_name == c.institution_name,
-                Alert.title.like(f"%Compliance Overdue: {c.item_type}%"),
-                Alert.created_at >= datetime.utcnow() - timedelta(days=1)
+                Alert.trigger_type == "COMPLIANCE_OVERDUE",
+                Alert.title == f"Compliance Overdue: {c.item_type}"
             ).first()
 
             if not exists:
@@ -113,8 +110,8 @@ def run_escalation_engine(db: Session) -> dict:
         elif 0 <= days_diff <= 14:
             exists = db.query(Alert).filter(
                 Alert.institution_name == c.institution_name,
-                Alert.title.like(f"%Compliance Due Soon: {c.item_type}%"),
-                Alert.created_at >= datetime.utcnow() - timedelta(days=2)
+                Alert.trigger_type == "COMPLIANCE_DUE_SOON",
+                Alert.title == f"Compliance Due Soon: {c.item_type}"
             ).first()
 
             if not exists:
@@ -136,8 +133,7 @@ def run_escalation_engine(db: Session) -> dict:
         if 0 <= days_diff <= 5:
             exists = db.query(Alert).filter(
                 Alert.application_id == v.application_id,
-                Alert.trigger_type == "EVC_REMINDER",
-                Alert.created_at >= datetime.utcnow() - timedelta(days=2)
+                Alert.trigger_type == "EVC_REMINDER"
             ).first()
 
             if not exists:
