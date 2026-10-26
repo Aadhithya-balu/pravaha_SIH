@@ -7,6 +7,7 @@ from uuid import uuid4
 from typing import Optional, List, Any, Dict
 
 from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Form, Response, APIRouter
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, desc
@@ -24,11 +25,15 @@ from .schemas import (
     ComplianceEvidenceSubmit, ComplianceVerify, ComplianceOut, EVCVisitCreate,
     EVCVisitUpdate, EVCVisitOut, DocumentUploadCheck, DocumentReviewAction,
     AlertOut, DashboardMetrics, OfficerScrutinyRequest, OfficerCorrectionRequest,
-    OfficerRescrutinyComplete, OfficerAdvanceStage, OfficerDecisionRequest
+    OfficerRescrutinyComplete, OfficerAdvanceStage, OfficerDecisionRequest,
+    FindingDispositionRequest
 )
-from .workflow import get_available_transitions, validate_transition, TRANSITION_RULES, WORKFLOW_STAGES, APPLICATION_STATUSES
+from .workflow import (
+    get_available_transitions, validate_transition, TRANSITION_RULES,
+    WORKFLOW_STAGES, APPLICATION_STATUSES, record_audit_event, verify_audit_chain
+)
 from .ai_service import review_document
-from .doc_extractor import process_and_store_upload
+from .doc_extractor import process_and_store_upload, UPLOAD_DIR
 from .scrutiny import execute_scrutiny_pipeline, normalize_application_route, ROUTE_EOA, ROUTE_NEW_PROGRAMME
 from .escalation import run_escalation_engine
 from .seed import seed_database, password_hash
@@ -100,6 +105,33 @@ evc_or_officer = require_roles(["evc_expert", "officer", "admin"])
 admin_only = require_roles(["admin"])
 
 
+def check_officer_jurisdiction(user: User, application: Application):
+    """Regional officers may only act on applications in their assigned region."""
+    if user.role == "officer" and user.region and user.region != "HQ":
+        if application.region != user.region and application.assigned_to != user.name:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access denied. Application region '{application.region}' is outside your authorized regional jurisdiction '{user.region}'."
+            )
+
+
+def check_evc_assignment(user: User, application: Application, db: Session):
+    """EVC experts may only access applications for inspections to which they are assigned."""
+    if user.role == "evc_expert":
+        is_assigned = db.query(EVCVisit).filter(
+            EVCVisit.application_id == application.id,
+            or_(
+                EVCVisit.committee_members.ilike(f"%{user.name}%"),
+                EVCVisit.committee_members.ilike(f"%{user.email}%")
+            )
+        ).first() is not None or application.assigned_to == user.name or application.assigned_role == "evc_expert"
+        if not is_assigned:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied. You are not assigned to an inspection committee for this application."
+            )
+
+
 @app.on_event("startup")
 def startup():
     Base.metadata.create_all(engine)
@@ -164,12 +196,23 @@ def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_us
     q = db.query(Application)
     cq = db.query(ComplianceItem)
 
-    # Institution data isolation
+    # Role and tenant data isolation
     if user.role == "institution":
         q = q.filter(Application.institution_name == user.institution_name)
         cq = cq.filter(ComplianceItem.institution_name == user.institution_name)
     elif user.role == "officer" and user.region and user.region != "HQ":
-        q = q.filter(Application.region == user.region)
+        q = q.filter(or_(Application.region == user.region, Application.assigned_to == user.name))
+        cq = cq.filter(ComplianceItem.institution_name.in_(db.query(Institution.name).filter(Institution.region == user.region)))
+    elif user.role == "evc_expert":
+        assigned_app_ids = db.query(EVCVisit.application_id).filter(
+            or_(
+                EVCVisit.committee_members.ilike(f"%{user.name}%"),
+                EVCVisit.committee_members.ilike(f"%{user.email}%")
+            )
+        ).all()
+        app_ids = [x[0] for x in assigned_app_ids]
+        q = q.filter(or_(Application.id.in_(app_ids), Application.assigned_to == user.name, Application.assigned_role == "evc_expert"))
+        cq = cq.filter(ComplianceItem.application_id.in_(app_ids))
 
     apps = q.all()
     today = date.today()
@@ -190,10 +233,20 @@ def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_us
     evc_pending_count = sum(1 for a in apps if a.current_stage in ["EVC_PENDING", "EVC_SCHEDULED"])
     compliance_pending_count = cq.filter(ComplianceItem.status.in_(["PENDING", "OVERDUE"])).count()
 
-    # Fetch top urgent alerts
+    # Fetch top urgent alerts with tenant isolation
     aq = db.query(Alert).filter(Alert.severity.in_(["HIGH", "CRITICAL"]))
     if user.role == "institution":
-        aq = aq.filter(or_(Alert.target_role == "institution", Alert.institution_name == user.institution_name))
+        aq = aq.filter(
+            or_(
+                Alert.institution_name == user.institution_name,
+                and_(Alert.institution_name.is_(None), Alert.target_role.in_(["institution", "all"]))
+            )
+        )
+    elif user.role == "officer" and user.region and user.region != "HQ":
+        aq = aq.filter(or_(Alert.target_role.in_(["officer", "all"]), Alert.recipient_user_id == user.id))
+    elif user.role == "evc_expert":
+        aq = aq.filter(or_(Alert.target_role.in_(["evc_expert", "all"]), Alert.recipient_user_id == user.id))
+
     alerts_data = [
         {"id": al.id, "title": al.title, "message": al.message, "severity": al.severity, "created_at": al.created_at.isoformat()}
         for al in aq.order_by(desc(Alert.created_at)).limit(5).all()
@@ -229,11 +282,20 @@ def list_applications(
 ):
     q = db.query(Application)
 
-    # Server-side institution data isolation
+    # Server-side institution and regional isolation
     if user.role == "institution":
         q = q.filter(Application.institution_name == user.institution_name)
     elif user.role == "officer" and user.region and user.region != "HQ":
         q = q.filter(or_(Application.region == user.region, Application.assigned_to == user.name))
+    elif user.role == "evc_expert":
+        assigned_app_ids = db.query(EVCVisit.application_id).filter(
+            or_(
+                EVCVisit.committee_members.ilike(f"%{user.name}%"),
+                EVCVisit.committee_members.ilike(f"%{user.email}%")
+            )
+        ).all()
+        app_ids = [x[0] for x in assigned_app_ids]
+        q = q.filter(or_(Application.id.in_(app_ids), Application.assigned_to == user.name, Application.assigned_role == "evc_expert"))
 
     if stage:
         q = q.filter(Application.current_stage == stage)
@@ -270,7 +332,7 @@ def create_application(
     form_data_str = None
     if req.form_data:
         form_data_str = json.dumps(req.form_data) if isinstance(req.form_data, dict) else str(req.form_data)
-    is_draft = getattr(req, "is_draft", False)
+    is_draft = getattr(req, "is_draft", False) or ("draft" in (req.notes or "").lower())
     stage = "DRAFT" if is_draft else "SCRUTINY"
     status = "DRAFT" if is_draft else "IN_PROGRESS"
     assigned_to = "Applicant Institution" if is_draft else "Regional Officer"
@@ -295,7 +357,8 @@ def create_application(
     db.add(app_record)
     db.flush()
 
-    audit = AuditEvent(
+    record_audit_event(
+        db=db,
         application_id=app_record.id,
         actor=user.email,
         actor_role=user.role,
@@ -304,7 +367,6 @@ def create_application(
         to_stage=stage,
         details=f"Draft application created by {user.name}." if is_draft else f"Application registered by {user.name} ({user.role}) for {req.application_type}. Initial scrutiny workflow initiated."
     )
-    db.add(audit)
 
     # Trigger officer alert
     if not is_draft:
@@ -331,6 +393,9 @@ def get_application_details(aid: int, db: Session = Depends(get_db), user: User 
 
     if user.role == "institution" and a.institution_name != user.institution_name:
         raise HTTPException(status_code=403, detail="Forbidden. You can only inspect your own institution's cases.")
+
+    check_officer_jurisdiction(user, a)
+    check_evc_assignment(user, a, db)
 
     # Fetch transitions available to this role
     transitions = get_available_transitions(a.current_stage, user.role, a.application_type)
@@ -414,7 +479,8 @@ def patch_application(
     if req.form_data is not None:
         a.form_data = json.dumps(req.form_data) if isinstance(req.form_data, dict) else str(req.form_data)
 
-    db.add(AuditEvent(
+    record_audit_event(
+        db=db,
         application_id=aid,
         actor=user.email,
         actor_role=user.role,
@@ -422,7 +488,7 @@ def patch_application(
         from_stage=a.current_stage,
         to_stage=a.current_stage,
         details=f"Application metadata / form fields updated by {user.name}."
-    ))
+    )
 
     db.commit()
     db.refresh(a)
@@ -447,6 +513,9 @@ async def upload_application_document(
 
     if user.role == "institution" and a.institution_name != user.institution_name:
         raise HTTPException(status_code=403, detail="Forbidden. Cannot upload documents for another institution's case.")
+
+    if a.status in ["COMPLETED", "REJECTED"]:
+        raise HTTPException(status_code=400, detail="Cannot upload documents for an application that has reached final decision.")
 
     # Ingest file safely via doc_extractor
     upload_res = await process_and_store_upload(file)
@@ -475,7 +544,8 @@ async def upload_application_document(
     )
     db.add(doc)
 
-    db.add(AuditEvent(
+    record_audit_event(
+        db=db,
         application_id=aid,
         actor=user.email,
         actor_role=user.role,
@@ -483,7 +553,7 @@ async def upload_application_document(
         from_stage=a.current_stage,
         to_stage=a.current_stage,
         details=f"Uploaded '{upload_res['original_filename']}' ({document_type}, {round(upload_res['file_size']/1024, 1)} KB)."
-    ))
+    )
 
     db.commit()
     db.refresh(doc)
@@ -516,12 +586,19 @@ def submit_application(
     if user.role == "institution" and a.institution_name != user.institution_name:
         raise HTTPException(status_code=403, detail="Forbidden. Cannot submit another institution's case.")
 
+    if a.status != "DRAFT" and a.current_stage != "DRAFT":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Application cannot be submitted. Current status: '{a.status}', stage: '{a.current_stage}'. Only draft applications can be submitted."
+        )
+
     prev_stage = a.current_stage
     a.current_stage = "SCRUTINY"
     a.status = "IN_PROGRESS"
     a.submission_date = date.today()
 
-    db.add(AuditEvent(
+    record_audit_event(
+        db=db,
         application_id=aid,
         actor=user.email,
         actor_role=user.role,
@@ -529,7 +606,7 @@ def submit_application(
         from_stage=prev_stage,
         to_stage="SCRUTINY",
         details="Application formally submitted by institution for regulatory scrutiny."
-    ))
+    )
 
     db.add(Alert(
         title=f"Application Submitted: {a.reference}",
@@ -588,7 +665,8 @@ def resubmit_application(
         pending_cr.institution_response = response_text
         pending_cr.response_submitted_at = datetime.utcnow()
 
-    db.add(AuditEvent(
+    record_audit_event(
+        db=db,
         application_id=aid,
         actor=user.email,
         actor_role=user.role,
@@ -596,7 +674,7 @@ def resubmit_application(
         from_stage=prev_stage,
         to_stage="RE_SCRUTINY",
         details=f"Institutional Clarification: {response_text}"
-    ))
+    )
 
     db.add(Alert(
         title=f"Application Resubmitted: {a.reference}",
@@ -635,6 +713,15 @@ def transition_application(
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
 
+    if a.current_stage == "COMPLETED" or a.status in ["COMPLETED", "REJECTED"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot perform transition on application that has already reached a final decision."
+        )
+
+    check_officer_jurisdiction(user, a)
+    check_evc_assignment(user, a, db)
+
     if user.role == "institution":
         if a.institution_name != user.institution_name:
             raise HTTPException(status_code=403, detail="Forbidden. Cannot modify other institutions' records.")
@@ -664,7 +751,8 @@ def transition_application(
     if req.reason.strip():
         details += f" | Justification: {req.reason.strip()}"
 
-    db.add(AuditEvent(
+    record_audit_event(
+        db=db,
         application_id=aid,
         actor=user.email,
         actor_role=user.role,
@@ -672,7 +760,7 @@ def transition_application(
         from_stage=prev_stage,
         to_stage=new_stage,
         details=details
-    ))
+    )
 
     # If returned, notify institution
     if new_status == "RETURNED":
@@ -738,6 +826,8 @@ def officer_get_application(
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
 
+    check_officer_jurisdiction(user, a)
+
     transitions = get_available_transitions(a.current_stage, user.role, a.application_type)
     audit_history = db.query(AuditEvent).filter(AuditEvent.application_id == aid).order_by(desc(AuditEvent.created_at)).all()
     docs = db.query(Document).filter(Document.application_id == aid).order_by(desc(Document.created_at)).all()
@@ -773,6 +863,8 @@ async def officer_run_scrutiny(
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
 
+    check_officer_jurisdiction(user, a)
+
     res = await execute_scrutiny_pipeline(
         application_id=aid,
         db=db,
@@ -780,7 +872,8 @@ async def officer_run_scrutiny(
         run_type=req.run_type
     )
 
-    db.add(AuditEvent(
+    record_audit_event(
+        db=db,
         application_id=aid,
         actor=user.email,
         actor_role=user.role,
@@ -788,7 +881,7 @@ async def officer_run_scrutiny(
         from_stage=a.current_stage,
         to_stage=a.current_stage,
         details=f"Automated regulatory scrutiny completed. Found {res['deficiency_count']} deficiency/deficiencies."
-    ))
+    )
     db.commit()
 
     return res
@@ -807,6 +900,8 @@ def officer_request_corrections(
     a = db.get(Application, aid)
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
+
+    check_officer_jurisdiction(user, a)
 
     rule = validate_transition(
         current_stage=a.current_stage,
@@ -833,7 +928,8 @@ def officer_request_corrections(
     )
     db.add(cr)
 
-    db.add(AuditEvent(
+    record_audit_event(
+        db=db,
         application_id=aid,
         actor=user.email,
         actor_role=user.role,
@@ -841,7 +937,7 @@ def officer_request_corrections(
         from_stage=prev_stage,
         to_stage="RETURNED_FOR_CLARIFICATION",
         details=f"Deficiency Memo / Clarification Request: {req.reason.strip()}"
-    ))
+    )
 
     db.add(Alert(
         title=f"Action Required: Clarifications Demanded for {a.reference}",
@@ -877,6 +973,8 @@ def officer_complete_rescrutiny(
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
 
+    check_officer_jurisdiction(user, a)
+
     if a.current_stage not in ["RE_SCRUTINY", "SCRUTINY"]:
         raise HTTPException(
             status_code=400,
@@ -908,7 +1006,8 @@ def officer_complete_rescrutiny(
         if req.remarks:
             details += f" Remarks: {req.remarks}"
 
-        db.add(AuditEvent(
+        record_audit_event(
+            db=db,
             application_id=aid,
             actor=user.email,
             actor_role=user.role,
@@ -916,7 +1015,7 @@ def officer_complete_rescrutiny(
             from_stage=prev_stage,
             to_stage=next_stage,
             details=details
-        ))
+        )
 
         db.add(Alert(
             title=f"Re-Scrutiny Cleared: {a.reference}",
@@ -944,7 +1043,8 @@ def officer_complete_rescrutiny(
         )
         db.add(cr)
 
-        db.add(AuditEvent(
+        record_audit_event(
+            db=db,
             application_id=aid,
             actor=user.email,
             actor_role=user.role,
@@ -952,7 +1052,7 @@ def officer_complete_rescrutiny(
             from_stage=prev_stage,
             to_stage="RETURNED_FOR_CLARIFICATION",
             details=f"Re-scrutiny Deficiencies: {reason}"
-        ))
+        )
 
         db.add(Alert(
             title=f"Re-Scrutiny Deficiencies Flagged: {a.reference}",
@@ -980,6 +1080,8 @@ def officer_advance_stage(
     a = db.get(Application, aid)
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
+
+    check_officer_jurisdiction(user, a)
 
     # Find matching action that achieves target_stage
     stage_rules = TRANSITION_RULES.get(a.current_stage, {})
@@ -1018,14 +1120,29 @@ def officer_record_decision(
     """
     Records statutory decision (APPROVED or REJECTED) on application.
     Generates approval order or speaking order of rejection.
+    Prevents duplicate or contradictory final decisions.
     """
     a = db.get(Application, aid)
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
 
+    if a.decision_outcome is not None or a.current_stage == "COMPLETED" or a.status in ["COMPLETED", "REJECTED"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Duplicate or contradictory final decision rejected. A final decision has already been recorded as '{a.decision_outcome}' on {a.decision_date}."
+        )
+
+    check_officer_jurisdiction(user, a)
+
     dec = req.decision.upper().strip()
     if dec not in ["APPROVED", "REJECTED"]:
         raise HTTPException(status_code=400, detail="Decision must be 'APPROVED' or 'REJECTED'.")
+
+    if dec == "REJECTED" and (not req.remarks or len(req.remarks.strip()) < 5):
+        raise HTTPException(
+            status_code=400,
+            detail="Speaking order remarks (minimum 5 characters) are mandatory when recording a rejection decision."
+        )
 
     prev_stage = a.current_stage
     a.current_stage = "COMPLETED"
@@ -1038,7 +1155,8 @@ def officer_record_decision(
 
     order_ref = req.approval_order_reference or f"AICTE/AB/{date.today().year}/{a.reference}"
 
-    db.add(AuditEvent(
+    record_audit_event(
+        db=db,
         application_id=aid,
         actor=user.email,
         actor_role=user.role,
@@ -1046,7 +1164,7 @@ def officer_record_decision(
         from_stage=prev_stage,
         to_stage="COMPLETED",
         details=f"Statutory Verdict: {dec} | Order Ref: {order_ref} | Remarks: {a.decision_remarks}"
-    ))
+    )
 
     db.add(Alert(
         title=f"AICTE Decision Order Issued: {dec} ({a.reference})",
@@ -1063,6 +1181,70 @@ def officer_record_decision(
     return a
 
 
+@app.post("/api/v1/officer/findings/{fid}/disposition")
+@app.post("/api/findings/{fid}/disposition")
+def dispose_scrutiny_finding(
+    fid: int,
+    req: FindingDispositionRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(officer_or_admin)
+):
+    """
+    Officer records disposition on a specific scrutiny finding (ACCEPTED, WAIVED, CORRECTION_REQUESTED).
+    Mandates remarks for waivers and records tamper-evident audit events.
+    """
+    finding = db.get(ScrutinyFinding, fid)
+    if not finding:
+        raise HTTPException(status_code=404, detail="Scrutiny finding not found.")
+
+    app_rec = db.get(Application, finding.application_id)
+    if not app_rec:
+        raise HTTPException(status_code=404, detail="Associated application not found.")
+
+    check_officer_jurisdiction(user, app_rec)
+
+    disp = req.disposition.upper().strip()
+    if disp not in ["ACCEPTED", "WAIVED", "CORRECTION_REQUESTED", "RESOLVED"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Disposition must be 'ACCEPTED', 'WAIVED', 'CORRECTION_REQUESTED', or 'RESOLVED'."
+        )
+
+    if disp == "WAIVED" and (not req.disposition_notes or len(req.disposition_notes.strip()) < 5):
+        raise HTTPException(
+            status_code=400,
+            detail="Mandatory justification (minimum 5 characters) is required when waiving a scrutiny finding."
+        )
+
+    finding.officer_disposition = disp
+    finding.disposition_notes = req.disposition_notes
+    finding.disposed_by = user.email
+    finding.disposed_at = datetime.utcnow()
+
+    # Recalculate remaining active deficiencies
+    active_deficiencies = db.query(ScrutinyFinding).filter(
+        ScrutinyFinding.application_id == app_rec.id,
+        ScrutinyFinding.severity == "DEFICIENCY",
+        ScrutinyFinding.officer_disposition.notin_(["WAIVED", "RESOLVED", "ACCEPTED"])
+    ).count()
+    app_rec.deficiency_count = active_deficiencies
+
+    record_audit_event(
+        db=db,
+        application_id=app_rec.id,
+        actor=user.email,
+        actor_role=user.role,
+        action=f"FINDING_{disp}",
+        from_stage=app_rec.current_stage,
+        to_stage=app_rec.current_stage,
+        details=f"Finding '{finding.rule_id}' ({finding.document_type}) disposed as {disp}. Remarks: {req.disposition_notes or 'None'}"
+    )
+
+    db.commit()
+    db.refresh(finding)
+    return finding
+
+
 # ==============================================================================
 # --- Notifications & Alerts APIs ---
 # ==============================================================================
@@ -1076,9 +1258,14 @@ def list_notifications(
 ):
     q = db.query(Alert)
     if user.role == "institution":
-        q = q.filter(or_(Alert.target_role == "institution", Alert.institution_name == user.institution_name))
+        q = q.filter(
+            or_(
+                Alert.institution_name == user.institution_name,
+                and_(Alert.institution_name.is_(None), Alert.target_role.in_(["institution", "all", "ALL"]))
+            )
+        )
     elif user.role != "admin":
-        q = q.filter(or_(Alert.target_role == user.role, Alert.target_role == "all", Alert.target_role == "officer"))
+        q = q.filter(or_(Alert.target_role == user.role, Alert.target_role == "all", Alert.target_role == "ALL", Alert.target_role == "officer", Alert.target_role == None))
 
     if unread_only:
         q = q.filter(Alert.is_read == False)
@@ -1092,6 +1279,8 @@ def mark_notification_read(aid: int, db: Session = Depends(get_db), user: User =
     al = db.get(Alert, aid)
     if not al:
         raise HTTPException(status_code=404, detail="Notification not found.")
+    if user.role == "institution" and al.institution_name and al.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden.")
     al.is_read = True
     db.commit()
     return {"id": aid, "is_read": True}
@@ -1107,6 +1296,49 @@ def list_documents(db: Session = Depends(get_db), user: User = Depends(get_curre
     if user.role == "institution":
         q = q.filter(Document.institution_name == user.institution_name)
     return q.order_by(desc(Document.created_at)).all()
+
+
+@app.get("/api/documents/{did}/download")
+def download_document(
+    did: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    doc = db.get(Document, did)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    if doc.application_id:
+        app_rec = db.get(Application, doc.application_id)
+        if app_rec:
+            if user.role == "institution" and app_rec.institution_name != user.institution_name:
+                raise HTTPException(status_code=403, detail="Forbidden. Cannot download other institutions' documents.")
+            elif user.role == "officer":
+                check_officer_jurisdiction(user, app_rec)
+            elif user.role == "evc":
+                check_evc_assignment(user, app_rec, db)
+    elif user.role == "institution" and doc.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden. Cannot download other institutions' documents.")
+
+    if not doc.file_path or not os.path.exists(doc.file_path):
+        if doc.extracted_text:
+            return Response(
+                content=doc.extracted_text,
+                media_type="text/plain",
+                headers={"Content-Disposition": f'attachment; filename="{doc.document_name}.txt"'}
+            )
+        raise HTTPException(status_code=404, detail="Document file not available on storage.")
+
+    norm_path = os.path.normcase(os.path.abspath(doc.file_path))
+    upload_norm = os.path.normcase(os.path.abspath(UPLOAD_DIR))
+    if not norm_path.startswith(upload_norm):
+        raise HTTPException(status_code=400, detail="Invalid document storage path.")
+
+    return FileResponse(
+        path=norm_path,
+        filename=doc.document_name,
+        media_type=doc.mime_type or "application/octet-stream"
+    )
 
 
 @app.post("/api/documents/check-text")
@@ -1158,6 +1390,20 @@ async def upload_document(
         review_status="PENDING"
     )
     db.add(doc)
+    db.flush()
+
+    if application_id:
+        record_audit_event(
+            db=db,
+            application_id=application_id,
+            actor=user.email,
+            actor_role=user.role,
+            action="DOC_UPLOADED",
+            from_stage=None,
+            to_stage=None,
+            details=f"Uploaded '{upload_res['original_filename']}' ({document_type}, {round(upload_res['file_size']/1024, 1)} KB)."
+        )
+
     db.commit()
     db.refresh(doc)
 
@@ -1181,19 +1427,27 @@ def review_document_action(
     if req.review_status not in ["ACCEPTED", "CORRECTION_REQUIRED"]:
         raise HTTPException(status_code=400, detail="Review status must be 'ACCEPTED' or 'CORRECTION_REQUIRED'.")
 
+    if doc.application_id:
+        app_rec = db.get(Application, doc.application_id)
+        if app_rec:
+            check_officer_jurisdiction(user, app_rec)
+
     doc.review_status = req.review_status
     doc.reviewer_notes = req.reviewer_notes
     doc.reviewed_by = user.email
     doc.reviewed_at = datetime.utcnow()
 
     if doc.application_id:
-        db.add(AuditEvent(
+        record_audit_event(
+            db=db,
             application_id=doc.application_id,
             actor=user.email,
             actor_role=user.role,
             action=f"DOC_{req.review_status}",
+            from_stage=None,
+            to_stage=None,
             details=f"Document '{doc.document_name}' marked as {req.review_status}. Remarks: {req.reviewer_notes}"
-        ))
+        )
 
     db.commit()
     db.refresh(doc)
@@ -1280,6 +1534,8 @@ def verify_compliance(
     if req.action == "VERIFY":
         c.status = "VERIFIED"
     elif req.action == "REJECT":
+        if not req.officer_comments or len(req.officer_comments.strip()) < 5:
+            raise HTTPException(status_code=400, detail="Officer comments (minimum 5 characters) are mandatory when rejecting compliance evidence.")
         c.status = "REJECTED"
     else:
         raise HTTPException(status_code=400, detail="Action must be 'VERIFY' or 'REJECT'.")
@@ -1287,6 +1543,18 @@ def verify_compliance(
     c.verified_by = user.email
     c.verified_at = datetime.utcnow()
     c.officer_comments = req.officer_comments
+
+    if c.application_id:
+        record_audit_event(
+            db=db,
+            application_id=c.application_id,
+            actor=user.email,
+            actor_role=user.role,
+            action=f"COMPLIANCE_{c.status}",
+            from_stage=None,
+            to_stage=None,
+            details=f"Compliance item '{c.item_type}' verified as {c.status} by {user.name}. Remarks: {req.officer_comments or 'None'}"
+        )
 
     db.commit()
     return {"id": cid, "status": c.status, "verified_by": c.verified_by, "comments": c.officer_comments}
@@ -1297,6 +1565,14 @@ def list_evc_visits(db: Session = Depends(get_db), user: User = Depends(get_curr
     q = db.query(EVCVisit)
     if user.role == "institution":
         q = q.filter(EVCVisit.institution_name == user.institution_name)
+    elif user.role == "evc":
+        q = q.filter(
+            or_(
+                EVCVisit.assigned_by == user.email,
+                EVCVisit.committee_members.ilike(f"%{user.email}%"),
+                EVCVisit.committee_members.ilike(f"%{user.name}%")
+            )
+        )
     return q.order_by(EVCVisit.scheduled_date).all()
 
 
@@ -1309,6 +1585,9 @@ def schedule_evc_visit(
     app_rec = db.get(Application, req.application_id)
     if not app_rec:
         raise HTTPException(status_code=404, detail="Associated application not found.")
+
+    if user.role == "officer":
+        check_officer_jurisdiction(user, app_rec)
 
     visit = EVCVisit(
         application_id=req.application_id,
@@ -1323,7 +1602,8 @@ def schedule_evc_visit(
 
     if app_rec.current_stage == "EVC_PENDING":
         app_rec.current_stage = "EVC_SCHEDULED"
-        db.add(AuditEvent(
+        record_audit_event(
+            db=db,
             application_id=app_rec.id,
             actor=user.email,
             actor_role=user.role,
@@ -1331,7 +1611,7 @@ def schedule_evc_visit(
             from_stage="EVC_PENDING",
             to_stage="EVC_SCHEDULED",
             details=f"EVC visit scheduled on {req.scheduled_date}. Panel: {req.committee_members}"
-        ))
+        )
 
     db.commit()
     db.refresh(visit)
@@ -1349,16 +1629,23 @@ def update_evc_visit(
     if not v:
         raise HTTPException(status_code=404, detail="EVC visit not found.")
 
+    app_rec = db.get(Application, v.application_id)
+    if app_rec:
+        if user.role == "officer":
+            check_officer_jurisdiction(user, app_rec)
+        elif user.role == "evc":
+            check_evc_assignment(user, app_rec, db)
+
     v.status = req.status
     if req.report_summary:
         v.report_summary = req.report_summary
     if req.recommendations:
         v.recommendations = req.recommendations
 
-    app_rec = db.get(Application, v.application_id)
     if app_rec and req.status == "COMPLETED" and app_rec.current_stage == "EVC_SCHEDULED":
         app_rec.current_stage = "EVC_COMPLETED"
-        db.add(AuditEvent(
+        record_audit_event(
+            db=db,
             application_id=app_rec.id,
             actor=user.email,
             actor_role=user.role,
@@ -1366,7 +1653,7 @@ def update_evc_visit(
             from_stage="EVC_SCHEDULED",
             to_stage="EVC_COMPLETED",
             details=f"EVC visit conducted. Findings: {req.report_summary}"
-        ))
+        )
 
     db.commit()
     db.refresh(v)
@@ -1470,6 +1757,7 @@ def v1_create_application(
         "Extension of Approval",
         "Extension of Approval (EOA)",
         "New Programme/Level",
+        "New Programme / Level",
         "New Course",
         "Compliance Submission",
         "New Institution",
@@ -1481,7 +1769,11 @@ def v1_create_application(
             detail=f"Invalid application type '{req.application_type}'. Must be one of: {valid_types}."
         )
 
-    if not req.is_draft:
+    # Check if this should be treated as draft
+    is_draft = getattr(req, "is_draft", False) or ("draft" in (req.notes or "").lower())
+    req.is_draft = is_draft
+
+    if not is_draft:
         if not req.notes or len(req.notes.strip()) < 5:
             raise HTTPException(
                 status_code=422,
@@ -1531,8 +1823,20 @@ def v1_patch_application(
         a.due_date = req.due_date
     if req.region is not None and user.role != "institution":
         a.region = req.region
+    if req.form_data is not None:
+        a.form_data = json.dumps(req.form_data) if isinstance(req.form_data, dict) else str(req.form_data)
 
     a.updated_at = datetime.utcnow()
+    record_audit_event(
+        db=db,
+        application_id=aid,
+        actor=user.email,
+        actor_role=user.role,
+        action="APP_UPDATED",
+        from_stage=a.current_stage,
+        to_stage=a.current_stage,
+        details=f"Application details updated by {user.name}."
+    )
     db.commit()
     db.refresh(a)
     return a
@@ -1554,60 +1858,67 @@ async def v1_upload_application_document(
     if user.role == "institution" and a.institution_name != user.institution_name:
         raise HTTPException(status_code=403, detail="Forbidden. You can only attach documents to your own applications.")
 
-    MAX_SIZE = 10 * 1024 * 1024  # 10MB
-    content = await file.read()
-    if len(content) > MAX_SIZE:
-        raise HTTPException(status_code=400, detail="File size exceeds maximum permitted limit of 10MB.")
+    if a.status in ["COMPLETED", "REJECTED"]:
+        raise HTTPException(status_code=400, detail="Cannot upload documents for an application that has reached final decision.")
 
-    extracted_text = ""
-    try:
-        extracted_text = content.decode("utf-8", errors="ignore")
-    except Exception:
-        extracted_text = f"Binary content ({len(content)} bytes) extracted from {file.filename}."
-
-    if not extracted_text.strip():
-        extracted_text = f"Regulatory document upload: {file.filename}."
+    upload_res = await process_and_store_upload(file)
 
     ai_result = await review_document(
-        document_name=document_name or file.filename or "uploaded_document.pdf",
+        document_name=document_name or upload_res["original_filename"],
         document_type=document_type,
-        text=extracted_text
+        text=upload_res["extracted_text"]
     )
 
     doc = Document(
         application_id=aid,
         institution_name=a.institution_name,
-        document_name=document_name or file.filename or "uploaded_doc.pdf",
+        document_name=document_name or upload_res["original_filename"],
         document_type=document_type,
-        file_path=None,
-        file_size=len(content),
-        mime_type=file.content_type or "application/pdf",
+        file_path=upload_res["stored_filepath"],
+        file_size=upload_res["file_size"],
+        mime_type=upload_res["mime_type"],
         uploaded_by=user.email,
-        extracted_text=extracted_text[:10000],
+        extracted_text=upload_res["extracted_text"][:10000],
         ai_summary=ai_result.get("summary"),
-        ai_findings=str(ai_result.get("potential_inconsistencies", [])),
-        ai_confidence=ai_result.get("confidence_score", 0.85),
+        ai_findings=json.dumps(ai_result),
+        ai_confidence=float(ai_result.get("confidence_score", 0.9)),
         review_status="PENDING"
     )
     db.add(doc)
     db.flush()
 
-    db.add(AuditEvent(
+    record_audit_event(
+        db=db,
         application_id=aid,
         actor=user.email,
         actor_role=user.role,
         action="DOC_UPLOADED",
+        from_stage=a.current_stage,
+        to_stage=a.current_stage,
         details=f"Document '{doc.document_name}' ({doc.document_type}) uploaded by {user.name}."
-    ))
+    )
     a.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(doc)
 
     return {
         "message": f"Document '{doc.document_name}' successfully attached to application {a.reference}.",
-        "document": doc,
+        "document": {
+            "id": doc.id,
+            "application_id": doc.application_id,
+            "document_name": doc.document_name,
+            "document_type": doc.document_type,
+            "file_size": doc.file_size,
+            "review_status": doc.review_status,
+            "created_at": doc.created_at.isoformat()
+        },
         "ai_analysis": ai_result
     }
+
+
+@v1_router.get("/documents/{did}/download")
+def v1_download_document(did: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return download_document(did=did, db=db, user=user)
 
 
 @v1_router.post("/applications/{aid}/submit", response_model=ApplicationOut)
@@ -1650,7 +1961,8 @@ def v1_submit_application(
     a.submission_date = date.today()
     a.updated_at = datetime.utcnow()
 
-    db.add(AuditEvent(
+    record_audit_event(
+        db=db,
         application_id=aid,
         actor=user.email,
         actor_role=user.role,
@@ -1658,7 +1970,7 @@ def v1_submit_application(
         from_stage=prev_stage,
         to_stage="SCRUTINY",
         details=f"Application formally submitted for regulatory scrutiny by {user.name} ({user.role}) with {doc_count} document(s)."
-    ))
+    )
 
     db.add(Alert(
         title=f"New Application Submitted: {a.reference}",
@@ -1705,22 +2017,33 @@ def v1_resubmit_application(
             detail="A detailed rectification explanation (minimum 3 characters) is mandatory when resubmitting an application."
         )
 
+    target_stage = "RE_SCRUTINY" if req.response_text else "SCRUTINY"
     prev_stage = a.current_stage
-    a.current_stage = "SCRUTINY"
+    a.current_stage = target_stage
     a.status = "IN_PROGRESS"
     a.assigned_to = "Regional Officer"
     a.assigned_role = "officer"
     a.updated_at = datetime.utcnow()
 
-    db.add(AuditEvent(
+    # Resolve pending correction requests
+    pending_crs = db.query(CorrectionRequest).filter(
+        CorrectionRequest.application_id == aid,
+        CorrectionRequest.status == "PENDING"
+    ).all()
+    for cr in pending_crs:
+        cr.status = "RESUBMITTED"
+        cr.institution_response = reason.strip()
+
+    record_audit_event(
+        db=db,
         application_id=aid,
         actor=user.email,
         actor_role=user.role,
         action="RESUBMIT",
         from_stage=prev_stage,
-        to_stage="SCRUTINY",
+        to_stage=target_stage,
         details=f"Clarification resubmitted by {user.name} ({user.role}): {reason.strip()}"
-    ))
+    )
 
     db.add(Alert(
         title=f"Clarification Resubmitted: {a.reference}",
@@ -1747,6 +2070,16 @@ def v1_get_timeline(aid: int, db: Session = Depends(get_db), user: User = Depend
     return db.query(AuditEvent).filter(AuditEvent.application_id == aid).order_by(AuditEvent.created_at.asc()).all()
 
 
+@v1_router.get("/applications/{aid}/audit/verify")
+def v1_verify_audit(aid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+    if user.role == "institution" and a.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden.")
+    return verify_audit_chain(db, aid)
+
+
 @v1_router.get("/notifications", response_model=List[AlertOut])
 def v1_list_notifications(
     db: Session = Depends(get_db),
@@ -1757,15 +2090,13 @@ def v1_list_notifications(
         q = q.filter(
             or_(
                 Alert.institution_name == user.institution_name,
-                and_(Alert.target_role == "institution", Alert.institution_name == None)
+                and_(Alert.institution_name.is_(None), Alert.target_role.in_(["institution", "all", "ALL"]))
             )
         )
     else:
         q = q.filter(
             or_(
-                Alert.target_role == user.role,
-                Alert.target_role == "ALL",
-                Alert.target_role == None
+                Alert.target_role.in_([user.role, "all", "ALL", None])
             )
         )
     return q.order_by(desc(Alert.created_at)).all()
@@ -1777,6 +2108,8 @@ def v1_mark_notification_read(nid: int, db: Session = Depends(get_db), user: Use
     al = db.get(Alert, nid)
     if not al:
         raise HTTPException(status_code=404, detail="Notification not found.")
+    if user.role == "institution" and al.institution_name and al.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden.")
     al.is_read = True
     db.commit()
     db.refresh(al)
