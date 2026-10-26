@@ -26,6 +26,12 @@ export interface Application {
   deficiency_count: number;
   academic_year: string;
   created_at: string;
+  created_by?: number | null;
+  form_data?: string | null;
+  decision_outcome?: string | null;
+  decision_remarks?: string | null;
+  decision_by?: string | null;
+  decision_date?: string | null;
 }
 
 export interface AuditEvent {
@@ -74,6 +80,51 @@ export interface AiAnalysisResult {
   confidence_score: number;
   disclaimer: string;
   mode_fallback_reason?: string;
+}
+
+export interface ScrutinyRun {
+  id: number;
+  application_id: number;
+  run_type: 'INITIAL' | 'RE_SCRUTINY';
+  conducted_by: string;
+  status: 'PASSED' | 'DEFICIENCIES_FOUND' | 'PENDING_REVIEW';
+  summary: string;
+  missing_docs?: string | null;
+  rule_results?: string | null;
+  ai_assisted: boolean;
+  created_at: string;
+}
+
+export interface ScrutinyFinding {
+  id: number;
+  scrutiny_run_id?: number | null;
+  application_id: number;
+  rule_id: string;
+  document_type: string;
+  severity: 'INFO' | 'WARNING' | 'DEFICIENCY';
+  category: string;
+  description: string;
+  evidence_quote?: string | null;
+  suggested_action?: string | null;
+  officer_disposition: 'PENDING' | 'ACCEPTED' | 'WAIVED' | 'CORRECTION_REQUESTED';
+  disposition_notes?: string | null;
+  disposed_by?: string | null;
+  disposed_at?: string | null;
+  created_at: string;
+}
+
+export interface CorrectionRequest {
+  id: number;
+  application_id: number;
+  requested_by: string;
+  reason: string;
+  deficiencies_json?: string | null;
+  status: 'PENDING' | 'RESUBMITTED' | 'RESOLVED';
+  institution_response?: string | null;
+  response_submitted_at?: string | null;
+  resolved_at?: string | null;
+  resolved_by?: string | null;
+  created_at: string;
 }
 
 export interface EVCVisit {
@@ -144,4 +195,15 @@ export interface AvailableTransition {
   target_stage: string;
   target_status: string;
   description: string;
+}
+
+export interface ApplicationDetailResponse {
+  application: Application;
+  available_transitions: AvailableTransition[];
+  audit_history: AuditEvent[];
+  documents: DocumentRecord[];
+  evc_visit?: EVCVisit | null;
+  scrutiny_runs?: ScrutinyRun[];
+  scrutiny_findings?: ScrutinyFinding[];
+  correction_requests?: CorrectionRequest[];
 }

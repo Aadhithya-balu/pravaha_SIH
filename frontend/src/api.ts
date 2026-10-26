@@ -7,16 +7,37 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> || {})
   };
-  
+
   const authTok = token();
   if (authTok) {
     headers.Authorization = `Bearer ${authTok}`;
   }
-  
+
   const res = await fetch(BASE_URL + path, { ...options, headers });
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({}));
     const message = errorBody.detail || `Request failed with status ${res.status}`;
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+export async function apiUpload<T = any>(path: string, formData: FormData): Promise<T> {
+  const headers: Record<string, string> = {};
+  const authTok = token();
+  if (authTok) {
+    headers.Authorization = `Bearer ${authTok}`;
+  }
+
+  const res = await fetch(BASE_URL + path, {
+    method: 'POST',
+    headers,
+    body: formData
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({}));
+    const message = errorBody.detail || `Upload failed with status ${res.status}`;
     throw new Error(message);
   }
   return res.json();
