@@ -155,24 +155,6 @@ export async function markNotificationRead(id: number): Promise<any> {
   });
 }
 
-export async function downloadCsv(reportType: 'applications' | 'compliance'): Promise<void> {
-  const authTok = token();
-  const res = await fetch(`${BASE_URL}/reports/export-csv?report_type=${reportType}`, {
-    headers: authTok ? { Authorization: `Bearer ${authTok}` } : {}
-  });
-  if (!res.ok) {
-    throw new Error('Failed to generate CSV export.');
-  }
-  const blob = await res.blob();
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `aicte_${reportType}_${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  window.URL.revokeObjectURL(url);
-}
 
 // --- Scrutiny & Explainable Evidence Review API Helpers ---
 
