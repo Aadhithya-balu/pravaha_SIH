@@ -154,3 +154,46 @@ export async function markNotificationRead(id: number): Promise<any> {
     method: 'PATCH'
   });
 }
+
+export async function downloadCsv(reportType: 'applications' | 'compliance'): Promise<void> {
+  const authTok = token();
+  const res = await fetch(`${BASE_URL}/reports/export-csv?report_type=${reportType}`, {
+    headers: authTok ? { Authorization: `Bearer ${authTok}` } : {}
+  });
+  if (!res.ok) {
+    throw new Error('Failed to generate CSV export.');
+  }
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `aicte_${reportType}_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+}
+
+// --- Scrutiny & Explainable Evidence Review API Helpers ---
+
+export async function runScrutiny(applicationId: number, runType: string = 'INITIAL'): Promise<any> {
+  return api(`/scrutiny/run/${applicationId}`, {
+    method: 'POST',
+    body: JSON.stringify({ run_type: runType })
+  });
+}
+
+export async function fetchDocumentReview(documentId: number): Promise<any> {
+  return api(`/documents/${documentId}/review`);
+}
+
+export async function updateFindingDisposition(findingId: number, disposition: string, remarks: string): Promise<any> {
+  return api(`/scrutiny/findings/${findingId}/disposition`, {
+    method: 'POST',
+    body: JSON.stringify({ disposition, remarks })
+  });
+}
+
+export async function fetchApplicationScrutiny(applicationId: number): Promise<any> {
+  return api(`/scrutiny/applications/${applicationId}`);
+}
