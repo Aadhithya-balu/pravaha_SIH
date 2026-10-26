@@ -5,7 +5,8 @@ import {
   CheckCircle2,
   Lock,
   Mail,
-  ArrowRight
+  ArrowRight,
+  Shield
 } from 'lucide-react';
 import { api, token, fetchApplications, fetchNotifications } from './api';
 import { User, Application, AlertItem, DashboardMetrics } from './types';
@@ -54,10 +55,10 @@ export default function App() {
       setAlerts(al);
     } catch (err: any) {
       console.error('Data load error:', err);
-      if (err.message && err.message.includes('401')) {
+      if (err.message && (err.message.includes('401') || err.message.includes('Authentication required'))) {
         handleSignOut();
       } else {
-        setErrorMsg(err.message);
+        setErrorMsg(err.message || 'Failed to retrieve operational data.');
       }
     }
   }
@@ -81,9 +82,9 @@ export default function App() {
       });
       localStorage.setItem('ps4_token', res.access_token);
       setAuthToken(res.access_token);
-      setToastMsg(`Signed in successfully as ${res.name} (${res.role}).`);
+      setToastMsg(`Authenticated as ${res.name} (${res.role.toUpperCase()}).`);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Login failed.');
+      setErrorMsg(err.message || 'Authentication failed. Please check credentials.');
     } finally {
       setIsLoggingIn(false);
     }
@@ -108,11 +109,11 @@ export default function App() {
     try {
       const result = await api('/escalation/run-check', { method: 'POST' });
       setToastMsg(
-        `Deadline evaluation complete: ${result.created_alerts} new alerts triggered, ${result.updated_records} records updated.`
+        `Regulatory deadline evaluation complete: ${result.created_alerts} alert(s) triggered, ${result.updated_records} record(s) escalated.`
       );
       await loadData();
     } catch (err: any) {
-      setErrorMsg(err.message);
+      setErrorMsg(err.message || 'Deadline scan failed.');
     } finally {
       setIsScanning(false);
     }
@@ -124,16 +125,18 @@ export default function App() {
       <main className="login-wrap">
         <div className="login-card">
           <div className="login-emblem">
-            <ShieldCheck size={32} />
+            <Shield size={26} />
           </div>
 
           <div className="login-header">
-            <small style={{ fontSize: 11, fontWeight: 800, color: '#64748b', letterSpacing: '0.12em' }}>
-              SIH PROTOTYPE · PROBLEM STATEMENT 4
-            </small>
-            <h1>AICTE Approval Workflow Hub</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+              <span style={{ fontSize: 10, fontWeight: 800, color: '#64748b', letterSpacing: '0.12em' }}>
+                ALL INDIA COUNCIL FOR TECHNICAL EDUCATION
+              </span>
+            </div>
+            <h1>Pravaha Regulatory Hub</h1>
             <p>
-              Automated scrutiny transitions, EVC scheduling, AI document review, and real-time compliance monitoring.
+              Automated document scrutiny, statutory workflow engine, EVC panel scheduling, and real-time compliance monitoring.
             </p>
           </div>
 
@@ -141,45 +144,43 @@ export default function App() {
 
           <form onSubmit={(e) => handleLogin(e)}>
             <div className="form-group" style={{ marginBottom: 12 }}>
-              <label>Official Email</label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  type="email"
-                  required
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="e.g. officer@demo.local"
-                />
-              </div>
+              <label>Official Email Address</label>
+              <input
+                type="email"
+                required
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                placeholder="officer@demo.local"
+                autoComplete="email"
+              />
             </div>
 
-            <div className="form-group" style={{ marginBottom: 18 }}>
+            <div className="form-group" style={{ marginBottom: 16 }}>
               <label>Password</label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  type="password"
-                  required
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="Enter your password"
-                />
-              </div>
+              <input
+                type="password"
+                required
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                placeholder="Enter password"
+                autoComplete="current-password"
+              />
             </div>
 
             <button
               type="submit"
               className="btn-primary"
-              style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
+              style={{ width: '100%', justifyContent: 'center', padding: '10px 14px' }}
               disabled={isLoggingIn}
             >
-              <span>{isLoggingIn ? 'Authenticating...' : 'Sign in to Portal'}</span>
-              <ArrowRight size={15} />
+              <span>{isLoggingIn ? 'Authenticating with AICTE Gateway...' : 'Access Regulatory Portal'}</span>
+              <ArrowRight size={14} />
             </button>
           </form>
 
           {/* Quick Demo Logins Box */}
           <div className="demo-account-box">
-            <b>1-Click Demo Evaluation Accounts (Password: DemoPass123!)</b>
+            <b>Evaluation Personas (Password: DemoPass123!)</b>
             <div className="demo-account-buttons">
               <button
                 type="button"
@@ -189,7 +190,7 @@ export default function App() {
                   handleLogin(undefined, 'officer@demo.local', 'DemoPass123!');
                 }}
               >
-                1. Regional Officer
+                1. Regional Officer (RO)
               </button>
               <button
                 type="button"
@@ -199,7 +200,7 @@ export default function App() {
                   handleLogin(undefined, 'college@demo.local', 'DemoPass123!');
                 }}
               >
-                2. College Applicant
+                2. Applicant College
               </button>
               <button
                 type="button"
@@ -209,7 +210,7 @@ export default function App() {
                   handleLogin(undefined, 'bureau@demo.local', 'DemoPass123!');
                 }}
               >
-                3. Bureau Head (HQ)
+                3. Bureau Advisor (HQ)
               </button>
               <button
                 type="button"
@@ -219,7 +220,7 @@ export default function App() {
                   handleLogin(undefined, 'evc@demo.local', 'DemoPass123!');
                 }}
               >
-                4. EVC Panel Expert
+                4. EVC Expert Panel
               </button>
             </div>
           </div>
@@ -261,6 +262,7 @@ export default function App() {
               <button
                 style={{ background: 'transparent', border: 0, cursor: 'pointer', fontWeight: 800 }}
                 onClick={() => setErrorMsg('')}
+                aria-label="Dismiss alert"
               >
                 ×
               </button>
@@ -278,6 +280,7 @@ export default function App() {
               <button
                 style={{ background: 'transparent', border: 0, cursor: 'pointer', fontWeight: 800 }}
                 onClick={() => setToastMsg('')}
+                aria-label="Dismiss toast"
               >
                 ×
               </button>
@@ -299,7 +302,7 @@ export default function App() {
           />
         )}
 
-        {currentTab === 'AI Assistant' && (
+        {(currentTab === 'Document Scrutiny' || currentTab === 'AI Assistant') && (
           <DocumentReviewTab user={user} />
         )}
 

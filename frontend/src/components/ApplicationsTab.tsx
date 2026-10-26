@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Search,
   Plus,
@@ -6,14 +6,18 @@ import {
   CheckCircle2,
   AlertTriangle,
   RotateCcw,
-  Clock,
-  FileText,
-  Upload,
   X,
+  Clock,
+  ArrowUpDown,
+  Building2,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
   BookOpen,
   GraduationCap,
-  Building2,
-  Calendar
+  Upload,
+  FileText
 } from 'lucide-react';
 import { Application, User } from '../types';
 import { createApplication, uploadApplicationDocument } from '../api';
@@ -35,270 +39,447 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
   const [stageFilter, setStageFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [typeFilter, setTypeFilter] = useState('ALL');
+  const [regionFilter, setRegionFilter] = useState('ALL');
+  const [slaFilter, setSlaFilter] = useState('ALL');
 
-  // Modal State
+  // Sorting
+  const [sortField, setSortField] = useState<keyof Application>('created_at');
+  const [sortAsc, setSortAsc] = useState(false);
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // Create form modal state
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'EOA' | 'NEW_PROGRAMME'>('EOA');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submittingAction, setSubmittingAction] = useState<'draft' | 'submit' | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Form Fields - Common
+  // Journey selection
+  const [journeyTab, setJourneyTab] = useState<'EOA' | 'NEW_PROGRAMME'>('EOA');
+  const [institutionName, setInstitutionName] = useState(user?.institution_name || '');
   const [academicYear, setAcademicYear] = useState('2026-2027');
+  const [region, setRegion] = useState(user?.region || 'Northern');
   const [dueDate, setDueDate] = useState('');
+  const [notes, setNotes] = useState('');
+  const [courseName, setCourseName] = useState('');
+  const [intakeCapacity, setIntakeCapacity] = useState('60');
 
-  // Form Fields - EOA
-  const [existingIntake, setExistingIntake] = useState('B.Tech Computer Science: 120 seats, B.Tech Electronics: 60 seats, B.Tech Mechanical: 60 seats');
-  const [landCompliance, setLandCompliance] = useState('Registered Land Lease valid through 2060; fire safety clearance attested');
-  const [eoaNotes, setEoaNotes] = useState('Annual Extension of Approval request for academic year 2026-2027 with ongoing intake.');
-
-  // Form Fields - New Programme/Level
-  const [programmeName, setProgrammeName] = useState('B.Tech in Artificial Intelligence & Machine Learning');
-  const [programmeLevel, setProgrammeLevel] = useState('Undergraduate (UG)');
-  const [proposedIntake, setProposedIntake] = useState(60);
-  const [labReadiness, setLabReadiness] = useState('Computing laboratory equipped with 40 GPU-enabled workstations, optical fiber LAN, and licensed simulation suites.');
-  const [newProgrammeNotes, setNewProgrammeNotes] = useState('Proposal for introduction of new high-demand emerging technology programme.');
-
-  // Attached File
-  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  // Attached document during creation
+  const [attachedDoc, setAttachedDoc] = useState<File | null>(null);
   const [attachedDocType, setAttachedDocType] = useState('LEASE_DEED');
-  const [attachedDocName, setAttachedDocName] = useState('');
 
-  const filteredApps = applications.filter((a) => {
-    const matchesSearch =
-      a.reference.toLowerCase().includes(search.toLowerCase()) ||
-      a.institution_name.toLowerCase().includes(search.toLowerCase()) ||
-      (a.notes && a.notes.toLowerCase().includes(search.toLowerCase()));
-    const matchesStage = stageFilter === 'ALL' || a.current_stage === stageFilter;
-    const matchesStatus = statusFilter === 'ALL' || a.status === statusFilter;
-    const matchesType =
-      typeFilter === 'ALL' ||
-      a.application_type === typeFilter ||
-      (typeFilter === 'Extension of Approval' && a.application_type.includes('Extension of Approval')) ||
-      (typeFilter === 'New Programme/Level' && a.application_type.includes('New Programme'));
-    return matchesSearch && matchesStage && matchesStatus && matchesType;
-  });
+  const todayStr = new Date().toISOString().split('T')[0];
 
-  function resetForm() {
-    setErrorMsg('');
-    setAcademicYear('2026-2027');
-    setDueDate('');
-    setExistingIntake('B.Tech Computer Science: 120 seats, B.Tech Electronics: 60 seats, B.Tech Mechanical: 60 seats');
-    setLandCompliance('Registered Land Lease valid through 2060; fire safety clearance attested');
-    setEoaNotes('Annual Extension of Approval request for academic year 2026-2027 with ongoing intake.');
-    setProgrammeName('B.Tech in Artificial Intelligence & Machine Learning');
-    setProgrammeLevel('Undergraduate (UG)');
-    setProposedIntake(60);
-    setLabReadiness('Computing laboratory equipped with 40 GPU-enabled workstations, optical fiber LAN, and licensed simulation suites.');
-    setNewProgrammeNotes('Proposal for introduction of new high-demand emerging technology programme.');
-    setAttachedFile(null);
-    setAttachedDocName('');
-  }
+  const filteredApps = useMemo(() => {
+    return applications.filter((a) => {
+      const q = search.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        a.reference.toLowerCase().includes(q) ||
+        a.institution_name.toLowerCase().includes(q) ||
+        (a.region && a.region.toLowerCase().includes(q));
 
-  function handleOpenCreate() {
-    resetForm();
-    setIsCreateOpen(true);
-  }
+      const matchesStage = stageFilter === 'ALL' || a.current_stage === stageFilter;
+      const matchesStatus = statusFilter === 'ALL' || a.status === statusFilter;
+      const matchesType = typeFilter === 'ALL' || a.application_type.toLowerCase().includes(typeFilter.toLowerCase());
+      const matchesRegion = regionFilter === 'ALL' || a.region === regionFilter;
 
-  async function handleSubmit(isDraft: boolean) {
-    setIsSubmitting(true);
-    setSubmittingAction(isDraft ? 'draft' : 'submit');
-    setErrorMsg('');
-
-    try {
-      let appType = '';
-      let compositeNotes = '';
-
-      if (activeTab === 'EOA') {
-        appType = 'Extension of Approval (EOA)';
-        compositeNotes = `${eoaNotes.trim()}\nExisting Intake: ${existingIntake.trim()}\nCompliance Status: ${landCompliance.trim()}`;
-      } else {
-        appType = 'New Programme/Level';
-        compositeNotes = `${newProgrammeNotes.trim()}\nProposed Programme: ${programmeName.trim()} (${programmeLevel})\nProposed Intake: ${proposedIntake} seats\nLab Readiness: ${labReadiness.trim()}`;
+      let matchesSla = true;
+      if (slaFilter === 'OVERDUE') {
+        matchesSla = a.status === 'OVERDUE' || Boolean(a.due_date && a.due_date < todayStr && a.status !== 'COMPLETED');
+      } else if (slaFilter === 'DUE_SOON') {
+        if (a.due_date && a.status !== 'COMPLETED') {
+          const diffDays = Math.ceil((new Date(a.due_date).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
+          matchesSla = diffDays >= 0 && diffDays <= 7;
+        } else {
+          matchesSla = false;
+        }
       }
 
-      // Call V1 API
-      const newApp = await createApplication({
-        application_type: appType,
+      return matchesSearch && matchesStage && matchesStatus && matchesType && matchesRegion && matchesSla;
+    });
+  }, [applications, search, stageFilter, statusFilter, typeFilter, regionFilter, slaFilter, todayStr]);
+
+  // Sorted applications
+  const sortedApps = useMemo(() => {
+    return [...filteredApps].sort((a, b) => {
+      let valA = a[sortField] ?? '';
+      let valB = b[sortField] ?? '';
+
+      if (typeof valA === 'string') valA = valA.toLowerCase();
+      if (typeof valB === 'string') valB = valB.toLowerCase();
+
+      if (valA < valB) return sortAsc ? -1 : 1;
+      if (valA > valB) return sortAsc ? 1 : -1;
+      return 0;
+    });
+  }, [filteredApps, sortField, sortAsc]);
+
+  // Paginated applications
+  const totalPages = Math.max(1, Math.ceil(sortedApps.length / pageSize));
+  const paginatedApps = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return sortedApps.slice(start, start + pageSize);
+  }, [sortedApps, currentPage, pageSize]);
+
+  function handleSort(field: keyof Application) {
+    if (sortField === field) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortField(field);
+      setSortAsc(true);
+    }
+    setCurrentPage(1);
+  }
+
+  function handleClearFilters() {
+    setSearch('');
+    setStageFilter('ALL');
+    setStatusFilter('ALL');
+    setTypeFilter('ALL');
+    setRegionFilter('ALL');
+    setSlaFilter('ALL');
+    setCurrentPage(1);
+  }
+
+  const hasActiveFilters =
+    search ||
+    stageFilter !== 'ALL' ||
+    statusFilter !== 'ALL' ||
+    typeFilter !== 'ALL' ||
+    regionFilter !== 'ALL' ||
+    slaFilter !== 'ALL';
+
+  async function handleCreate(isDraft: boolean = false) {
+    setIsSubmitting(true);
+    setErrorMsg('');
+    try {
+      const typeLabel = journeyTab === 'EOA' ? 'Extension of Approval' : 'New Programme / Level';
+      const declaredNotes = notes || (journeyTab === 'NEW_PROGRAMME'
+        ? `Proposed New Course: ${courseName || 'B.Tech AI & Data Science'}, Approved Intake: ${intakeCapacity}`
+        : 'Regular Extension of Approval proposal for existing approved programmes.');
+
+      const created = await createApplication({
+        application_type: typeLabel,
         academic_year: academicYear,
-        notes: compositeNotes,
+        notes: declaredNotes,
+        region,
         due_date: dueDate || null,
         is_draft: isDraft
       });
 
-      // Upload file if selected
-      if (attachedFile && newApp?.id) {
-        await uploadApplicationDocument(
-          newApp.id,
-          attachedFile,
-          attachedDocType,
-          attachedDocName || attachedFile.name
-        );
+      // If document attached, upload it
+      if (attachedDoc && created && created.id) {
+        await uploadApplicationDocument(created.id, attachedDoc, attachedDocType, attachedDoc.name);
       }
 
       setIsCreateOpen(false);
+      setAttachedDoc(null);
+      setNotes('');
+      setCourseName('');
       onRefresh();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Operation failed. Please review the inputs.');
+      setErrorMsg(err.message || 'Failed to create application.');
     } finally {
       setIsSubmitting(false);
-      setSubmittingAction(null);
     }
   }
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'DRAFT':
-        return (
-          <span className="badge badge-draft">
-            <FileText size={10} /> Draft
-          </span>
-        );
-      case 'IN_PROGRESS':
-        return (
-          <span className="badge badge-in_progress">
-            <Clock size={10} /> In Progress
-          </span>
-        );
-      case 'RETURNED':
-        return (
-          <span className="badge badge-returned">
-            <RotateCcw size={10} /> Returned
-          </span>
-        );
-      case 'OVERDUE':
-        return (
-          <span className="badge badge-overdue">
-            <AlertTriangle size={10} /> Overdue
-          </span>
-        );
-      case 'COMPLETED':
-        return (
-          <span className="badge badge-completed">
-            <CheckCircle2 size={10} /> Completed
-          </span>
-        );
-      default:
-        return <span className="badge badge-pending">{status}</span>;
+  const getStatusBadge = (a: Application) => {
+    const isOverdue = a.status === 'OVERDUE' || Boolean(a.due_date && a.due_date < todayStr && a.status !== 'COMPLETED');
+
+    if (isOverdue) {
+      return (
+        <span className="badge badge-overdue" title="Regulatory SLA target exceeded">
+          <AlertTriangle size={10} /> Overdue
+        </span>
+      );
     }
+
+    switch (a.status) {
+      case 'DRAFT':
+        return <span className="badge badge-draft">Draft</span>;
+      case 'IN_PROGRESS':
+        return <span className="badge badge-in_progress">In Progress</span>;
+      case 'RETURNED':
+        return <span className="badge badge-returned"><RotateCcw size={10} /> Returned</span>;
+      case 'COMPLETED':
+        return <span className="badge badge-completed"><CheckCircle2 size={10} /> Approved</span>;
+      case 'REJECTED':
+        return <span className="badge badge-critical">Rejected</span>;
+      default:
+        return <span className="badge badge-pending">{a.status}</span>;
+    }
+  };
+
+  const getSlaRiskTag = (a: Application) => {
+    if (a.status === 'COMPLETED' || a.status === 'REJECTED') {
+      return <span className="sla-risk-tag ontrack">Concluded</span>;
+    }
+
+    if (!a.due_date) {
+      return <span style={{ fontSize: 11, color: 'var(--text-subtle)' }}>—</span>;
+    }
+
+    const due = new Date(a.due_date).getTime();
+    const now = new Date().getTime();
+    const diffDays = Math.ceil((due - now) / (1000 * 3600 * 24));
+
+    if (diffDays < 0) {
+      return (
+        <span className="sla-risk-tag overdue" title={`${Math.abs(diffDays)} days overdue`}>
+          <AlertTriangle size={10} /> -{Math.abs(diffDays)}d SLA
+        </span>
+      );
+    }
+
+    if (diffDays <= 7) {
+      return (
+        <span className="sla-risk-tag warning" title={`Due in ${diffDays} days`}>
+          <Clock size={10} /> {diffDays}d left
+        </span>
+      );
+    }
+
+    return (
+      <span className="sla-risk-tag ontrack">
+        {diffDays}d
+      </span>
+    );
   };
 
   return (
     <div className="page-container">
       <div className="panel-card">
-        {/* Header */}
+        {/* Panel Header */}
         <div className="panel-header">
           <div>
-            <h3>Applications Register & Submissions</h3>
+            <h3>
+              {user?.role === 'institution' ? 'Institutional Applications Register' : 'Regulatory Applications Workbench'}
+            </h3>
             <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              {user?.role === 'institution'
-                ? `Authorized Institution: ${user.institution_name} · Showing ${filteredApps.length} applications`
-                : `Showing ${filteredApps.length} of ${applications.length} applications across jurisdictions`}
+              Official registry of technical institute proposals for scrutiny and statutory approval
             </span>
           </div>
 
-          <button className="btn-primary" onClick={handleOpenCreate}>
-            <Plus size={15} />
-            <span>New Application</span>
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {user?.role !== 'evc_expert' && (
+              <button className="btn-primary" onClick={() => setIsCreateOpen(true)}>
+                <Plus size={14} />
+                <span>{user?.role === 'institution' ? 'File New Application' : 'Register Application'}</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Filter Toolbar */}
         <div className="filter-bar">
           <div className="search-input-wrap">
-            <Search size={15} />
+            <Search size={14} />
             <input
               type="text"
-              placeholder="Search reference (AICTE-...), institution, or program notes..."
+              placeholder="Search reference (AICTE-...), college, or region..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setCurrentPage(1);
+              }}
+              aria-label="Search applications"
             />
           </div>
 
           <select
             className="filter-select"
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-          >
-            <option value="ALL">All Application Types</option>
-            <option value="Extension of Approval">Extension of Approval (EOA)</option>
-            <option value="New Programme/Level">New Programme / Level</option>
-            <option value="New Institution">New Institution</option>
-            <option value="Compliance Submission">Compliance Submission</option>
-          </select>
-
-          <select
-            className="filter-select"
             value={stageFilter}
-            onChange={(e) => setStageFilter(e.target.value)}
+            onChange={(e) => {
+              setStageFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            aria-label="Filter by stage"
           >
-            <option value="ALL">All Workflow Stages</option>
-            <option value="DRAFT">Draft</option>
-            <option value="SUBMITTED">Submitted</option>
-            <option value="SCRUTINY">Scrutiny</option>
-            <option value="RE_SCRUTINY">Re-Scrutiny</option>
-            <option value="EVC_PENDING">EVC Pending</option>
-            <option value="EVC_SCHEDULED">EVC Scheduled</option>
-            <option value="EVC_COMPLETED">EVC Completed</option>
-            <option value="SAC_SHC_REVIEW">SAC / SHC Review</option>
-            <option value="COMPLIANCE_PENDING">Compliance Pending</option>
-            <option value="COMPLETED">Completed</option>
-            <option value="RETURNED_FOR_CLARIFICATION">Returned for Clarification</option>
+            <option value="ALL">All Stages</option>
+            <option value="SUBMITTED">1. Submitted</option>
+            <option value="SCRUTINY">2. Scrutiny</option>
+            <option value="RE_SCRUTINY">3. Re-Scrutiny</option>
+            <option value="EVC_PENDING">4. EVC Pending</option>
+            <option value="EVC_SCHEDULED">5. EVC Scheduled</option>
+            <option value="EVC_COMPLETED">6. EVC Completed</option>
+            <option value="SAC_SHC_REVIEW">7. SAC / SHC Review</option>
+            <option value="COMPLIANCE_PENDING">8. Compliance Pending</option>
+            <option value="COMPLETED">9. Completed</option>
+            <option value="RETURNED_FOR_CLARIFICATION">Returned (Clarification)</option>
           </select>
 
           <select
             className="filter-select"
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            aria-label="Filter by status"
           >
             <option value="ALL">All Statuses</option>
             <option value="DRAFT">Draft</option>
             <option value="IN_PROGRESS">In Progress</option>
-            <option value="RETURNED">Returned</option>
-            <option value="OVERDUE">Overdue</option>
-            <option value="COMPLETED">Completed</option>
+            <option value="RETURNED">Returned (Deficient)</option>
+            <option value="OVERDUE">Overdue (SLA Breach)</option>
+            <option value="COMPLETED">Approved / Concluded</option>
           </select>
+
+          <select
+            className="filter-select"
+            value={typeFilter}
+            onChange={(e) => {
+              setTypeFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            aria-label="Filter by type"
+          >
+            <option value="ALL">All Application Types</option>
+            <option value="Extension of Approval">Extension of Approval (EoA)</option>
+            <option value="New Programme">New Programme / Level</option>
+            <option value="New Institution">New Institution</option>
+            <option value="New Course">New Course / Intake</option>
+            <option value="Institutional Change">Institutional Change</option>
+            <option value="Compliance Submission">Compliance Submission</option>
+          </select>
+
+          {user?.role !== 'institution' && (
+            <select
+              className="filter-select"
+              value={regionFilter}
+              onChange={(e) => {
+                setRegionFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              aria-label="Filter by region"
+            >
+              <option value="ALL">All Regions</option>
+              <option value="Northern">Northern</option>
+              <option value="Western">Western</option>
+              <option value="Southern">Southern</option>
+              <option value="Eastern">Eastern</option>
+              <option value="Central">Central</option>
+              <option value="HQ">HQ</option>
+            </select>
+          )}
+
+          <select
+            className="filter-select"
+            value={slaFilter}
+            onChange={(e) => {
+              setSlaFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            aria-label="Filter by SLA risk"
+          >
+            <option value="ALL">All SLA States</option>
+            <option value="OVERDUE">Overdue Only (&gt;14d)</option>
+            <option value="DUE_SOON">Due Soon (&lt;7d)</option>
+          </select>
+
+          {hasActiveFilters && (
+            <button
+              className="btn-secondary"
+              onClick={handleClearFilters}
+              style={{ fontSize: 11, padding: '6px 10px' }}
+            >
+              <X size={12} />
+              <span>Reset Filters</span>
+            </button>
+          )}
         </div>
 
         {/* Applications Data Table */}
         <div className="table-responsive">
-          <table className="data-table">
+          <table className="data-table" aria-label="Applications table">
             <thead>
               <tr>
-                <th>Reference</th>
-                <th>Institution Name</th>
-                <th>Application Type</th>
+                <th
+                  onClick={() => handleSort('reference')}
+                  style={{ cursor: 'pointer' }}
+                  title="Click to sort by reference"
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span>Reference ID</span>
+                    <ArrowUpDown size={11} />
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('institution_name')}
+                  style={{ cursor: 'pointer' }}
+                  title="Click to sort by institution"
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span>Institution & Region</span>
+                    <ArrowUpDown size={11} />
+                  </div>
+                </th>
+                <th>Type / Academic Year</th>
                 <th>Stage</th>
                 <th>Status</th>
-                <th>Last Updated</th>
-                <th>Assigned To</th>
+                <th
+                  onClick={() => handleSort('submission_date')}
+                  style={{ cursor: 'pointer' }}
+                  title="Click to sort by submission date"
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span>Submission</span>
+                    <ArrowUpDown size={11} />
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('due_date')}
+                  style={{ cursor: 'pointer' }}
+                  title="Click to sort by due date"
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span>Due Date & SLA</span>
+                    <ArrowUpDown size={11} />
+                  </div>
+                </th>
+                <th>Assigned Desk</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredApps.length === 0 ? (
+              {paginatedApps.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-muted)' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                      <FileText size={32} color="#94a3b8" />
-                      <b>No applications found</b>
-                      <span style={{ fontSize: 12 }}>
-                        {search || stageFilter !== 'ALL' || statusFilter !== 'ALL'
-                          ? 'Try resetting the search filters above.'
-                          : 'Click "New Application" to create your Extension of Approval (EOA) or New Programme proposal.'}
-                      </span>
-                      {(!search && stageFilter === 'ALL' && statusFilter === 'ALL') && (
-                        <button className="btn-primary" style={{ marginTop: 8 }} onClick={handleOpenCreate}>
-                          <Plus size={14} />
-                          <span>Start New Application</span>
+                  <td colSpan={9}>
+                    <div className="empty-state">
+                      <Filter size={24} color="#94a3b8" />
+                      <h4>No matching applications found</h4>
+                      <p>
+                        {hasActiveFilters
+                          ? 'No records match the active search criteria or filters. Try resetting the filters.'
+                          : 'No applications have been registered in this scope yet.'}
+                      </p>
+                      {hasActiveFilters && (
+                        <button className="btn-secondary" onClick={handleClearFilters} style={{ marginTop: 6 }}>
+                          Reset all filters
                         </button>
                       )}
                     </div>
                   </td>
                 </tr>
               ) : (
-                filteredApps.map((a) => (
-                  <tr key={a.id}>
+                paginatedApps.map((a) => (
+                  <tr
+                    key={a.id}
+                    className="clickable-row"
+                    onClick={() => onSelectApplication(a)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onSelectApplication(a);
+                      }
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`Open application ${a.reference}`}
+                  >
                     <td>
                       <b style={{ fontFamily: 'JetBrains Mono', color: 'var(--primary)', fontSize: 12 }}>
                         {a.reference}
@@ -306,35 +487,41 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
                     </td>
                     <td>
                       <b style={{ color: 'var(--text-main)', display: 'block' }}>{a.institution_name}</b>
-                      <small style={{ color: 'var(--text-muted)' }}>Region: {a.region}</small>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        Region: {a.region || 'HQ'}
+                      </span>
                     </td>
                     <td>
-                      <span style={{ fontWeight: 600 }}>{a.application_type}</span>
-                      <small style={{ display: 'block', color: 'var(--text-muted)' }}>AY {a.academic_year}</small>
+                      <span style={{ display: 'block', fontWeight: 600 }}>{a.application_type}</span>
+                      <small style={{ color: 'var(--text-muted)' }}>AY {a.academic_year || '2026-2027'}</small>
                     </td>
                     <td>
                       <span className="badge badge-stage">{a.current_stage.replace(/_/g, ' ')}</span>
                     </td>
-                    <td>{getStatusBadge(a.status)}</td>
+                    <td>{getStatusBadge(a)}</td>
                     <td>
-                      <span style={{ fontSize: 12, color: '#334155' }}>
-                        {a.updated_at ? new Date(a.updated_at).toLocaleDateString() : (a.submission_date || new Date(a.created_at).toLocaleDateString())}
-                      </span>
-                      <small style={{ display: 'block', color: 'var(--text-muted)' }}>
-                        {a.updated_at ? new Date(a.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                      </small>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{a.submission_date || 'Draft'}</span>
                     </td>
                     <td>
-                      <span style={{ fontSize: 12 }}>{a.assigned_to}</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <span style={{ fontSize: 11 }}>{a.due_date || '—'}</span>
+                        {getSlaRiskTag(a)}
+                      </div>
+                    </td>
+                    <td>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{a.assigned_to}</span>
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <button
                         className="btn-secondary"
-                        style={{ padding: '6px 12px', fontSize: 11, marginLeft: 'auto' }}
-                        onClick={() => onSelectApplication(a)}
+                        style={{ padding: '5px 9px', fontSize: 11, marginLeft: 'auto' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectApplication(a);
+                        }}
                       >
-                        <Eye size={13} />
-                        <span>Inspect & Track</span>
+                        <Eye size={12} />
+                        <span>Inspect</span>
                       </button>
                     </td>
                   </tr>
@@ -342,12 +529,78 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
               )}
             </tbody>
           </table>
+
+          {/* Pagination Controls */}
+          {sortedApps.length > 0 && (
+            <div className="pagination-bar">
+              <div>
+                Showing <b>{Math.min((currentPage - 1) * pageSize + 1, sortedApps.length)}</b> to{' '}
+                <b>{Math.min(currentPage * pageSize, sortedApps.length)}</b> of <b>{sortedApps.length}</b> applications
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>Rows:</span>
+                  <select
+                    className="filter-select"
+                    style={{ padding: '3px 8px', fontSize: 11 }}
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                  >
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                  </select>
+                </div>
+
+                <div className="pagination-controls">
+                  <button
+                    className="btn-page"
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage(currentPage - 1)}
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft size={12} style={{ display: 'inline', verticalAlign: 'middle' }} />
+                  </button>
+
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                    .map((p, idx, arr) => {
+                      const showEllipsis = idx > 0 && p - arr[idx - 1] > 1;
+                      return (
+                        <React.Fragment key={p}>
+                          {showEllipsis && <span style={{ padding: '0 4px' }}>…</span>}
+                          <button
+                            className={`btn-page ${currentPage === p ? 'active' : ''}`}
+                            onClick={() => setCurrentPage(p)}
+                          >
+                            {p}
+                          </button>
+                        </React.Fragment>
+                      );
+                    })}
+
+                  <button
+                    className="btn-page"
+                    disabled={currentPage === totalPages}
+                    onClick={() => setCurrentPage(currentPage + 1)}
+                    aria-label="Next page"
+                  >
+                    <ChevronRight size={12} style={{ display: 'inline', verticalAlign: 'middle' }} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* New Application Modal */}
       {isCreateOpen && (
-        <div className="modal-backdrop">
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
           <div className="modal-dialog" style={{ width: 'min(760px, 95%)' }}>
             <div className="modal-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -366,25 +619,21 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
                 <div>
                   <h3 style={{ margin: 0, fontSize: 16 }}>Register AICTE Regulatory Application</h3>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                    Smart India Hackathon Prototype · Regulatory Workflow Automation
+                    Regulatory Workflow Automation · AICTE Approval Process Handbook (APH)
                   </span>
                 </div>
               </div>
               <button
                 style={{ background: 'transparent', border: 0, cursor: 'pointer' }}
                 onClick={() => setIsCreateOpen(false)}
+                aria-label="Close modal"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <div className="modal-body" style={{ gap: 18 }}>
-              {errorMsg && (
-                <div className="alert-banner danger">
-                  <AlertTriangle size={16} />
-                  <span>{errorMsg}</span>
-                </div>
-              )}
+            <div className="modal-body" style={{ gap: 16 }}>
+              {errorMsg && <div className="alert-banner danger">{errorMsg}</div>}
 
               {/* Institution Identity Banner */}
               <div style={{
@@ -394,27 +643,29 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
                 border: '1px solid var(--border-subtle)',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between'
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 8
               }}>
                 <div>
-                  <small style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
                     Applicant Institution
-                  </small>
-                  <b style={{ display: 'block', fontSize: 13, color: 'var(--text-main)' }}>
-                    {user?.institution_name || 'ABC Engineering College'}
+                  </span>
+                  <b style={{ fontSize: 13, color: 'var(--text-main)' }}>
+                    {user?.institution_name || institutionName || 'Applicant College'}
                   </b>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <small style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
-                    Regional Jurisdiction
-                  </small>
-                  <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>
-                    {user?.region || 'Northern'} Region
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
+                    Jurisdiction
+                  </span>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>
+                    {user?.region || region} Region
                   </span>
                 </div>
               </div>
 
-              {/* Application Type Switcher */}
+              {/* Application Journey Switcher */}
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
                   Select Application Journey Type *
@@ -422,9 +673,9 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
                 <div className="form-tab-bar">
                   <button
                     type="button"
-                    className={`form-tab-btn ${activeTab === 'EOA' ? 'active' : ''}`}
+                    className={`form-tab-btn ${journeyTab === 'EOA' ? 'active' : ''}`}
                     onClick={() => {
-                      setActiveTab('EOA');
+                      setJourneyTab('EOA');
                       setAttachedDocType('LEASE_DEED');
                     }}
                   >
@@ -435,10 +686,10 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
                   </button>
                   <button
                     type="button"
-                    className={`form-tab-btn ${activeTab === 'NEW_PROGRAMME' ? 'active' : ''}`}
+                    className={`form-tab-btn ${journeyTab === 'NEW_PROGRAMME' ? 'active' : ''}`}
                     onClick={() => {
-                      setActiveTab('NEW_PROGRAMME');
-                      setAttachedDocType('DPR_PROPOSAL');
+                      setJourneyTab('NEW_PROGRAMME');
+                      setAttachedDocType('LAND_CONVERSION');
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
@@ -449,16 +700,16 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
                 </div>
               </div>
 
-              {/* Common Fields */}
+              {/* Form Fields */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <div className="form-group">
-                  <label>Academic Year *</label>
+                  <label>Academic Cycle *</label>
                   <input
                     type="text"
                     required
                     value={academicYear}
                     onChange={(e) => setAcademicYear(e.target.value)}
-                    placeholder="e.g. 2026-2027"
+                    placeholder="2026-2027"
                   />
                 </div>
 
@@ -472,203 +723,105 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
                 </div>
               </div>
 
-              {/* Tab 1: Extension of Approval Form */}
-              {activeTab === 'EOA' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {journeyTab === 'NEW_PROGRAMME' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 14 }}>
                   <div className="form-group">
-                    <label>Existing Approved Programmes & Current Intake *</label>
+                    <label>Proposed New Course / Programme *</label>
                     <input
                       type="text"
-                      required
-                      placeholder="e.g. B.Tech CSE (120), B.Tech ECE (60), B.Tech ME (60)"
-                      value={existingIntake}
-                      onChange={(e) => setExistingIntake(e.target.value)}
+                      placeholder="e.g. B.Tech Computer Science & AI"
+                      value={courseName}
+                      onChange={(e) => setCourseName(e.target.value)}
                     />
                   </div>
-
                   <div className="form-group">
-                    <label>Land Lease & Statutory Safety Status *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. 35-year lease deed verified; valid fire NOC renewed"
-                      value={landCompliance}
-                      onChange={(e) => setLandCompliance(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>Institutional Disclosures & Declaration *</label>
-                    <textarea
-                      rows={3}
-                      required
-                      placeholder="Declaration of compliance with AICTE Approval Process Handbook norms..."
-                      value={eoaNotes}
-                      onChange={(e) => setEoaNotes(e.target.value)}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Tab 2: New Programme / Level Form */}
-              {activeTab === 'NEW_PROGRAMME' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14 }}>
-                    <div className="form-group">
-                      <label>Proposed Programme / Course Name *</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. B.Tech in Artificial Intelligence & Data Science"
-                        value={programmeName}
-                        onChange={(e) => setProgrammeName(e.target.value)}
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label>Programme Level *</label>
-                      <select
-                        value={programmeLevel}
-                        onChange={(e) => setProgrammeLevel(e.target.value)}
-                      >
-                        <option value="Undergraduate (UG)">Undergraduate (UG)</option>
-                        <option value="Postgraduate (PG)">Postgraduate (PG)</option>
-                        <option value="Diploma">Diploma / Polytechnic</option>
-                        <option value="Doctoral / Fellow">Doctoral / Fellow</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label>Proposed Student Intake (Annual Seats) *</label>
+                    <label>Proposed Intake Capacity *</label>
                     <input
                       type="number"
-                      min={15}
-                      max={300}
-                      step={15}
-                      required
-                      value={proposedIntake}
-                      onChange={(e) => setProposedIntake(Number(e.target.value))}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>Laboratory & Infrastructure Readiness Summary *</label>
-                    <textarea
-                      rows={2}
-                      required
-                      placeholder="Summary of specialized lab equipment, computing hardware, space allocation..."
-                      value={labReadiness}
-                      onChange={(e) => setLabReadiness(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>Curricular Justification & Regional Demand *</label>
-                    <textarea
-                      rows={2}
-                      required
-                      placeholder="Detailed justification on student employment demand and regional industry linkage..."
-                      value={newProgrammeNotes}
-                      onChange={(e) => setNewProgrammeNotes(e.target.value)}
+                      placeholder="60"
+                      value={intakeCapacity}
+                      onChange={(e) => setIntakeCapacity(e.target.value)}
                     />
                   </div>
                 </div>
               )}
 
-              {/* Document Attachment Section */}
-              <div style={{
-                background: '#f8fafc',
-                padding: '16px',
-                borderRadius: 'var(--radius-md)',
-                border: '1px dashed var(--border-strong)'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                  <Upload size={16} color="var(--primary)" />
-                  <b style={{ fontSize: 12 }}>Supporting Regulatory Document Upload</b>
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>(Optional for Draft; Mandatory for Direct Submission)</span>
+              {user?.role !== 'institution' && (
+                <div className="form-group">
+                  <label>Institution Name *</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Government Engineering College"
+                    value={institutionName}
+                    onChange={(e) => setInstitutionName(e.target.value)}
+                  />
                 </div>
+              )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12 }}>
-                  <div className="form-group">
-                    <label>Document Category</label>
-                    <select
-                      value={attachedDocType}
-                      onChange={(e) => setAttachedDocType(e.target.value)}
-                    >
-                      {activeTab === 'EOA' ? (
-                        <>
-                          <option value="LEASE_DEED">Land Lease / Ownership Deed</option>
-                          <option value="BUILDING_PLAN">Building Occupancy Certificate / Plan</option>
-                          <option value="FACULTY_LIST">Faculty Cadre Declaration</option>
-                          <option value="UNDERTAKING">Statutory Undertaking</option>
-                        </>
-                      ) : (
-                        <>
-                          <option value="DPR_PROPOSAL">Detailed Project Report (DPR)</option>
-                          <option value="LAB_READINESS">Laboratory Equipment & Hardware Inventory</option>
-                          <option value="FACULTY_LIST">Faculty Sanction & Recruitment Plan</option>
-                          <option value="AFFILIATION_LETTER">University Affiliation Letter</option>
-                        </>
-                      )}
-                    </select>
-                  </div>
+              <div className="form-group">
+                <label>Institutional Declaration & Scope</label>
+                <textarea
+                  rows={2}
+                  placeholder="Summary of existing approved programmes, faculties, or site details..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                />
+              </div>
 
-                  <div className="form-group">
-                    <label>Select File (PDF, DOCX, TXT - Max 10MB)</label>
-                    <input
-                      type="file"
-                      accept=".pdf,.docx,.txt"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0] || null;
-                        setAttachedFile(file);
-                        if (file && !attachedDocName) {
-                          setAttachedDocName(file.name);
-                        }
-                      }}
-                    />
-                  </div>
+              {/* Initial Document Attachment */}
+              <div style={{ padding: '12px', background: '#f8fafc', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>
+                  Attach Regulatory Document (Optional)
+                </span>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <select
+                    className="filter-select"
+                    value={attachedDocType}
+                    onChange={(e) => setAttachedDocType(e.target.value)}
+                  >
+                    <option value="LEASE_DEED">Registered Land Lease Deed</option>
+                    <option value="FIRE_NOC">Fire & Life Safety NOC</option>
+                    <option value="BUILDING_PLAN">Approved Building Plan</option>
+                    <option value="AFFIDAVIT">Mandatory Statutory Undertaking</option>
+                    <option value="LAND_CONVERSION">Land Use Conversion Certificate</option>
+                  </select>
+                  <input
+                    type="file"
+                    accept=".pdf,.docx,.txt"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        setAttachedDoc(e.target.files[0]);
+                      }
+                    }}
+                    style={{ fontSize: 12, padding: '4px' }}
+                  />
                 </div>
-
-                {attachedFile && (
-                  <div style={{ marginTop: 8, fontSize: 12, color: 'var(--success)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <CheckCircle2 size={14} />
-                    <span>Selected: <b>{attachedFile.name}</b> ({(attachedFile.size / 1024).toFixed(0)} KB)</span>
-                  </div>
-                )}
               </div>
             </div>
 
-            {/* Modal Actions */}
             <div className="modal-footer">
               <button
                 type="button"
                 className="btn-secondary"
-                disabled={isSubmitting}
                 onClick={() => setIsCreateOpen(false)}
               >
                 Cancel
               </button>
-
               <button
                 type="button"
                 className="btn-secondary"
-                style={{ borderColor: 'var(--primary)', color: 'var(--primary)' }}
                 disabled={isSubmitting}
-                onClick={() => handleSubmit(true)}
+                onClick={() => handleCreate(true)}
               >
-                <FileText size={14} />
-                <span>{isSubmitting && submittingAction === 'draft' ? 'Saving Draft...' : 'Save as Draft'}</span>
+                {isSubmitting ? 'Saving...' : 'Save as Draft'}
               </button>
-
               <button
                 type="button"
                 className="btn-primary"
                 disabled={isSubmitting}
-                onClick={() => handleSubmit(false)}
+                onClick={() => handleCreate(false)}
               >
-                <CheckCircle2 size={14} />
-                <span>{isSubmitting && submittingAction === 'submit' ? 'Submitting Application...' : 'Submit Application for Scrutiny'}</span>
+                {isSubmitting ? 'Submitting...' : 'Submit for Scrutiny'}
               </button>
             </div>
           </div>
