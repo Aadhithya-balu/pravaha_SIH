@@ -45,7 +45,7 @@ export interface Application {
   decision_by?: string | null;
   decision_date?: string | null;
   created_at: string;
-  updated_at?: string;
+  created_by?: number | null;
   next_action?: NextBestAction | null;
 }
 
@@ -69,12 +69,14 @@ export interface CandidateField {
 
 export interface CorrectionRequest {
   id?: number;
+  application_id?: number;
+  requested_by?: string;
   source?: 'RETURN_DEFICIENCY' | 'DOCUMENT_CORRECTION' | string;
   reason: string;
   document_id?: number | null;
   document_name?: string | null;
-  status?: string;
   deficiencies_json?: string | null;
+  status?: 'PENDING' | 'RESUBMITTED' | 'RESOLVED' | string;
   institution_response?: string | null;
   response_submitted_at?: string | null;
   resolved_at?: string | null;
@@ -86,14 +88,21 @@ export interface ScrutinyFinding {
   id: number;
   scrutiny_run_id?: number | null;
   application_id: number;
+  document_id?: number | null;
   rule_id: string;
   document_type: string;
   severity: 'INFO' | 'WARNING' | 'DEFICIENCY' | string;
-  category: string;
+  category: 'MISSING_DOCUMENT' | 'REGULATORY_NON_COMPLIANCE' | 'INCONSISTENCY' | 'ABSENT_EVIDENCE' | 'EXTRACTION_FAILURE' | 'PROCEDURAL_REQUIREMENT' | string;
   description: string;
   evidence_quote?: string | null;
+  source_document?: string | null;
+  page_number?: number | null;
+  expected_requirement?: string | null;
+  observed_value?: string | null;
   suggested_action?: string | null;
-  officer_disposition: 'PENDING' | 'ACCEPTED' | 'WAIVED' | 'CORRECTION_REQUESTED' | 'RESOLVED' | string;
+  is_provisional?: boolean;
+  source_reference?: string | null;
+  officer_disposition: 'PENDING' | 'ACCEPTED' | 'WAIVED' | 'CORRECTION_REQUESTED' | 'RESOLVED' | 'REJECTED' | string;
   disposition_notes?: string | null;
   disposed_by?: string | null;
   disposed_at?: string | null;
@@ -103,14 +112,18 @@ export interface ScrutinyFinding {
 export interface ScrutinyRun {
   id: number;
   application_id: number;
-  run_type: string;
+  run_type: 'INITIAL' | 'RE_SCRUTINY' | string;
   conducted_by: string;
-  status: string;
+  status: 'PASSED' | 'DEFICIENCIES_FOUND' | 'PENDING_REVIEW' | string;
   summary: string;
-  missing_docs?: string | null;
+  missing_docs?: string[] | string | null;
   rule_results?: string | null;
   ai_assisted: boolean;
+  model_provider?: string | null;
+  model_name?: string | null;
+  ruleset_version?: string | null;
   created_at: string;
+  findings?: ScrutinyFinding[];
 }
 
 export interface ApplicationDetailResponse {
@@ -160,10 +173,11 @@ export interface DocumentRecord {
 }
 
 export interface AiAnalysisResult {
-  mode: 'demo_mode' | 'real_llm';
+  mode: 'demo_mode' | 'real_llm' | string;
   execution_mode?: 'deterministic' | 'real_llm' | 'deterministic_fallback';
   provider?: string;
   model?: string;
+  ruleset_version?: string;
   document_name: string;
   document_type: string;
   summary: string;
@@ -172,9 +186,20 @@ export interface AiAnalysisResult {
   missing_information: string[];
   potential_inconsistencies: string[];
   verification_questions: string[];
+  structured_findings?: ScrutinyFinding[];
   confidence_score: number;
   disclaimer: string;
   mode_fallback_reason?: string;
+}
+
+export interface DocumentReviewResponse {
+  document: DocumentRecord;
+  review_status: string;
+  reviewer_notes?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  ai_analysis?: AiAnalysisResult | null;
+  findings: ScrutinyFinding[];
 }
 
 export interface EVCVisit {
@@ -272,4 +297,15 @@ export interface AvailableTransition {
   target_stage: string;
   target_status: string;
   description: string;
+}
+
+export interface ApplicationDetailResponse {
+  application: Application;
+  available_transitions: AvailableTransition[];
+  audit_history: AuditEvent[];
+  documents: DocumentRecord[];
+  evc_visit?: EVCVisit | null;
+  scrutiny_runs?: ScrutinyRun[];
+  scrutiny_findings?: ScrutinyFinding[];
+  correction_requests?: CorrectionRequest[];
 }

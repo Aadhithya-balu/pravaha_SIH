@@ -43,6 +43,46 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
   return res.json();
 }
 
+export async function apiUpload<T = any>(path: string, formData: FormData): Promise<T> {
+  const headers: Record<string, string> = {};
+  const authTok = token();
+  if (authTok) {
+    headers.Authorization = `Bearer ${authTok}`;
+  }
+
+  const res = await fetch(BASE_URL + path, {
+    method: 'POST',
+    headers,
+    body: formData
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({}));
+    const message = errorBody.detail || `Upload failed with status ${res.status}`;
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+export async function downloadCsv(reportType: 'applications' | 'compliance'): Promise<void> {
+  const authTok = token();
+  const res = await fetch(`${BASE_URL}/reports/export-csv?report_type=${reportType}`, {
+    headers: authTok ? { Authorization: `Bearer ${authTok}` } : {}
+  });
+  if (!res.ok) {
+    throw new Error('Failed to generate CSV export.');
+  }
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `aicte_${reportType}_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+}
+
 // --- V1 Typed API Helpers for Institution Portal Journey ---
 
 export async function fetchApplications(params?: { stage?: string; status?: string; app_type?: string; search?: string }): Promise<any[]> {
@@ -123,25 +163,6 @@ export async function markNotificationRead(id: number): Promise<any> {
   });
 }
 
-export async function downloadCsv(reportType: 'applications' | 'compliance'): Promise<void> {
-  const authTok = token();
-  const res = await fetch(`${BASE_URL}/reports/export-csv?report_type=${reportType}`, {
-    headers: authTok ? { Authorization: `Bearer ${authTok}` } : {}
-  });
-  if (!res.ok) {
-    throw new Error('Failed to generate CSV export.');
-  }
-  const blob = await res.blob();
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `aicte_${reportType}_${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  window.URL.revokeObjectURL(url);
-}
-
 export async function fetchNextBestAction(id: number): Promise<any> {
   return api(`/v1/applications/${id}/next-action`);
 }
@@ -167,6 +188,15 @@ export async function verifyAuditChain(id: number): Promise<any> {
 
 export async function runOfficerScrutiny(id: number, runType: string = 'INITIAL'): Promise<any> {
   return api(`/v1/officer/applications/${id}/scrutiny`, {
+    method: 'POST',
+    body: JSON.stringify({ run_type: runType })
+  });
+}
+
+// --- Scrutiny & Explainable Evidence Review API Helpers ---
+
+export async function runScrutiny(applicationId: number, runType: string = 'INITIAL'): Promise<any> {
+  return api(`/scrutiny/run/${applicationId}`, {
     method: 'POST',
     body: JSON.stringify({ run_type: runType })
   });
@@ -257,4 +287,17 @@ export async function updateEvcVisitRecord(
   });
 }
 
+export async function fetchDocumentReview(documentId: number): Promise<any> {
+  return api(`/documents/${documentId}/review`);
+}
 
+export async function updateFindingDisposition(findingId: number, disposition: string, remarks: string): Promise<any> {
+  return api(`/scrutiny/findings/${findingId}/disposition`, {
+    method: 'POST',
+    body: JSON.stringify({ disposition, remarks })
+  });
+}
+
+export async function fetchApplicationScrutiny(applicationId: number): Promise<any> {
+  return api(`/scrutiny/applications/${applicationId}`);
+}

@@ -6,7 +6,8 @@ import {
   Lock,
   Mail,
   ArrowRight,
-  Info
+  Info,
+  Shield
 } from 'lucide-react';
 import { api, token, fetchApplications, fetchNotifications } from './api';
 import { User, Application, AlertItem, DashboardMetrics } from './types';
@@ -76,7 +77,7 @@ export default function App() {
         handleSignOut();
         setErrorMsg('Your session has expired or the access token was invalid. Please sign in below.');
       } else {
-        setErrorMsg(err.message || 'Failed to load platform data.');
+        setErrorMsg(err.message || 'Failed to retrieve operational data.');
       }
     }
   }
@@ -109,9 +110,9 @@ export default function App() {
       });
       localStorage.setItem('ps4_token', res.access_token);
       setAuthToken(res.access_token);
-      setToastMsg(`Signed in successfully as ${res.name} (${res.role}).`);
+      setToastMsg(`Authenticated as ${res.name} (${res.role.toUpperCase()}).`);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Login failed.');
+      setErrorMsg(err.message || 'Authentication failed. Please check credentials.');
     } finally {
       setIsLoggingIn(false);
     }
@@ -136,11 +137,11 @@ export default function App() {
     try {
       const result = await api('/escalation/run-check', { method: 'POST' });
       setToastMsg(
-        `Deadline evaluation complete: ${result.created_alerts} new alerts triggered, ${result.updated_records} records updated.`
+        `Regulatory deadline evaluation complete: ${result.created_alerts} alert(s) triggered, ${result.updated_records} record(s) escalated.`
       );
       await loadData();
     } catch (err: any) {
-      setErrorMsg(err.message);
+      setErrorMsg(err.message || 'Deadline scan failed.');
     } finally {
       setIsScanning(false);
     }
@@ -192,6 +193,7 @@ export default function App() {
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
                   placeholder="e.g. officer@demo.local"
+                  autoComplete="email"
                 />
               </div>
             </div>
@@ -205,6 +207,7 @@ export default function App() {
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
                   placeholder="Enter your security password"
+                  autoComplete="current-password"
                 />
               </div>
             </div>
@@ -315,6 +318,7 @@ export default function App() {
               <button
                 style={{ background: 'transparent', border: 0, cursor: 'pointer', fontWeight: 800 }}
                 onClick={() => setErrorMsg('')}
+                aria-label="Dismiss alert"
               >
                 ×
               </button>
@@ -332,6 +336,7 @@ export default function App() {
               <button
                 style={{ background: 'transparent', border: 0, cursor: 'pointer', fontWeight: 800 }}
                 onClick={() => setToastMsg('')}
+                aria-label="Dismiss toast"
               >
                 ×
               </button>
@@ -364,8 +369,7 @@ export default function App() {
           />
         )}
 
-
-        {currentTab === 'AI Assistant' && (
+        {(currentTab === 'Document Scrutiny' || currentTab === 'AI Assistant') && (
           <DocumentReviewTab user={user} />
         )}
 
