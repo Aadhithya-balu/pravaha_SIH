@@ -10,6 +10,20 @@ export interface User {
   designation: string;
 }
 
+export interface NextBestAction {
+  action_code: string;
+  action_label: string;
+  target_role: string;
+  authorized_role?: string;
+  assigned_to: string;
+  reason: string;
+  rationale?: string;
+  urgency: 'NORMAL' | 'APPROACHING_DEADLINE' | 'OVERDUE' | string;
+  sla_urgency?: string;
+  days_remaining?: number | null;
+  is_user_authorized: boolean;
+}
+
 export interface Application {
   id: number;
   reference: string;
@@ -25,24 +39,89 @@ export interface Application {
   notes: string;
   deficiency_count: number;
   academic_year: string;
+  form_data?: string | null;
+  decision_outcome?: string | null;
+  decision_remarks?: string | null;
+  decision_by?: string | null;
+  decision_date?: string | null;
   created_at: string;
   updated_at?: string;
+  next_action?: NextBestAction | null;
 }
 
+export interface CandidateField {
+  field_key: string;
+  field_label: string;
+  label?: string;
+  extracted_value: string;
+  provenance: string;
+  source_document: string;
+  page_number?: number | string | null;
+  evidence_quote?: string | null;
+  confidence_label: string;
+  confidence?: number;
+  target_form_field?: string | null;
+  validation_status?: 'EXTRACTED' | 'APPLICANT_ENTERED' | 'VERIFIED' | 'NEEDS_REVIEW' | string;
+  user_edited?: boolean;
+  original_value?: string;
+}
+
+
 export interface CorrectionRequest {
-  source: 'RETURN_DEFICIENCY' | 'DOCUMENT_CORRECTION';
+  id?: number;
+  source?: 'RETURN_DEFICIENCY' | 'DOCUMENT_CORRECTION' | string;
   reason: string;
   document_id?: number | null;
   document_name?: string | null;
+  status?: string;
+  deficiencies_json?: string | null;
+  institution_response?: string | null;
+  response_submitted_at?: string | null;
+  resolved_at?: string | null;
+  resolved_by?: string | null;
+  created_at: string;
+}
+
+export interface ScrutinyFinding {
+  id: number;
+  scrutiny_run_id?: number | null;
+  application_id: number;
+  rule_id: string;
+  document_type: string;
+  severity: 'INFO' | 'WARNING' | 'DEFICIENCY' | string;
+  category: string;
+  description: string;
+  evidence_quote?: string | null;
+  suggested_action?: string | null;
+  officer_disposition: 'PENDING' | 'ACCEPTED' | 'WAIVED' | 'CORRECTION_REQUESTED' | 'RESOLVED' | string;
+  disposition_notes?: string | null;
+  disposed_by?: string | null;
+  disposed_at?: string | null;
+  created_at: string;
+}
+
+export interface ScrutinyRun {
+  id: number;
+  application_id: number;
+  run_type: string;
+  conducted_by: string;
+  status: string;
+  summary: string;
+  missing_docs?: string | null;
+  rule_results?: string | null;
+  ai_assisted: boolean;
   created_at: string;
 }
 
 export interface ApplicationDetailResponse {
   application: Application;
+  next_action?: NextBestAction | null;
   available_transitions: AvailableTransition[];
   audit_history: AuditEvent[];
   documents: DocumentRecord[];
   evc_visit?: EVCVisit | null;
+  scrutiny_runs?: ScrutinyRun[];
+  scrutiny_findings?: ScrutinyFinding[];
   correction_requests?: CorrectionRequest[];
 }
 
@@ -55,6 +134,8 @@ export interface AuditEvent {
   from_stage: string | null;
   to_stage: string | null;
   details: string;
+  prev_hash?: string | null;
+  event_hash?: string | null;
   created_at: string;
 }
 
@@ -80,12 +161,14 @@ export interface DocumentRecord {
 
 export interface AiAnalysisResult {
   mode: 'demo_mode' | 'real_llm';
+  execution_mode?: 'deterministic' | 'real_llm' | 'deterministic_fallback';
   provider?: string;
   model?: string;
   document_name: string;
   document_type: string;
   summary: string;
   extracted_fields: Record<string, string>;
+  candidate_fields?: CandidateField[];
   missing_information: string[];
   potential_inconsistencies: string[];
   verification_questions: string[];
@@ -156,6 +239,33 @@ export interface DashboardMetrics {
     created_at: string;
   }>;
 }
+
+export interface BottleneckAnalytics {
+  total_active_applications: number;
+  total_active_cases?: number;
+  sla_compliance_rate: number;
+  total_sla_breaches: number;
+  stage_analytics: Array<{
+    stage: string;
+    count: number;
+    avg_age_days: number;
+    max_age_days: number;
+    is_bottleneck: boolean;
+  }>;
+  critical_bottlenecks?: Array<{
+    stage: string;
+    backlog_count: number;
+    avg_ageing_days: number;
+    sla_limit_days: number;
+    bottleneck_severity: string;
+    recommendation: string;
+  }>;
+  region_workload: Record<string, number>;
+  regional_workload?: Record<string, number>;
+  officer_workload: Record<string, number>;
+  identified_bottlenecks: string[];
+}
+
 
 export interface AvailableTransition {
   action: string;

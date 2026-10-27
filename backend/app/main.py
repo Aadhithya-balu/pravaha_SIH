@@ -26,13 +26,15 @@ from .schemas import (
     EVCVisitUpdate, EVCVisitOut, DocumentUploadCheck, DocumentReviewAction,
     AlertOut, DashboardMetrics, OfficerScrutinyRequest, OfficerCorrectionRequest,
     OfficerRescrutinyComplete, OfficerAdvanceStage, OfficerDecisionRequest,
-    FindingDispositionRequest
+    FindingDispositionRequest, NextBestActionOut, CandidateFieldOut,
+    ApplyExtractedFieldsRequest, BottleneckAnalyticsOut
 )
 from .workflow import (
     get_available_transitions, validate_transition, TRANSITION_RULES,
-    WORKFLOW_STAGES, APPLICATION_STATUSES, record_audit_event, verify_audit_chain
+    WORKFLOW_STAGES, APPLICATION_STATUSES, record_audit_event, verify_audit_chain,
+    compute_next_best_action, compute_bottleneck_analytics
 )
-from .ai_service import review_document
+from .ai_service import review_document, extract_candidate_fields
 from .doc_extractor import process_and_store_upload, UPLOAD_DIR
 from .scrutiny import execute_scrutiny_pipeline, normalize_application_route, ROUTE_EOA, ROUTE_NEW_PROGRAMME
 from .escalation import run_escalation_engine
@@ -307,7 +309,10 @@ def list_applications(
         s = f"%{search.strip()}%"
         q = q.filter(or_(Application.reference.ilike(s), Application.institution_name.ilike(s)))
 
-    return q.order_by(desc(Application.created_at)).all()
+    apps = q.order_by(desc(Application.created_at)).all()
+    for app_item in apps:
+        app_item.next_action = compute_next_best_action(app_item, db, user)
+    return apps
 
 
 @app.post("/api/applications", response_model=ApplicationOut, status_code=201)
@@ -440,8 +445,12 @@ def get_application_details(aid: int, db: Session = Depends(get_db), user: User 
                     "created_at": doc.reviewed_at or doc.created_at
                 })
 
+    next_action = compute_next_best_action(a, db, user)
+    a.next_action = next_action
+
     return {
         "application": a,
+        "next_action": next_action,
         "available_transitions": transitions,
         "audit_history": audit_history,
         "documents": docs,
@@ -699,6 +708,116 @@ def get_application_timeline(aid: int, db: Session = Depends(get_db), user: User
     if user.role == "institution" and a.institution_name != user.institution_name:
         raise HTTPException(status_code=403, detail="Forbidden.")
     return db.query(AuditEvent).filter(AuditEvent.application_id == aid).order_by(desc(AuditEvent.created_at)).all()
+
+
+@app.get("/api/applications/{aid}/next-action", response_model=NextBestActionOut)
+def get_application_next_action(
+    aid: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """
+    Computes the single Next Best Action for the specified application dossier.
+    Combines current stage, outstanding deficiencies, evidence, SLA deadline, and role permissions.
+    """
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+    if user.role == "institution" and a.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden.")
+    return compute_next_best_action(app=a, db=db, user=user)
+
+
+@app.get("/api/applications/{aid}/extracted-fields", response_model=List[CandidateFieldOut])
+def get_application_extracted_fields(
+    aid: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """
+    Retrieves candidate fields extracted from all supporting documents attached to an application.
+    Preserves document provenance, evidence quotes, and confidence labels for safe officer review.
+    """
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+    if user.role == "institution" and a.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden.")
+
+    docs = db.query(Document).filter(Document.application_id == aid).all()
+    all_candidates: List[CandidateFieldOut] = []
+    seen = set()
+
+    for d in docs:
+        extracted = extract_candidate_fields(d.document_name, d.document_type, d.extracted_text or "")
+        for item in extracted:
+            unique_key = f"{item['field_key']}_{item['extracted_value']}"
+            if unique_key not in seen:
+                seen.add(unique_key)
+                all_candidates.append(CandidateFieldOut(**item))
+
+    return all_candidates
+
+
+@app.post("/api/applications/{aid}/apply-extracted-fields")
+def apply_application_extracted_fields(
+    aid: int,
+    req: ApplyExtractedFieldsRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """
+    Applies user-confirmed extracted candidate fields directly into the application's form metadata.
+    Avoids silent AI overwrites by requiring explicit human confirmation and logs a tamper-evident audit trail.
+    """
+    a = db.get(Application, aid)
+    if not a:
+        raise HTTPException(status_code=404, detail="Application not found.")
+    if user.role == "institution" and a.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden.")
+    if a.status in ["COMPLETED", "REJECTED"]:
+        raise HTTPException(status_code=400, detail="Cannot mutate application fields after final decision.")
+
+    current_data = {}
+    if a.form_data:
+        try:
+            current_data = json.loads(a.form_data) if isinstance(a.form_data, str) else dict(a.form_data)
+        except Exception:
+            current_data = {}
+
+    current_data.update(req.fields)
+    a.form_data = json.dumps(current_data)
+    a.updated_at = datetime.utcnow()
+
+    record_audit_event(
+        db=db,
+        application_id=aid,
+        actor=user.email,
+        actor_role=user.role,
+        action="FIELDS_PREFILLED",
+        from_stage=a.current_stage,
+        to_stage=a.current_stage,
+        details=f"Extracted metadata ({', '.join(req.fields.keys())}) confirmed and applied by {user.name}."
+    )
+    db.commit()
+    db.refresh(a)
+    return {
+        "status": "success",
+        "message": f"{len(req.fields)} field(s) confirmed and applied to application {a.reference}.",
+        "form_data": current_data
+    }
+
+
+@app.get("/api/analytics/bottlenecks", response_model=BottleneckAnalyticsOut)
+def get_bottleneck_analytics(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """
+    Operational analytics endpoint identifying stage backlogs, average ageing,
+    workload friction points, and SLA breach risks across regions.
+    """
+    return compute_bottleneck_analytics(db=db, user=user)
 
 
 @app.post("/api/applications/{aid}/transition", response_model=ApplicationOut)
@@ -2070,6 +2189,7 @@ def v1_get_timeline(aid: int, db: Session = Depends(get_db), user: User = Depend
     return db.query(AuditEvent).filter(AuditEvent.application_id == aid).order_by(AuditEvent.created_at.asc()).all()
 
 
+@app.get("/api/applications/{aid}/audit/verify")
 @v1_router.get("/applications/{aid}/audit/verify")
 def v1_verify_audit(aid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     a = db.get(Application, aid)
@@ -2078,6 +2198,7 @@ def v1_verify_audit(aid: int, db: Session = Depends(get_db), user: User = Depend
     if user.role == "institution" and a.institution_name != user.institution_name:
         raise HTTPException(status_code=403, detail="Forbidden.")
     return verify_audit_chain(db, aid)
+
 
 
 @v1_router.get("/notifications", response_model=List[AlertOut])
@@ -2114,6 +2235,26 @@ def v1_mark_notification_read(nid: int, db: Session = Depends(get_db), user: Use
     db.commit()
     db.refresh(al)
     return al
+
+
+@v1_router.get("/applications/{aid}/next-action", response_model=NextBestActionOut)
+def v1_get_application_next_action(aid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return get_application_next_action(aid=aid, db=db, user=user)
+
+
+@v1_router.get("/applications/{aid}/extracted-fields", response_model=List[CandidateFieldOut])
+def v1_get_application_extracted_fields(aid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return get_application_extracted_fields(aid=aid, db=db, user=user)
+
+
+@v1_router.post("/applications/{aid}/apply-extracted-fields")
+def v1_apply_application_extracted_fields(aid: int, req: ApplyExtractedFieldsRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return apply_application_extracted_fields(aid=aid, req=req, db=db, user=user)
+
+
+@v1_router.get("/analytics/bottlenecks", response_model=BottleneckAnalyticsOut)
+def v1_get_bottleneck_analytics(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return get_bottleneck_analytics(db=db, user=user)
 
 
 app.include_router(v1_router)

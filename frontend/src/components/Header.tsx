@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, PlayCircle } from 'lucide-react';
+import { Activity, PlayCircle, Bell, Search, ShieldCheck, RefreshCw } from 'lucide-react';
 import { User } from '../types';
 
 interface HeaderProps {
@@ -9,6 +9,8 @@ interface HeaderProps {
   onRunEscalation: () => void;
   onSwitchRole: (email: string) => void;
   isScanning: boolean;
+  onNavigateTab?: (tab: string) => void;
+  unreadCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -17,7 +19,9 @@ export const Header: React.FC<HeaderProps> = ({
   onRefresh,
   onRunEscalation,
   onSwitchRole,
-  isScanning
+  isScanning,
+  onNavigateTab,
+  unreadCount = 0
 }) => {
   const demoAccounts = [
     { label: 'RO Officer', email: 'officer@demo.local', role: 'officer' },
@@ -27,24 +31,68 @@ export const Header: React.FC<HeaderProps> = ({
     { label: 'Admin', email: 'admin@demo.local', role: 'admin' },
   ];
 
+  const pageSubtitles: Record<string, string> = {
+    Overview: 'Executive operations summary, stage pipeline, and regional workload metrics',
+    Applications: 'Centralized case register with Next Best Action triggers and full lifecycle routing',
+    'AI Assistant': 'Explainable document verification, candidate field extraction, and discrepancy drafting',
+    'EVC Inspections': 'Expert Visit Committee scheduling, committee roster allocation, and visit reports',
+    Compliance: 'Time-bound undertakings, 30-year lease verification, and statutory safety clearances',
+    Alerts: 'SLA countdowns, regulatory notifications, and automated escalation logs',
+    Reports: 'Official regulatory registers, bottleneck intelligence, and formula-safe CSV exports',
+    'Role Matrix': 'SIH26262 statutory governance model, access boundaries, and evaluation accounts',
+  };
+
+  const tabCategories: Record<string, string> = {
+    Overview: 'Core Operations',
+    Applications: 'Core Operations',
+    'AI Assistant': 'Regulatory Scrutiny',
+    'EVC Inspections': 'Regulatory Scrutiny',
+    Compliance: 'Compliance & Evidence',
+    Alerts: 'Governance & Analytics',
+    Reports: 'Governance & Analytics',
+    'Role Matrix': 'System Access'
+  };
+
+  const currentCategory = tabCategories[currentTab] || 'Operations';
+
   return (
     <header className="topbar">
+      {/* Left: Official GovTech Header & Breadcrumb */}
       <div className="topbar-left">
-        <h2>{currentTab}</h2>
-        <span>AICTE Regulatory Operations Dashboard · {user?.designation || user?.role}</span>
+        <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, color: 'var(--text-muted)' }}>
+          <button
+            type="button"
+            className="topbar-agency-tag breadcrumb-link"
+            style={{ margin: 0, cursor: onNavigateTab ? 'pointer' : 'default' }}
+            onClick={() => onNavigateTab && onNavigateTab('Overview')}
+            title="Navigate to Command Centre"
+          >
+            AICTE WORKFLOW HUB
+          </button>
+          <span>/</span>
+          <span style={{ fontWeight: 600 }}>{currentCategory}</span>
+          <span>/</span>
+          <span style={{ color: 'var(--color-navy)', fontWeight: 700 }}>{currentTab}</span>
+        </nav>
+        <h2 style={{ margin: '3px 0 0', fontSize: 18, color: 'var(--color-navy)', fontWeight: 800 }}>{currentTab}</h2>
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+          {pageSubtitles[currentTab] || `AICTE Regulatory Console · ${user?.designation || user?.role}`}
+        </span>
       </div>
 
+      {/* Right Actions */}
       <div className="topbar-actions">
-        {/* Quick Role Switcher for SIH evaluators */}
-        <div className="quick-role-bar" title="Switch between prototype demo roles with 1 click">
-          <span style={{ fontSize: 10, fontWeight: 700, color: '#64748b', padding: '0 4px' }}>
-            DEMO ROLE:
+        {/* Quick Demo Role Switcher for SIH Evaluators */}
+        <div className="quick-role-bar" title="Switch persona to evaluate role-based permissions">
+          <span className="quick-role-label">
+            Demo Persona:
           </span>
           {demoAccounts.map((acc) => {
             const isCurrent = user?.role === acc.role;
             return (
               <button
                 key={acc.email}
+                type="button"
                 className={`role-pill ${isCurrent ? 'active' : ''}`}
                 onClick={() => onSwitchRole(acc.email)}
               >
@@ -54,21 +102,52 @@ export const Header: React.FC<HeaderProps> = ({
           })}
         </div>
 
-        {/* Manual Deadline Scan trigger for SIH demo */}
+        {/* Manual Deadline Scan Trigger (Officer / Bureau / Admin) */}
         {user?.role !== 'institution' && (
           <button
+            type="button"
             className="btn-secondary"
             onClick={onRunEscalation}
             disabled={isScanning}
-            title="Evaluate application and compliance deadlines, auto-triggering overdue alerts"
+            title="Scan active case deadlines and auto-trigger SLA escalation alerts"
           >
-            <PlayCircle size={15} color="#ea580c" />
-            <span>{isScanning ? 'Scanning...' : 'Scan Deadlines'}</span>
+            <PlayCircle size={14} color="#D97706" />
+            <span>{isScanning ? 'Evaluating SLA...' : 'Scan Deadlines'}</span>
           </button>
         )}
 
-        <button className="btn-secondary" onClick={onRefresh} title="Reload live database records">
-          <Activity size={15} />
+        {/* Notification Bell with Badge */}
+        {onNavigateTab && (
+          <button
+            type="button"
+            className="btn-icon"
+            onClick={() => onNavigateTab('Alerts')}
+            title={`View notifications (${unreadCount} unread)`}
+            style={{ position: 'relative' }}
+          >
+            <Bell size={16} />
+            {unreadCount > 0 && (
+              <span style={{
+                position: 'absolute',
+                top: -3,
+                right: -3,
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: '#DC2626'
+              }} />
+            )}
+          </button>
+        )}
+
+        {/* Refresh Live Database Records */}
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={onRefresh}
+          title="Reload live database records"
+        >
+          <RefreshCw size={13} />
           <span>Refresh</span>
         </button>
       </div>

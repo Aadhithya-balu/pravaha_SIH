@@ -5,7 +5,8 @@ import {
   CheckCircle2,
   Lock,
   Mail,
-  ArrowRight
+  ArrowRight,
+  Info
 } from 'lucide-react';
 import { api, token, fetchApplications, fetchNotifications } from './api';
 import { User, Application, AlertItem, DashboardMetrics } from './types';
@@ -28,8 +29,18 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [toastMsg, setToastMsg] = useState<string>('');
   const [isScanning, setIsScanning] = useState<boolean>(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+  const [appStageFilter, setAppStageFilter] = useState<string>('ALL');
+  const [appStatusFilter, setAppStatusFilter] = useState<string>('ALL');
+
+  function handleNavigateWithFilter(tab: string, stageFilter: string = 'ALL', statusFilter: string = 'ALL') {
+    setAppStageFilter(stageFilter);
+    setAppStatusFilter(statusFilter);
+    setTab(tab);
+  }
 
   // Core Data
+
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
@@ -54,13 +65,30 @@ export default function App() {
       setAlerts(al);
     } catch (err: any) {
       console.error('Data load error:', err);
-      if (err.message && err.message.includes('401')) {
+      const isAuthErr =
+        err?.status === 401 ||
+        err?.message?.includes('401') ||
+        err?.message?.toLowerCase().includes('token') ||
+        err?.message?.toLowerCase().includes('unauthorized') ||
+        err?.message?.toLowerCase().includes('authentication required');
+
+      if (isAuthErr) {
         handleSignOut();
+        setErrorMsg('Your session has expired or the access token was invalid. Please sign in below.');
       } else {
-        setErrorMsg(err.message);
+        setErrorMsg(err.message || 'Failed to load platform data.');
       }
     }
   }
+
+  useEffect(() => {
+    function onAuthExpired() {
+      handleSignOut();
+      setErrorMsg('Your session has expired or the access token was invalid. Please sign in below.');
+    }
+    window.addEventListener('auth:expired', onAuthExpired);
+    return () => window.removeEventListener('auth:expired', onAuthExpired);
+  }, []);
 
   useEffect(() => {
     if (authToken) {
@@ -122,26 +150,41 @@ export default function App() {
   if (!authToken) {
     return (
       <main className="login-wrap">
+        <div className="gov-tricolor-bar" />
         <div className="login-card">
-          <div className="login-emblem">
-            <ShieldCheck size={32} />
+          {/* Official Agency Emblem Header */}
+          <div className="login-header-emblem">
+            <div className="login-emblem-badge">
+              <ShieldCheck size={26} />
+            </div>
+            <div className="login-header-emblem-text">
+              <h4>Government of India</h4>
+              <span>All India Council for Technical Education</span>
+            </div>
           </div>
 
-          <div className="login-header">
-            <small style={{ fontSize: 11, fontWeight: 800, color: '#64748b', letterSpacing: '0.12em' }}>
-              SIH PROTOTYPE · PROBLEM STATEMENT 4
-            </small>
-            <h1>AICTE Approval Workflow Hub</h1>
+          <div className="login-title-block">
+            <h1>Pravaha Regulatory Hub</h1>
             <p>
-              Automated scrutiny transitions, EVC scheduling, AI document review, and real-time compliance monitoring.
+              Integrated Approval Workflow Automation, Compliance Monitoring, and Alert Management System (SIH26262)
             </p>
+          </div>
+
+          {/* Prototype Demonstration Disclaimer */}
+          <div className="prototype-notice-banner">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Info size={14} style={{ flexShrink: 0 }} />
+              <span>
+                <b>SIH Evaluation Prototype:</b> Official testbed demonstration for Smart India Hackathon jury review.
+              </span>
+            </div>
           </div>
 
           {errorMsg && <div className="alert-banner danger">{errorMsg}</div>}
 
           <form onSubmit={(e) => handleLogin(e)}>
             <div className="form-group" style={{ marginBottom: 12 }}>
-              <label>Official Email</label>
+              <label>Official Institutional / Officer Email *</label>
               <div style={{ position: 'relative' }}>
                 <input
                   type="email"
@@ -153,15 +196,15 @@ export default function App() {
               </div>
             </div>
 
-            <div className="form-group" style={{ marginBottom: 18 }}>
-              <label>Password</label>
+            <div className="form-group" style={{ marginBottom: 16 }}>
+              <label>Security Password *</label>
               <div style={{ position: 'relative' }}>
                 <input
                   type="password"
                   required
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="Enter your password"
+                  placeholder="Enter your security password"
                 />
               </div>
             </div>
@@ -169,17 +212,17 @@ export default function App() {
             <button
               type="submit"
               className="btn-primary"
-              style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
+              style={{ width: '100%', justifyContent: 'center', padding: '10px 14px' }}
               disabled={isLoggingIn}
             >
-              <span>{isLoggingIn ? 'Authenticating...' : 'Sign in to Portal'}</span>
-              <ArrowRight size={15} />
+              <span>{isLoggingIn ? 'Authenticating with Secure Session...' : 'Sign in to Regulatory Portal'}</span>
+              <ArrowRight size={14} />
             </button>
           </form>
 
-          {/* Quick Demo Logins Box */}
+          {/* 1-Click Demo Evaluation Personas */}
           <div className="demo-account-box">
-            <b>1-Click Demo Evaluation Accounts (Password: DemoPass123!)</b>
+            <b>Evaluation Personas (Common Password: DemoPass123!)</b>
             <div className="demo-account-buttons">
               <button
                 type="button"
@@ -189,7 +232,8 @@ export default function App() {
                   handleLogin(undefined, 'officer@demo.local', 'DemoPass123!');
                 }}
               >
-                1. Regional Officer
+                <b>1. Regional Officer</b>
+                <span>Regional Scrutiny Officer</span>
               </button>
               <button
                 type="button"
@@ -199,7 +243,8 @@ export default function App() {
                   handleLogin(undefined, 'college@demo.local', 'DemoPass123!');
                 }}
               >
-                2. College Applicant
+                <b>2. College Applicant</b>
+                <span>Sri Sairam Institute</span>
               </button>
               <button
                 type="button"
@@ -209,7 +254,8 @@ export default function App() {
                   handleLogin(undefined, 'bureau@demo.local', 'DemoPass123!');
                 }}
               >
-                3. Bureau Head (HQ)
+                <b>3. Bureau Head (HQ)</b>
+                <span>Director (Approval Bureau)</span>
               </button>
               <button
                 type="button"
@@ -219,7 +265,8 @@ export default function App() {
                   handleLogin(undefined, 'evc@demo.local', 'DemoPass123!');
                 }}
               >
-                4. EVC Panel Expert
+                <b>4. EVC Panel Expert</b>
+                <span>Senior Committee Inspector</span>
               </button>
             </div>
           </div>
@@ -233,6 +280,9 @@ export default function App() {
 
   return (
     <div className="shell">
+      {/* National Tricolor Top Ribbon */}
+      <div className="gov-tricolor-bar" />
+
       {/* Persistent Left Sidebar */}
       <Sidebar
         currentTab={currentTab}
@@ -240,6 +290,8 @@ export default function App() {
         user={user}
         unreadAlertsCount={unreadCount}
         onSignOut={handleSignOut}
+        isCollapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
 
       {/* Main Content Area */}
@@ -251,6 +303,8 @@ export default function App() {
           onRunEscalation={handleRunEscalation}
           onSwitchRole={handleSwitchRole}
           isScanning={isScanning}
+          onNavigateTab={setTab}
+          unreadCount={unreadCount}
         />
 
         {/* Global Feedback Banners */}
@@ -287,7 +341,16 @@ export default function App() {
 
         {/* Active View Routing */}
         {currentTab === 'Overview' && (
-          <OverviewTab metrics={metrics} user={user} onNavigate={setTab} />
+          <OverviewTab
+            metrics={metrics}
+            user={user}
+            applications={applications}
+            alerts={alerts}
+            onNavigate={setTab}
+            onNavigateWithFilter={handleNavigateWithFilter}
+            onSelectApplication={(app) => setSelectedApp(app)}
+            onRefresh={loadData}
+          />
         )}
 
         {currentTab === 'Applications' && (
@@ -296,8 +359,11 @@ export default function App() {
             user={user}
             onSelectApplication={(app) => setSelectedApp(app)}
             onRefresh={loadData}
+            initialStageFilter={appStageFilter}
+            initialStatusFilter={appStatusFilter}
           />
         )}
+
 
         {currentTab === 'AI Assistant' && (
           <DocumentReviewTab user={user} />

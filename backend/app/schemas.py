@@ -92,6 +92,7 @@ class ApplicationOut(BaseModel):
     decision_date: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    next_action: Optional[Dict[str, Any]] = None
 
 
 class AuditEventOut(BaseModel):
@@ -234,3 +235,42 @@ class OfficerDecisionRequest(BaseModel):
     decision: str = "APPROVED"  # APPROVED or REJECTED
     remarks: str = ""
     approval_order_reference: Optional[str] = None
+
+
+# --- Advanced GovTech Intelligence Schemas ---
+
+class NextBestActionOut(BaseModel):
+    action_code: str
+    action_label: str
+    target_role: str
+    assigned_to: str
+    reason: str
+    urgency: str
+    days_remaining: Optional[int] = None
+    is_user_authorized: bool = False
+
+
+class CandidateFieldOut(BaseModel):
+    field_key: str
+    field_label: str
+    extracted_value: str
+    provenance: str
+    source_document: str
+    evidence_quote: Optional[str] = None
+    confidence_label: str
+    target_form_field: Optional[str] = None
+
+
+class ApplyExtractedFieldsRequest(BaseModel):
+    fields: Dict[str, str]
+
+
+class BottleneckAnalyticsOut(BaseModel):
+    total_active_applications: int
+    sla_compliance_rate: float
+    total_sla_breaches: int
+    stage_analytics: List[Dict[str, Any]]
+    region_workload: Dict[str, int]
+    officer_workload: Dict[str, int]
+    identified_bottlenecks: List[str]
+

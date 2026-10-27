@@ -30,7 +30,15 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
     } else if (errorBody.message) {
       message = errorBody.message;
     }
-    throw new Error(message);
+    const err: any = new Error(message);
+    err.status = res.status;
+    if (res.status === 401) {
+      localStorage.removeItem('ps4_token');
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('auth:expired'));
+      }
+    }
+    throw err;
   }
   return res.json();
 }
@@ -133,3 +141,120 @@ export async function downloadCsv(reportType: 'applications' | 'compliance'): Pr
   document.body.removeChild(a);
   window.URL.revokeObjectURL(url);
 }
+
+export async function fetchNextBestAction(id: number): Promise<any> {
+  return api(`/v1/applications/${id}/next-action`);
+}
+
+export async function fetchExtractedFields(id: number): Promise<any[]> {
+  return api(`/v1/applications/${id}/extracted-fields`);
+}
+
+export async function applyExtractedFields(id: number, fields: Record<string, string>): Promise<any> {
+  return api(`/v1/applications/${id}/apply-extracted-fields`, {
+    method: 'POST',
+    body: JSON.stringify({ fields })
+  });
+}
+
+export async function fetchBottleneckAnalytics(): Promise<any> {
+  return api('/v1/analytics/bottlenecks');
+}
+
+export async function verifyAuditChain(id: number): Promise<any> {
+  return api(`/v1/applications/${id}/audit/verify`);
+}
+
+export async function runOfficerScrutiny(id: number, runType: string = 'INITIAL'): Promise<any> {
+  return api(`/v1/officer/applications/${id}/scrutiny`, {
+    method: 'POST',
+    body: JSON.stringify({ run_type: runType })
+  });
+}
+
+export async function setFindingDisposition(
+  findingId: number,
+  disposition: 'ACCEPTED' | 'WAIVED' | 'CORRECTION_REQUESTED' | 'RESOLVED',
+  dispositionNotes?: string
+): Promise<any> {
+  return api(`/findings/${findingId}/disposition`, {
+    method: 'POST',
+    body: JSON.stringify({
+      disposition,
+      disposition_notes: dispositionNotes || null
+    })
+  });
+}
+
+export async function recordOfficerDecision(
+  id: number,
+  decision: 'APPROVED' | 'REJECTED',
+  remarks: string,
+  approvalOrderReference?: string
+): Promise<any> {
+  return api(`/v1/officer/applications/${id}/decision`, {
+    method: 'POST',
+    body: JSON.stringify({
+      decision,
+      remarks,
+      approval_order_reference: approvalOrderReference || null
+    })
+  });
+}
+
+export async function requestOfficerCorrections(
+  id: number,
+  reason: string,
+  deficiencies: any[] = []
+): Promise<any> {
+  return api(`/v1/officer/applications/${id}/request-corrections`, {
+    method: 'POST',
+    body: JSON.stringify({
+      reason,
+      deficiencies
+    })
+  });
+}
+
+export async function fetchCompliance(params?: { status?: string; item_type?: string }): Promise<any[]> {
+  const query = new URLSearchParams();
+  if (params?.status && params.status !== 'ALL') query.append('status', params.status);
+  if (params?.item_type && params.item_type !== 'ALL') query.append('item_type', params.item_type);
+  const qStr = query.toString() ? `?${query.toString()}` : '';
+  return api(`/compliance${qStr}`);
+}
+
+export async function submitComplianceEvidence(complianceId: number, submissionEvidence: string): Promise<any> {
+  return api(`/compliance/${complianceId}/submit-evidence`, {
+    method: 'POST',
+    body: JSON.stringify({ submission_evidence: submissionEvidence })
+  });
+}
+
+export async function verifyComplianceEvidence(
+  complianceId: number,
+  action: 'VERIFY' | 'REJECT',
+  officerComments?: string
+): Promise<any> {
+  return api(`/compliance/${complianceId}/verify`, {
+    method: 'POST',
+    body: JSON.stringify({ action, officer_comments: officerComments || null })
+  });
+}
+
+export async function updateEvcVisitRecord(
+  visitId: number,
+  data: {
+    status?: string;
+    report_summary?: string;
+    recommendations?: string;
+    conducted_date?: string;
+  }
+): Promise<any> {
+  return api(`/evc/${visitId}/update`, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
+
+
