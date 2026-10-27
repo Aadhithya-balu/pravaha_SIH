@@ -15,15 +15,11 @@ import {
   Eye,
   Search,
   Layers,
-  Activity,
-  FileCheck2,
-  Sparkles,
   ChevronRight,
-  Plus,
-  Compass,
-  FileSpreadsheet,
-  Info,
-  ExternalLink
+  FileCheck2,
+  ExternalLink,
+  SlidersHorizontal,
+  Compass
 } from 'lucide-react';
 import { DashboardMetrics, User, Application, AlertItem, BottleneckAnalytics, AuditEvent } from '../types';
 import { fetchBottleneckAnalytics, fetchRecentAuditEvents } from '../api';
@@ -55,7 +51,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
 
-  // Distinct academic years present in user's data
+  // Distinct academic years in applications
   const availableYears = useMemo(() => {
     const years = Array.from(new Set(applications.map((a) => a.academic_year).filter(Boolean)));
     return years.sort().reverse();
@@ -68,7 +64,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       try {
         const [bnData, auditsData] = await Promise.allSettled([
           fetchBottleneckAnalytics(),
-          fetchRecentAuditEvents(8)
+          fetchRecentAuditEvents(6)
         ]);
         if (isMounted) {
           if (bnData.status === 'fulfilled') setBottlenecks(bnData.value);
@@ -91,7 +87,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       if (onRefresh) await onRefresh();
       const [bnData, auditsData] = await Promise.allSettled([
         fetchBottleneckAnalytics(),
-        fetchRecentAuditEvents(8)
+        fetchRecentAuditEvents(6)
       ]);
       if (bnData.status === 'fulfilled') setBottlenecks(bnData.value);
       if (auditsData.status === 'fulfilled' && auditsData.value) setRecentAudits(auditsData.value);
@@ -109,13 +105,13 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     }
   }
 
-  // Filter applications by selected academic year if chosen
+  // Filter applications by selected academic year
   const filteredApps = useMemo(() => {
     if (selectedYear === 'ALL') return applications;
     return applications.filter((a) => a.academic_year === selectedYear);
   }, [applications, selectedYear]);
 
-  // Calculate accurate, non-duplicated stage breakdown
+  // Stage breakdown
   const stageCounts = useMemo(() => {
     const counts: Record<string, number> = {
       SUBMITTED: 0,
@@ -136,31 +132,77 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     return counts;
   }, [filteredApps]);
 
-  // 1. KPI Metrics
+  // 1. Four Core Decision Metrics
   const totalAppsCount = filteredApps.length;
   const pendingScrutinyCount = (stageCounts['SCRUTINY'] || 0) + (stageCounts['RE_SCRUTINY'] || 0);
   const awaitingCorrectionsCount = stageCounts['RETURNED_FOR_CLARIFICATION'] || 0;
-  const pendingActionsCount =
-    (stageCounts['EVC_PENDING'] || 0) +
-    (stageCounts['EVC_SCHEDULED'] || 0) +
+  const pendingDecisionsCount =
     (stageCounts['COMPLIANCE_PENDING'] || 0) +
-    (stageCounts['SAC_SHC_REVIEW'] || 0);
+    (stageCounts['SAC_SHC_REVIEW'] || 0) +
+    (stageCounts['EVC_PENDING'] || 0) +
+    (stageCounts['EVC_SCHEDULED'] || 0);
 
-  // 2. Regulatory Workflow Stages (Ordered by operational lifecycle)
-  const REGULATORY_STAGES = [
-    { key: 'SUBMITTED', label: 'Submitted', color: '#2563EB', isCompleted: false },
-    { key: 'SCRUTINY', label: 'Primary Scrutiny', color: '#2563EB', isCompleted: false },
-    { key: 'RETURNED_FOR_CLARIFICATION', label: 'Returned for Clarification', color: '#B45309', isCompleted: false },
-    { key: 'RE_SCRUTINY', label: 'Re-Scrutiny', color: '#2563EB', isCompleted: false },
-    { key: 'EVC_PENDING', label: 'EVC Inspection Pending', color: '#7C3AED', isCompleted: false },
-    { key: 'EVC_SCHEDULED', label: 'EVC Inspection Scheduled', color: '#7C3AED', isCompleted: false },
-    { key: 'EVC_COMPLETED', label: 'EVC Report Completed', color: '#4F46E5', isCompleted: false },
-    { key: 'SAC_SHC_REVIEW', label: 'SAC / SHC Review', color: '#475569', isCompleted: false },
-    { key: 'COMPLIANCE_PENDING', label: 'Compliance Pending', color: '#0D9488', isCompleted: false },
-    { key: 'COMPLETED', label: 'Approved / Completed Orders', color: '#15803D', isCompleted: true }
+  // 2. Principal Workflow Stages (Clean 7-Step Progression)
+  const WORKFLOW_STEPS = [
+    {
+      id: 'SUBMITTED',
+      stepNum: 1,
+      label: 'Submitted',
+      count: stageCounts['SUBMITTED'] || 0,
+      stageFilter: 'SUBMITTED',
+      color: '#2864E8'
+    },
+    {
+      id: 'SCRUTINY',
+      stepNum: 2,
+      label: 'Scrutiny',
+      count: stageCounts['SCRUTINY'] || 0,
+      stageFilter: 'SCRUTINY',
+      color: '#2864E8'
+    },
+    {
+      id: 'RETURNED_FOR_CLARIFICATION',
+      stepNum: 3,
+      label: 'Clarification',
+      count: stageCounts['RETURNED_FOR_CLARIFICATION'] || 0,
+      stageFilter: 'RETURNED_FOR_CLARIFICATION',
+      color: '#D98B16'
+    },
+    {
+      id: 'RE_SCRUTINY',
+      stepNum: 4,
+      label: 'Re-Scrutiny',
+      count: stageCounts['RE_SCRUTINY'] || 0,
+      stageFilter: 'RE_SCRUTINY',
+      color: '#2864E8'
+    },
+    {
+      id: 'EVC',
+      stepNum: 5,
+      label: 'EVC Visit',
+      count: (stageCounts['EVC_PENDING'] || 0) + (stageCounts['EVC_SCHEDULED'] || 0) + (stageCounts['EVC_COMPLETED'] || 0),
+      stageFilter: 'EVC_PENDING',
+      color: '#0F9D91'
+    },
+    {
+      id: 'COMPLIANCE',
+      stepNum: 6,
+      label: 'Compliance',
+      count: stageCounts['COMPLIANCE_PENDING'] || 0,
+      stageFilter: 'COMPLIANCE_PENDING',
+      color: '#0F9D91'
+    },
+    {
+      id: 'DECISION',
+      stepNum: 7,
+      label: 'Decision',
+      count: stageCounts['COMPLETED'] || 0,
+      stageFilter: 'COMPLETED',
+      color: '#16845B'
+    }
   ];
 
-  // 3. Work Requiring Attention (strictly calculated from persisted data)
+  // 3. Needs Attention (Top 3 High-Priority Categories)
   const today = new Date();
   const overdueApps = filteredApps.filter((a) => {
     if (a.status === 'COMPLETED' || a.status === 'REJECTED') return false;
@@ -178,74 +220,39 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     return diffDays >= 0 && diffDays <= 7;
   });
 
-  const returnedDeficiencyCount = stageCounts['RETURNED_FOR_CLARIFICATION'] || 0;
-  const evcPendingCount = stageCounts['EVC_PENDING'] || 0;
-  const evcScheduledCount = stageCounts['EVC_SCHEDULED'] || 0;
-  const compliancePendingCount = metrics?.compliance_pending_count || 0;
-  const decisionReadyCount = (stageCounts['COMPLIANCE_PENDING'] || 0) + (stageCounts['SAC_SHC_REVIEW'] || 0);
-
-  const attentionItems = [
+  const attentionCategories = [
     {
       id: 'overdue',
-      label: 'Overdue Applications',
-      description: 'Dossiers that have breached prescribed statutory turnaround time',
+      label: 'Overdue applications',
       count: overdueApps.length,
-      severity: 'danger' as const,
+      color: '#D64545',
+      badgeBg: '#FDF2F2',
+      badgeText: '#D64545',
       onClick: () => handleFilterNav('Applications', 'ALL', 'OVERDUE')
     },
     {
-      id: 'due_soon',
-      label: 'Approaching Scrutiny / SLA Deadlines',
-      description: 'Dossiers with statutory deadlines expiring within 7 days',
+      id: 'approaching',
+      label: 'Approaching deadlines (≤ 7 days)',
       count: dueSoonApps.length,
-      severity: 'warning' as const,
+      color: '#D98B16',
+      badgeBg: '#FEF7EC',
+      badgeText: '#D98B16',
       onClick: () => handleFilterNav('Applications', 'ALL', 'IN_PROGRESS')
     },
     {
       id: 'returned',
-      label: 'Pending Institutional Clarifications',
-      description: 'Applications returned for deficiency rectification and proof upload',
-      count: returnedDeficiencyCount,
-      severity: 'warning' as const,
+      label: 'Pending institution responses',
+      count: awaitingCorrectionsCount,
+      color: '#D98B16',
+      badgeBg: '#FEF7EC',
+      badgeText: '#D98B16',
       onClick: () => handleFilterNav('Applications', 'RETURNED_FOR_CLARIFICATION', 'RETURNED')
-    },
-    {
-      id: 'evc_schedule',
-      label: 'Inspections Requiring Committee Scheduling',
-      description: 'Scrutiny passed; committee composition and visit date pending',
-      count: evcPendingCount,
-      severity: 'info' as const,
-      onClick: () => onNavigate('EVC Inspections')
-    },
-    {
-      id: 'evc_report',
-      label: 'Inspections Awaiting Committee Reports',
-      description: 'Physical/virtual visits conducted; formal report submission pending',
-      count: evcScheduledCount,
-      severity: 'neutral' as const,
-      onClick: () => onNavigate('EVC Inspections')
-    },
-    {
-      id: 'compliance',
-      label: 'Statutory Compliance Proofs Due',
-      description: 'Conditional undertakings and post-approval compliance submissions',
-      count: compliancePendingCount,
-      severity: 'warning' as const,
-      onClick: () => onNavigate('Compliance')
-    },
-    {
-      id: 'decision',
-      label: 'Applications Awaiting Final Decision',
-      description: 'Compliance verified or SAC hearings concluded; ready for order',
-      count: decisionReadyCount,
-      severity: 'success' as const,
-      onClick: () => handleFilterNav('Applications', 'COMPLIANCE_PENDING', 'ALL')
     }
   ];
 
-  const totalAttentionCount = attentionItems.reduce((acc, item) => acc + item.count, 0);
+  const totalNeedsAttention = attentionCategories.reduce((acc, cat) => acc + cat.count, 0);
 
-  // 4. Priority Queue (Sorted by actual urgency)
+  // 4. Priority Queue (Top 6 rows sorted by urgency)
   const priorityQueue = useMemo(() => {
     const list = [...filteredApps];
     return list
@@ -271,10 +278,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         }
         return b.id - a.id;
       })
-      .slice(0, 8);
+      .slice(0, 6);
   }, [filteredApps, today]);
 
-  // Jurisdiction badge text
+  // Jurisdiction indicator label
   const jurisdictionLabel = useMemo(() => {
     if (user?.role === 'institution') {
       return user.institution_name || 'Institution Applicant';
@@ -288,26 +295,36 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     return 'National HQ — All Jurisdictions';
   }, [user]);
 
-  // Loading skeleton state
+  // Workload distribution breakdown (by Type or by Region)
+  const typeBreakdown = useMemo(() => {
+    const counts: Record<string, number> = {};
+    filteredApps.forEach((a) => {
+      const t = a.application_type || 'Other';
+      counts[t] = (counts[t] || 0) + 1;
+    });
+    return counts;
+  }, [filteredApps]);
+
+  // Skeleton state
   if (!metrics) {
     return (
-      <div className="page-container" style={{ gap: 16 }}>
+      <div className="page-container" style={{ gap: 20 }}>
         <div style={{
           background: '#FFFFFF',
-          border: '1px solid #E2E8F0',
-          borderRadius: 8,
+          border: '1px solid #E6EBF2',
+          borderRadius: 12,
           padding: '24px',
           display: 'flex',
           flexDirection: 'column',
           gap: 12
         }}>
-          <div style={{ height: 16, width: 140, background: '#E2E8F0', borderRadius: 4 }} />
-          <div style={{ height: 26, width: 260, background: '#F1F5F9', borderRadius: 4 }} />
-          <div style={{ height: 14, width: 440, background: '#F8FAFC', borderRadius: 4 }} />
+          <div style={{ height: 16, width: 140, background: '#E6EBF2', borderRadius: 4 }} />
+          <div style={{ height: 28, width: 260, background: '#F1F5F9', borderRadius: 4 }} />
+          <div style={{ height: 14, width: 380, background: '#F8FAFC', borderRadius: 4 }} />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} style={{ height: 104, background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8 }} />
+            <div key={i} style={{ height: 110, background: '#FFFFFF', border: '1px solid #E6EBF2', borderRadius: 12 }} />
           ))}
         </div>
       </div>
@@ -315,67 +332,65 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   }
 
   return (
-    <div className="page-container" style={{ gap: 20 }}>
+    <div className="page-container" style={{ gap: 20, maxWidth: 1440, margin: '0 auto', width: '100%' }}>
       {/* ====================================================================
-          A. COMPACT APPLICATION HEADER (Government-Grade Enterprise Style)
+          1. HEADER (Compact, White, Refined Breadcrumb & Controls)
           ==================================================================== */}
       <div style={{
         background: '#FFFFFF',
-        border: '1px solid #E2E8F0',
-        borderRadius: 8,
-        padding: '16px 20px',
+        border: '1px solid #E6EBF2',
+        borderRadius: 12,
+        padding: '16px 22px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         flexWrap: 'wrap',
         gap: 16,
-        boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)'
+        boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)'
       }}>
         <div>
           {/* Breadcrumb */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: '#64748B', marginBottom: 2 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#69788C', marginBottom: 2 }}>
             <span>Operations</span>
             <span style={{ color: '#CBD5E1' }}>/</span>
-            <span style={{ color: '#172B4D', fontWeight: 600 }}>Dashboard</span>
+            <span style={{ color: '#16324F', fontWeight: 600 }}>Dashboard</span>
           </div>
 
-          {/* Heading */}
-          <h1 style={{
-            fontSize: 22,
-            fontWeight: 700,
-            margin: '2px 0 3px',
-            color: '#172B4D',
-            letterSpacing: '-0.01em'
-          }}>
-            Regulatory Operations
-          </h1>
-
-          {/* Supporting description */}
-          <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
-            Monitor application scrutiny, institutional compliance, inspections, and pending decisions.
-          </p>
+          {/* Heading & Subtitle */}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+            <h1 style={{
+              fontSize: 24,
+              fontWeight: 700,
+              margin: 0,
+              color: '#172B4D',
+              letterSpacing: '-0.015em'
+            }}>
+              Regulatory Operations
+            </h1>
+            <span style={{ fontSize: 13, color: '#69788C' }}>
+              Application scrutiny and approvals
+            </span>
+          </div>
         </div>
 
-        {/* Right header controls */}
+        {/* Right Header Controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {/* Academic Year Selector */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <label htmlFor="ay-select" style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
-              Academic Year:
-            </label>
             <select
-              id="ay-select"
+              aria-label="Filter by Academic Year"
               value={selectedYear}
               onChange={(e) => setSelectedYear(e.target.value)}
               style={{
                 fontSize: 12,
                 fontWeight: 600,
                 color: '#172B4D',
-                background: '#F8FAFC',
-                border: '1px solid #CBD5E1',
-                borderRadius: 6,
-                padding: '6px 10px',
-                cursor: 'pointer'
+                background: '#F7F9FC',
+                border: '1px solid #E6EBF2',
+                borderRadius: 8,
+                padding: '7px 12px',
+                cursor: 'pointer',
+                outline: 'none'
               }}
             >
               <option value="ALL">All Academic Years</option>
@@ -389,21 +404,21 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
           {/* Jurisdiction indicator */}
           <div
-            title={`Authorized jurisdiction scope for ${user?.email || 'authenticated user'}`}
+            title={`Authorized jurisdiction scope for ${user?.email || 'officer'}`}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
               gap: 6,
               padding: '6px 12px',
-              borderRadius: 6,
-              background: '#F1F5F9',
-              border: '1px solid #E2E8F0',
+              borderRadius: 8,
+              background: '#EAF1FF',
+              border: '1px solid #D6E4FF',
               fontSize: 12,
               fontWeight: 600,
-              color: '#1E293B'
+              color: '#2864E8'
             }}
           >
-            <Shield size={13} color="#2563EB" />
+            <Shield size={13} color="#2864E8" />
             <span>{jurisdictionLabel}</span>
           </div>
 
@@ -415,68 +430,69 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               display: 'inline-flex',
               alignItems: 'center',
               gap: 6,
-              padding: '6px 12px',
-              borderRadius: 6,
+              padding: '7px 12px',
+              borderRadius: 8,
               background: '#FFFFFF',
-              border: '1px solid #CBD5E1',
+              border: '1px solid #E6EBF2',
               color: '#172B4D',
               fontSize: 12,
               fontWeight: 600,
               cursor: isRefreshing ? 'wait' : 'pointer',
               transition: 'all 0.15s ease'
             }}
-            title="Refresh live metrics from backend"
+            title="Refresh live metrics from database"
           >
             <RefreshCw size={13} className={isRefreshing ? 'spin' : ''} />
             <span>Refresh</span>
           </button>
 
           {/* Last updated timestamp */}
-          <span style={{ fontSize: 11, color: '#94A3B8', whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 11.5, color: '#69788C', whiteSpace: 'nowrap' }}>
             Updated {lastRefreshed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
         </div>
       </div>
 
       {/* ====================================================================
-          B. FOUR PRIMARY KPI CARDS (Single Responsive Row)
+          2. FOUR PREMIUM KPI CARDS (Uncluttered, High Breathing Room)
           ==================================================================== */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
         gap: 16
       }}>
         {/* KPI 1: Total Applications */}
         <div
           onClick={() => handleFilterNav('Applications', 'ALL', 'ALL')}
-          title="Click to view full application register"
+          title="Click to view all applications in register"
           style={{
             background: '#FFFFFF',
-            border: '1px solid #E2E8F0',
-            borderRadius: 8,
-            padding: '16px 18px',
+            border: '1px solid #E6EBF2',
+            borderRadius: 12,
+            padding: '18px 20px',
             cursor: 'pointer',
-            transition: 'border-color 0.15s, box-shadow 0.15s',
-            boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+            boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)',
             display: 'flex',
             flexDirection: 'column',
-            gap: 8
+            justifyContent: 'space-between',
+            height: 116,
+            transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s'
           }}
           className="kpi-card-hover"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#64748B' }}>Total Applications</span>
-            <div style={{ width: 32, height: 32, borderRadius: 6, background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <FileText size={16} color="#172B4D" />
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#69788C' }}>Total Applications</span>
+            <div style={{ width: 34, height: 34, borderRadius: 8, background: '#EAF1FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <FileText size={17} color="#2864E8" />
             </div>
           </div>
-          <div style={{ fontSize: 30, fontWeight: 700, color: '#172B4D', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+          <div style={{ fontSize: 32, fontWeight: 700, color: '#172B4D', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
             {totalAppsCount}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, color: '#64748B' }}>
-            <span>In authorized jurisdiction</span>
-            <span style={{ color: '#2563EB', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-              View <ChevronRight size={12} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, color: '#69788C' }}>
+            <span>Registered dossiers</span>
+            <span style={{ color: '#2864E8', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              View register <ChevronRight size={12} />
             </span>
           </div>
         </div>
@@ -484,419 +500,438 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         {/* KPI 2: Pending Scrutiny */}
         <div
           onClick={() => handleFilterNav('Applications', 'SCRUTINY', 'ALL')}
-          title="Click to filter applications in Primary or Re-Scrutiny"
+          title="Click to filter applications in Scrutiny or Re-scrutiny"
           style={{
             background: '#FFFFFF',
-            border: '1px solid #E2E8F0',
-            borderRadius: 8,
-            padding: '16px 18px',
+            border: '1px solid #E6EBF2',
+            borderRadius: 12,
+            padding: '18px 20px',
             cursor: 'pointer',
-            transition: 'border-color 0.15s, box-shadow 0.15s',
-            boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+            boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)',
             display: 'flex',
             flexDirection: 'column',
-            gap: 8
+            justifyContent: 'space-between',
+            height: 116,
+            transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s'
           }}
           className="kpi-card-hover"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#64748B' }}>Pending Scrutiny</span>
-            <div style={{ width: 32, height: 32, borderRadius: 6, background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Search size={16} color="#2563EB" />
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#69788C' }}>Pending Scrutiny</span>
+            <div style={{ width: 34, height: 34, borderRadius: 8, background: '#EEF2F6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Search size={17} color="#16324F" />
             </div>
           </div>
-          <div style={{ fontSize: 30, fontWeight: 700, color: '#172B4D', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+          <div style={{ fontSize: 32, fontWeight: 700, color: '#172B4D', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
             {pendingScrutinyCount}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, color: '#64748B' }}>
-            <span>Primary ({stageCounts['SCRUTINY'] || 0}) · Re-scrutiny ({stageCounts['RE_SCRUTINY'] || 0})</span>
-            <span style={{ color: '#2563EB', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-              Filter <ChevronRight size={12} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, color: '#69788C' }}>
+            <span>{stageCounts['SCRUTINY'] || 0} primary · {stageCounts['RE_SCRUTINY'] || 0} re-scrutiny</span>
+            <span style={{ color: '#16324F', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              Scrutiny queue <ChevronRight size={12} />
             </span>
           </div>
         </div>
 
-        {/* KPI 3: Awaiting Institution Response */}
+        {/* KPI 3: Awaiting Corrections */}
         <div
           onClick={() => handleFilterNav('Applications', 'RETURNED_FOR_CLARIFICATION', 'RETURNED')}
-          title="Click to filter applications returned for clarification"
+          title="Click to filter cases awaiting institutional clarification"
           style={{
             background: '#FFFFFF',
-            border: '1px solid #E2E8F0',
-            borderRadius: 8,
-            padding: '16px 18px',
+            border: '1px solid #E6EBF2',
+            borderRadius: 12,
+            padding: '18px 20px',
             cursor: 'pointer',
-            transition: 'border-color 0.15s, box-shadow 0.15s',
-            boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+            boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)',
             display: 'flex',
             flexDirection: 'column',
-            gap: 8
+            justifyContent: 'space-between',
+            height: 116,
+            transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s'
           }}
           className="kpi-card-hover"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#64748B' }}>Awaiting Institution Response</span>
-            <div style={{ width: 32, height: 32, borderRadius: 6, background: '#FFFBEB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <RotateCcw size={16} color="#B45309" />
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#69788C' }}>Awaiting Corrections</span>
+            <div style={{ width: 34, height: 34, borderRadius: 8, background: '#FEF7EC', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <RotateCcw size={17} color="#D98B16" />
             </div>
           </div>
           <div style={{
-            fontSize: 30,
+            fontSize: 32,
             fontWeight: 700,
-            color: awaitingCorrectionsCount > 0 ? '#B45309' : '#172B4D',
+            color: awaitingCorrectionsCount > 0 ? '#D98B16' : '#172B4D',
             fontVariantNumeric: 'tabular-nums',
             lineHeight: 1
           }}>
             {awaitingCorrectionsCount}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, color: '#64748B' }}>
-            <span>Deficiency clarification issued</span>
-            <span style={{ color: '#B45309', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-              Review <ChevronRight size={12} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, color: '#69788C' }}>
+            <span>Deficiency notices issued</span>
+            <span style={{ color: '#D98B16', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              Review list <ChevronRight size={12} />
             </span>
           </div>
         </div>
 
-        {/* KPI 4: Pending Action / Decisions */}
+        {/* KPI 4: Pending Decisions */}
         <div
           onClick={() => handleFilterNav('Applications', 'COMPLIANCE_PENDING', 'ALL')}
-          title="Click to filter applications awaiting inspection, compliance, or decision"
+          title="Click to filter applications ready for compliance verification and approval"
           style={{
             background: '#FFFFFF',
-            border: '1px solid #E2E8F0',
-            borderRadius: 8,
-            padding: '16px 18px',
+            border: '1px solid #E6EBF2',
+            borderRadius: 12,
+            padding: '18px 20px',
             cursor: 'pointer',
-            transition: 'border-color 0.15s, box-shadow 0.15s',
-            boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+            boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)',
             display: 'flex',
             flexDirection: 'column',
-            gap: 8
+            justifyContent: 'space-between',
+            height: 116,
+            transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s'
           }}
           className="kpi-card-hover"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#64748B' }}>Pending Action</span>
-            <div style={{ width: 32, height: 32, borderRadius: 6, background: '#F5F3FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <CheckSquare size={16} color="#7C3AED" />
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#69788C' }}>Pending Decisions</span>
+            <div style={{ width: 34, height: 34, borderRadius: 8, background: '#E6F7F5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CheckSquare size={17} color="#0F9D91" />
             </div>
           </div>
-          <div style={{ fontSize: 30, fontWeight: 700, color: '#172B4D', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
-            {pendingActionsCount}
+          <div style={{ fontSize: 32, fontWeight: 700, color: '#172B4D', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+            {pendingDecisionsCount}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, color: '#64748B' }}>
-            <span>
-              EVC ({evcPendingCount + evcScheduledCount}) · Compliance ({stageCounts['COMPLIANCE_PENDING'] || 0}) · SAC ({stageCounts['SAC_SHC_REVIEW'] || 0})
-            </span>
-            <span style={{ color: '#7C3AED', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-              Open <ChevronRight size={12} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, color: '#69788C' }}>
+            <span>Compliance & final orders</span>
+            <span style={{ color: '#0F9D91', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              Decisions <ChevronRight size={12} />
             </span>
           </div>
         </div>
       </div>
 
       {/* ====================================================================
-          C. MAIN OPERATIONAL AREA (~60% Left Workflow, ~40% Right Attention)
+          3. WORKFLOW PROGRESSION & NEEDS ATTENTION (~65% / 35% Horizontal Split)
           ==================================================================== */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1.35fr) minmax(0, 1fr)',
+        gridTemplateColumns: 'minmax(0, 1.8fr) minmax(0, 1fr)',
         gap: 20
       }} className="main-operational-split">
-        {/* Left Panel: Application Workflow */}
+        {/* Left: Compact Visual Workflow Overview */}
         <div style={{
           background: '#FFFFFF',
-          border: '1px solid #E2E8F0',
-          borderRadius: 8,
-          padding: '18px 20px',
-          boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+          border: '1px solid #E6EBF2',
+          borderRadius: 12,
+          padding: '20px 24px',
+          boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)',
           display: 'flex',
-          flexDirection: 'column'
+          flexDirection: 'column',
+          justifyContent: 'space-between'
         }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: 14,
-            paddingBottom: 10,
-            borderBottom: '1px solid #F1F5F9'
-          }}>
-            <div>
-              <h2 style={{ fontSize: 15, fontWeight: 600, color: '#172B4D', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Layers size={16} color="#2563EB" />
-                Application Workflow
-              </h2>
-              <span style={{ fontSize: 12, color: '#64748B' }}>
-                Breakdown of applications across statutory regulatory stages
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+              <div>
+                <h2 style={{ fontSize: 15, fontWeight: 600, color: '#172B4D', margin: 0 }}>
+                  Application Workflow
+                </h2>
+                <span style={{ fontSize: 12, color: '#69788C' }}>
+                  Statutory progression track from submission to final order
+                </span>
+              </div>
+              <span style={{
+                fontSize: 11.5,
+                fontWeight: 600,
+                padding: '3px 9px',
+                borderRadius: 6,
+                background: '#F7F9FC',
+                color: '#69788C',
+                border: '1px solid #E6EBF2'
+              }}>
+                {totalAppsCount} dossiers active
               </span>
             </div>
-            <span style={{
-              fontSize: 11,
-              fontWeight: 600,
-              padding: '2px 8px',
-              borderRadius: 4,
-              background: '#F1F5F9',
-              color: '#475569',
-              border: '1px solid #E2E8F0'
+
+            {/* Horizontal Step Progression Track */}
+            <div style={{
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              padding: '10px 0 16px'
             }}>
-              {totalAppsCount} Active Dossiers
-            </span>
+              {/* Subtle Horizontal Connector Bar behind step nodes */}
+              <div style={{
+                position: 'absolute',
+                top: 25,
+                left: 20,
+                right: 20,
+                height: 2,
+                background: '#E6EBF2',
+                zIndex: 1
+              }} />
+
+              {WORKFLOW_STEPS.map((step) => {
+                const isActive = step.count > 0;
+                return (
+                  <div
+                    key={step.id}
+                    onClick={() => handleFilterNav('Applications', step.stageFilter, 'ALL')}
+                    title={`Filter: ${step.label} (${step.count} dossiers)`}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 6,
+                      position: 'relative',
+                      zIndex: 2,
+                      cursor: 'pointer',
+                      flex: 1
+                    }}
+                  >
+                    {/* Circle Node */}
+                    <div style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: '50%',
+                      background: isActive ? step.color : '#FFFFFF',
+                      border: `2px solid ${isActive ? step.color : '#CBD5E1'}`,
+                      color: isActive ? '#FFFFFF' : '#69788C',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      boxShadow: isActive ? '0 2px 6px rgba(40, 100, 232, 0.2)' : 'none',
+                      transition: 'all 0.15s ease'
+                    }}>
+                      {step.stepNum}
+                    </div>
+
+                    {/* Step Label */}
+                    <span style={{
+                      fontSize: 11.5,
+                      fontWeight: isActive ? 600 : 500,
+                      color: isActive ? '#172B4D' : '#69788C',
+                      textAlign: 'center',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      {step.label}
+                    </span>
+
+                    {/* Count Pill */}
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      padding: '1px 7px',
+                      borderRadius: 10,
+                      background: isActive ? '#EAF1FF' : '#F7F9FC',
+                      color: isActive ? step.color : '#94A3B8',
+                      border: `1px solid ${isActive ? '#D6E4FF' : '#E6EBF2'}`,
+                      fontVariantNumeric: 'tabular-nums'
+                    }}>
+                      {step.count}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Workflow Stage Rows */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {REGULATORY_STAGES.map((stg) => {
-              const count = stageCounts[stg.key] || 0;
-              const pct = totalAppsCount > 0 ? Math.round((count / totalAppsCount) * 100) : 0;
-              const isReturned = stg.key === 'RETURNED_FOR_CLARIFICATION';
-
-              return (
-                <div
-                  key={stg.key}
-                  onClick={() => handleFilterNav('Applications', stg.key, 'ALL')}
-                  title={`Filter applications in stage: ${stg.label}`}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: 6,
-                    background: isReturned && count > 0 ? '#FFFBEB' : stg.isCompleted && count > 0 ? '#F0FDF4' : '#F8FAFC',
-                    border: `1px solid ${isReturned && count > 0 ? '#FDE68A' : stg.isCompleted && count > 0 ? '#BBF7D0' : '#E2E8F0'}`,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
-                  className="workflow-stage-row"
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: '50%',
-                        background: count > 0 ? stg.color : '#CBD5E1',
-                        display: 'inline-block'
-                      }} />
-                      <span style={{
-                        fontSize: 12.5,
-                        fontWeight: 600,
-                        color: count > 0 ? '#172B4D' : '#64748B'
-                      }}>
-                        {stg.label}
-                      </span>
-                      {stg.isCompleted && (
-                        <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: '#DCFCE7', color: '#15803D' }}>
-                          FINAL ORDER
-                        </span>
-                      )}
-                      {isReturned && count > 0 && (
-                        <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: '#FEF3C7', color: '#B45309' }}>
-                          DEFICIENCY
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <b style={{ fontSize: 13, fontVariantNumeric: 'tabular-nums', color: count > 0 ? '#172B4D' : '#94A3B8' }}>
-                        {count}
-                      </b>
-                      <span style={{ fontSize: 11, color: '#94A3B8', width: 34, textAlign: 'right' }}>
-                        {pct}%
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Horizontal Progress Bar */}
-                  <div style={{ width: '100%', height: 4, background: '#E2E8F0', borderRadius: 2, overflow: 'hidden' }}>
-                    <div
-                      style={{
-                        height: '100%',
-                        width: `${pct}%`,
-                        background: stg.color,
-                        borderRadius: 2,
-                        transition: 'width 0.3s ease'
-                      }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+          {/* Proportional Segmented Track Bar */}
+          <div style={{ marginTop: 12, paddingTop: 14, borderTop: '1px solid #F1F5F9' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, fontSize: 11.5 }}>
+              <span style={{ color: '#69788C' }}>Active distribution by phase</span>
+              <span style={{ fontWeight: 600, color: '#172B4D' }}>
+                {Math.round(((stageCounts['COMPLETED'] || 0) / Math.max(1, totalAppsCount)) * 100)}% completed
+              </span>
+            </div>
+            <div style={{ width: '100%', height: 6, background: '#F1F5F9', borderRadius: 3, overflow: 'hidden', display: 'flex' }}>
+              {WORKFLOW_STEPS.map((step) => {
+                const widthPct = totalAppsCount > 0 ? (step.count / totalAppsCount) * 100 : 0;
+                if (widthPct === 0) return null;
+                return (
+                  <div
+                    key={step.id}
+                    title={`${step.label}: ${step.count} (${Math.round(widthPct)}%)`}
+                    style={{
+                      width: `${widthPct}%`,
+                      height: '100%',
+                      background: step.color
+                    }}
+                  />
+                );
+              })}
+            </div>
           </div>
         </div>
 
-        {/* Right Panel: Work Requiring Attention */}
+        {/* Right: Needs Attention (Compact, Maximum 3 Categories) */}
         <div style={{
           background: '#FFFFFF',
-          border: '1px solid #E2E8F0',
-          borderRadius: 8,
-          padding: '18px 20px',
-          boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+          border: '1px solid #E6EBF2',
+          borderRadius: 12,
+          padding: '20px 22px',
+          boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)',
           display: 'flex',
-          flexDirection: 'column'
+          flexDirection: 'column',
+          justifyContent: 'space-between'
         }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: 14,
-            paddingBottom: 10,
-            borderBottom: '1px solid #F1F5F9'
-          }}>
-            <div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
               <h2 style={{ fontSize: 15, fontWeight: 600, color: '#172B4D', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <AlertTriangle size={16} color="#B45309" />
-                Work Requiring Attention
+                <AlertTriangle size={15} color="#D98B16" />
+                Needs Attention
               </h2>
-              <span style={{ fontSize: 12, color: '#64748B' }}>
-                Actionable deadlines and pending supervisory steps
+              <span style={{
+                fontSize: 11,
+                fontWeight: 700,
+                padding: '2px 7px',
+                borderRadius: 4,
+                background: totalNeedsAttention > 0 ? '#FDF2F2' : '#F0FDF4',
+                color: totalNeedsAttention > 0 ? '#D64545' : '#16845B',
+                border: `1px solid ${totalNeedsAttention > 0 ? '#FDE2E2' : '#DCFCE7'}`
+              }}>
+                {totalNeedsAttention} urgent
               </span>
             </div>
-            <span style={{
-              fontSize: 11,
-              fontWeight: 700,
-              padding: '2px 8px',
-              borderRadius: 4,
-              background: totalAttentionCount > 0 ? '#FEF2F2' : '#F0FDF4',
-              color: totalAttentionCount > 0 ? '#B91C1C' : '#15803D',
-              border: `1px solid ${totalAttentionCount > 0 ? '#FECACA' : '#BBF7D0'}`
-            }}>
-              {totalAttentionCount} Actionable Items
-            </span>
-          </div>
 
-          {/* Attention Items List */}
-          {totalAttentionCount === 0 ? (
-            <div style={{
-              padding: '28px 16px',
-              textAlign: 'center',
-              background: '#F0FDF4',
-              borderRadius: 6,
-              border: '1px solid #BBF7D0',
-              margin: 'auto 0'
-            }}>
-              <CheckCircle2 size={24} color="#15803D" style={{ margin: '0 auto 8px' }} />
-              <b style={{ display: 'block', fontSize: 13, color: '#15803D' }}>
-                No urgent actions in your current workload
-              </b>
-              <span style={{ fontSize: 12, color: '#4B5563' }}>
-                All applications under your authorized scope are currently within statutory parameters.
-              </span>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {attentionItems.map((item) => {
-                const badgeBg =
-                  item.severity === 'danger'
-                    ? item.count > 0 ? '#FEF2F2' : '#F8FAFC'
-                    : item.severity === 'warning'
-                    ? item.count > 0 ? '#FFFBEB' : '#F8FAFC'
-                    : item.severity === 'success'
-                    ? item.count > 0 ? '#F0FDF4' : '#F8FAFC'
-                    : '#F1F5F9';
-
-                const badgeColor =
-                  item.severity === 'danger'
-                    ? item.count > 0 ? '#B91C1C' : '#94A3B8'
-                    : item.severity === 'warning'
-                    ? item.count > 0 ? '#B45309' : '#94A3B8'
-                    : item.severity === 'success'
-                    ? item.count > 0 ? '#15803D' : '#94A3B8'
-                    : '#475569';
-
-                const badgeBorder =
-                  item.severity === 'danger' && item.count > 0
-                    ? '#FECACA'
-                    : item.severity === 'warning' && item.count > 0
-                    ? '#FDE68A'
-                    : item.severity === 'success' && item.count > 0
-                    ? '#BBF7D0'
-                    : '#E2E8F0';
-
-                return (
+            {totalNeedsAttention === 0 ? (
+              <div style={{
+                padding: '24px 16px',
+                textAlign: 'center',
+                background: '#F0FDF4',
+                borderRadius: 8,
+                border: '1px solid #DCFCE7',
+                margin: '10px 0'
+              }}>
+                <CheckCircle2 size={20} color="#16845B" style={{ margin: '0 auto 6px' }} />
+                <b style={{ display: 'block', fontSize: 13, color: '#16845B' }}>
+                  All applications within SLA
+                </b>
+                <span style={{ fontSize: 11.5, color: '#69788C' }}>
+                  No overdue or high-priority escalations pending.
+                </span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {attentionCategories.map((cat) => (
                   <div
-                    key={item.id}
-                    onClick={item.onClick}
+                    key={cat.id}
+                    onClick={cat.onClick}
+                    title={`Click to view ${cat.label}`}
                     style={{
-                      padding: '10px 12px',
-                      borderRadius: 6,
+                      padding: '11px 13px',
+                      borderRadius: 8,
+                      border: '1px solid #E6EBF2',
                       background: '#FFFFFF',
-                      border: '1px solid #E2E8F0',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      gap: 12,
                       cursor: 'pointer',
                       transition: 'border-color 0.15s, background 0.15s'
                     }}
                     className="attention-row-hover"
                   >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 12.5, fontWeight: 600, color: '#172B4D' }}>
-                          {item.label}
-                        </span>
-                      </div>
-                      <small style={{ fontSize: 11, color: '#64748B', display: 'block', marginTop: 1 }}>
-                        {item.description}
-                      </small>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{
+                        width: 7,
+                        height: 7,
+                        borderRadius: '50%',
+                        background: cat.count > 0 ? cat.color : '#CBD5E1'
+                      }} />
+                      <span style={{ fontSize: 12.5, fontWeight: 600, color: '#172B4D' }}>
+                        {cat.label}
+                      </span>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{
                         fontSize: 12,
                         fontWeight: 700,
-                        padding: '2px 8px',
+                        padding: '1px 8px',
                         borderRadius: 4,
-                        background: badgeBg,
-                        color: badgeColor,
-                        border: `1px solid ${badgeBorder}`,
+                        background: cat.count > 0 ? cat.badgeBg : '#F7F9FC',
+                        color: cat.count > 0 ? cat.badgeText : '#94A3B8',
                         fontVariantNumeric: 'tabular-nums'
                       }}>
-                        {item.count}
+                        {cat.count}
                       </span>
                       <ChevronRight size={14} color="#94A3B8" />
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Bottom link to operational queue */}
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #F1F5F9' }}>
+            <button
+              onClick={() => handleFilterNav('Applications', 'ALL', 'ALL')}
+              style={{
+                width: '100%',
+                padding: '6px 0',
+                background: 'transparent',
+                border: 0,
+                color: '#2864E8',
+                fontSize: 12,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 4,
+                cursor: 'pointer'
+              }}
+            >
+              <span>View full operational queue</span>
+              <ArrowRight size={12} />
+            </button>
+          </div>
         </div>
       </div>
 
       {/* ====================================================================
-          D. PRIORITY APPLICATION QUEUE (Primary Decision Workhorse)
+          4. PRIORITY ACTIONS TABLE (The Visual Centerpiece of the Dashboard)
           ==================================================================== */}
       <div style={{
         background: '#FFFFFF',
-        border: '1px solid #E2E8F0',
-        borderRadius: 8,
-        padding: '18px 20px',
-        boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)'
+        border: '1px solid #E6EBF2',
+        borderRadius: 12,
+        padding: '20px 24px',
+        boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)'
       }}>
+        {/* Table Card Header */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: 14,
-          paddingBottom: 10,
+          marginBottom: 16,
+          paddingBottom: 12,
           borderBottom: '1px solid #F1F5F9',
           flexWrap: 'wrap',
-          gap: 8
+          gap: 10
         }}>
           <div>
             <h2 style={{ fontSize: 16, fontWeight: 600, color: '#172B4D', margin: 0 }}>
               Priority Actions
             </h2>
-            <span style={{ fontSize: 12, color: '#64748B' }}>
-              Applications requiring the next action in your authorized workload
+            <span style={{ fontSize: 12.5, color: '#69788C' }}>
+              Applications requiring immediate regulatory review
             </span>
           </div>
+
           <button
             onClick={() => handleFilterNav('Applications', 'ALL', 'ALL')}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
               gap: 4,
-              fontSize: 12,
+              fontSize: 12.5,
               fontWeight: 600,
-              color: '#2563EB',
+              color: '#2864E8',
               background: 'transparent',
               border: 0,
               cursor: 'pointer',
@@ -908,23 +943,31 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </button>
         </div>
 
+        {/* Clean, 5-Column Table */}
         {priorityQueue.length === 0 ? (
-          <div style={{ padding: '24px', textAlign: 'center', color: '#64748B', fontSize: 13 }}>
+          <div style={{ padding: '32px 16px', textAlign: 'center', color: '#69788C', fontSize: 13 }}>
             No priority applications pending action in current scope.
           </div>
         ) : (
           <div className="table-responsive">
-            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
-                <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
-                  <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 11 }}>Priority</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 11 }}>Application ID</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 11 }}>Institution</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 11 }}>Application Type</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 11 }}>Current Stage</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 11 }}>Pending Action</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: 11 }}>Due Date</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 600, color: '#475569', fontSize: 11 }}>Action</th>
+                <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E6EBF2' }}>
+                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#69788C', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                    Application ID
+                  </th>
+                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#69788C', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                    Institution
+                  </th>
+                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#69788C', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                    Stage
+                  </th>
+                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#69788C', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                    Due Date
+                  </th>
+                  <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: '#69788C', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                    Action
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -933,118 +976,73 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                   const isDueSoon = app.due_date && !isOverdue && new Date(app.due_date).getTime() - today.getTime() <= 7 * 86400000;
                   const isReturned = app.current_stage === 'RETURNED_FOR_CLARIFICATION';
 
-                  let priorityBadge = { label: 'Normal', bg: '#F1F5F9', color: '#475569', border: '#E2E8F0' };
-                  if (isOverdue) {
-                    priorityBadge = { label: 'High', bg: '#FEF2F2', color: '#B91C1C', border: '#FECACA' };
-                  } else if (isDueSoon || isReturned) {
-                    priorityBadge = { label: 'Medium', bg: '#FFFBEB', color: '#B45309', border: '#FDE68A' };
-                  }
+                  // Semantic Urgency Indicator Dot
+                  let urgencyDotColor = '#CBD5E1';
+                  if (isOverdue) urgencyDotColor = '#D64545';
+                  else if (isDueSoon || isReturned) urgencyDotColor = '#D98B16';
 
-                  // Context-sensitive action button text
-                  let actionText = 'Review Dossier';
-                  if (app.current_stage === 'SCRUTINY') actionText = 'Review Scrutiny';
-                  else if (app.current_stage === 'RE_SCRUTINY') actionText = 'Review Resubmission';
+                  // Contextual action button label
+                  let actionLabel = 'View Dossier';
+                  if (app.current_stage === 'SCRUTINY') actionLabel = 'Review Scrutiny';
+                  else if (app.current_stage === 'RE_SCRUTINY') actionLabel = 'Review Resubmission';
                   else if (app.current_stage === 'RETURNED_FOR_CLARIFICATION') {
-                    actionText = user?.role === 'institution' ? 'Submit Clarification' : 'View Deficiency';
-                  } else if (app.current_stage === 'EVC_PENDING') actionText = 'Schedule EVC';
-                  else if (app.current_stage === 'EVC_SCHEDULED') actionText = 'Upload Report';
-                  else if (app.current_stage === 'COMPLIANCE_PENDING') actionText = 'Verify Proofs';
-
-                  const pendingActionLabel =
-                    app.next_action?.action_label ||
-                    (app.current_stage === 'SCRUTINY'
-                      ? 'Conduct Primary Scrutiny'
-                      : app.current_stage === 'RE_SCRUTINY'
-                      ? 'Verify Rectified Documents'
-                      : app.current_stage === 'RETURNED_FOR_CLARIFICATION'
-                      ? 'Awaiting Institutional Response'
-                      : app.current_stage === 'EVC_PENDING'
-                      ? 'Form Committee & Schedule Visit'
-                      : app.current_stage === 'EVC_SCHEDULED'
-                      ? 'Conduct Inspection & Submit Report'
-                      : app.current_stage === 'COMPLIANCE_PENDING'
-                      ? 'Statutory Proof Verification'
-                      : 'Regulatory Review');
+                    actionLabel = user?.role === 'institution' ? 'Submit Clarification' : 'View Notice';
+                  } else if (app.current_stage === 'EVC_PENDING') actionLabel = 'Schedule EVC';
+                  else if (app.current_stage === 'EVC_SCHEDULED') actionLabel = 'Review Report';
+                  else if (app.current_stage === 'COMPLIANCE_PENDING') actionLabel = 'Verify Proofs';
 
                   return (
                     <tr
                       key={app.id}
-                      style={{ borderBottom: '1px solid #F1F5F9', transition: 'background 0.1s' }}
+                      style={{ borderBottom: '1px solid #F1F5F9', transition: 'background-color 0.12s' }}
                       className="priority-row-hover"
                     >
-                      {/* Priority */}
-                      <td style={{ padding: '10px 12px' }}>
-                        <span style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          padding: '2px 7px',
-                          borderRadius: 4,
-                          background: priorityBadge.bg,
-                          color: priorityBadge.color,
-                          border: `1px solid ${priorityBadge.border}`,
-                          textTransform: 'uppercase'
-                        }}>
-                          {priorityBadge.label}
-                        </span>
-                      </td>
-
-                      {/* Application ID */}
-                      <td style={{ padding: '10px 12px' }}>
-                        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: '#172B4D' }}>
-                          {app.reference}
-                        </span>
-                        <small style={{ display: 'block', fontSize: 11, color: '#94A3B8' }}>
+                      {/* 1. Application ID */}
+                      <td style={{ padding: '13px 14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                          <span
+                            title={isOverdue ? 'Overdue case' : isDueSoon ? 'Due soon' : 'Normal priority'}
+                            style={{ width: 6, height: 6, borderRadius: '50%', background: urgencyDotColor, flexShrink: 0 }}
+                          />
+                          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12.5, fontWeight: 600, color: '#172B4D' }}>
+                            {app.reference}
+                          </span>
+                        </div>
+                        <small style={{ display: 'block', fontSize: 11, color: '#94A3B8', marginLeft: 13, marginTop: 1 }}>
                           AY {app.academic_year}
                         </small>
                       </td>
 
-                      {/* Institution */}
-                      <td style={{ padding: '10px 12px' }}>
-                        <span style={{ fontWeight: 600, color: '#172B4D', display: 'block' }}>
+                      {/* 2. Institution */}
+                      <td style={{ padding: '13px 14px' }}>
+                        <b style={{ display: 'block', fontWeight: 600, color: '#172B4D', fontSize: 13 }}>
                           {app.institution_name}
-                        </span>
-                        <small style={{ fontSize: 11, color: '#64748B' }}>
-                          {app.region} Region
+                        </b>
+                        <small style={{ fontSize: 11.5, color: '#69788C', display: 'block', marginTop: 1 }}>
+                          {app.application_type} · {app.region} Region
                         </small>
                       </td>
 
-                      {/* Application Type */}
-                      <td style={{ padding: '10px 12px', color: '#475569' }}>
-                        {app.application_type}
-                      </td>
-
-                      {/* Current Stage */}
-                      <td style={{ padding: '10px 12px' }}>
+                      {/* 3. Stage */}
+                      <td style={{ padding: '13px 14px' }}>
                         <span style={{
-                          fontSize: 11,
+                          fontSize: 11.5,
                           fontWeight: 600,
-                          padding: '2px 8px',
-                          borderRadius: 4,
-                          background: '#F1F5F9',
-                          color: '#334155',
-                          border: '1px solid #E2E8F0'
+                          padding: '3px 9px',
+                          borderRadius: 6,
+                          background: isReturned ? '#FEF7EC' : isOverdue ? '#FDF2F2' : '#F1F5F9',
+                          color: isReturned ? '#D98B16' : isOverdue ? '#D64545' : '#16324F',
+                          border: `1px solid ${isReturned ? '#FCE6CA' : isOverdue ? '#FDE2E2' : '#E6EBF2'}`
                         }}>
                           {app.current_stage.replace(/_/g, ' ')}
                         </span>
                       </td>
 
-                      {/* Pending Action */}
-                      <td style={{ padding: '10px 12px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          <span style={{ fontWeight: 600, color: '#2563EB', fontSize: 12 }}>
-                            {pendingActionLabel}
-                          </span>
-                          <small style={{ fontSize: 10.5, color: '#64748B' }}>
-                            {app.next_action?.assigned_to || app.assigned_to || 'Assigned Officer'}
-                          </small>
-                        </div>
-                      </td>
-
-                      {/* Due Date */}
-                      <td style={{ padding: '10px 12px', fontVariantNumeric: 'tabular-nums' }}>
+                      {/* 4. Due Date */}
+                      <td style={{ padding: '13px 14px', fontVariantNumeric: 'tabular-nums' }}>
                         {app.due_date ? (
                           <span style={{
-                            color: isOverdue ? '#B91C1C' : isDueSoon ? '#B45309' : '#475569',
+                            color: isOverdue ? '#D64545' : isDueSoon ? '#D98B16' : '#475569',
                             fontWeight: isOverdue || isDueSoon ? 700 : 500
                           }}>
                             {new Date(app.due_date).toLocaleDateString('en-IN', {
@@ -1058,27 +1056,28 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         )}
                       </td>
 
-                      {/* Row Action */}
-                      <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                      {/* 5. Action */}
+                      <td style={{ padding: '13px 14px', textAlign: 'right' }}>
                         <button
                           onClick={() => onSelectApplication && onSelectApplication(app)}
                           style={{
-                            padding: '5px 10px',
-                            fontSize: 11.5,
+                            padding: '6px 12px',
+                            fontSize: 12,
                             fontWeight: 600,
-                            borderRadius: 5,
+                            borderRadius: 6,
                             background: '#FFFFFF',
-                            border: '1px solid #CBD5E1',
-                            color: '#172B4D',
+                            border: '1px solid #2864E8',
+                            color: '#2864E8',
                             cursor: 'pointer',
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: 5
+                            gap: 5,
+                            transition: 'all 0.15s ease'
                           }}
                           className="btn-action-hover"
                         >
-                          <Eye size={12} color="#2563EB" />
-                          <span>{actionText}</span>
+                          <Eye size={13} color="#2864E8" />
+                          <span>{actionLabel}</span>
                         </button>
                       </td>
                     </tr>
@@ -1091,20 +1090,20 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       </div>
 
       {/* ====================================================================
-          E & F. LOWER SECTION: Recent Regulatory Activity & Regional Workload
+          5 & 6. SECONDARY SECTION: Recent Activity + Workload Distribution
           ==================================================================== */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)',
         gap: 20
       }} className="main-operational-split">
-        {/* E. Recent Activity Feed */}
+        {/* Recent Activity (Compact Timeline) */}
         <div style={{
           background: '#FFFFFF',
-          border: '1px solid #E2E8F0',
-          borderRadius: 8,
-          padding: '18px 20px',
-          boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)'
+          border: '1px solid #E6EBF2',
+          borderRadius: 12,
+          padding: '20px 24px',
+          boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)'
         }}>
           <div style={{
             display: 'flex',
@@ -1115,65 +1114,72 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             borderBottom: '1px solid #F1F5F9'
           }}>
             <div>
-              <h2 style={{ fontSize: 15, fontWeight: 600, color: '#172B4D', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Clock size={16} color="#2563EB" />
-                Recent Regulatory Activity
+              <h2 style={{ fontSize: 15, fontWeight: 600, color: '#172B4D', margin: 0 }}>
+                Recent Activity
               </h2>
-              <span style={{ fontSize: 12, color: '#64748B' }}>
-                Audited workflow milestones, scrutiny transitions, and notifications
+              <span style={{ fontSize: 12, color: '#69788C' }}>
+                Latest audited workflow events and notifications
               </span>
             </div>
             <button
               onClick={() => onNavigate('Alerts')}
               style={{
-                fontSize: 11.5,
+                fontSize: 12,
                 fontWeight: 600,
-                color: '#2563EB',
+                color: '#2864E8',
                 background: 'transparent',
                 border: 0,
                 cursor: 'pointer'
               }}
             >
-              View Alerts Log →
+              View log →
             </button>
           </div>
 
-          {/* Activity Feed Items */}
+          {/* Activity items */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {recentAudits.length > 0 ? (
-              recentAudits.slice(0, 6).map((aud) => {
+              recentAudits.slice(0, 4).map((aud) => {
                 const appObj = applications.find((a) => a.id === aud.application_id);
-                const ref = aud.application_reference || appObj?.reference || `Application #${aud.application_id}`;
+                const ref = aud.application_reference || appObj?.reference || `App #${aud.application_id}`;
 
-                let actionIcon = <Clock size={14} color="#2563EB" />;
+                let iconColor = '#2864E8';
+                let iconBg = '#EAF1FF';
                 if (aud.action.includes('DECISION') || aud.action.includes('COMPLIANCE')) {
-                  actionIcon = <CheckCircle2 size={14} color="#15803D" />;
+                  iconColor = '#16845B';
+                  iconBg = '#DCFCE7';
                 } else if (aud.action.includes('RETURN') || aud.action.includes('DEFICIENCY')) {
-                  actionIcon = <RotateCcw size={14} color="#B45309" />;
-                } else if (aud.action.includes('EVC')) {
-                  actionIcon = <Calendar size={14} color="#7C3AED" />;
-                } else if (aud.action.includes('SCRUTINY')) {
-                  actionIcon = <Search size={14} color="#2563EB" />;
+                  iconColor = '#D98B16';
+                  iconBg = '#FEF7EC';
                 }
 
                 return (
                   <div
                     key={aud.id}
                     style={{
-                      padding: '10px 12px',
-                      borderRadius: 6,
-                      background: '#F8FAFC',
-                      border: '1px solid #E2E8F0',
                       display: 'flex',
                       alignItems: 'flex-start',
-                      gap: 10
+                      gap: 12,
+                      padding: '8px 0',
+                      borderBottom: '1px solid #F8FAFC'
                     }}
                   >
-                    <div style={{ marginTop: 2, flexShrink: 0 }}>
-                      {actionIcon}
+                    <div style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 6,
+                      background: iconBg,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginTop: 2,
+                      flexShrink: 0
+                    }}>
+                      <Clock size={14} color={iconColor} />
                     </div>
+
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ fontSize: 12.5, fontWeight: 600, color: '#172B4D' }}>
                             {aud.action.replace(/_/g, ' ')}
@@ -1184,19 +1190,18 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                               style={{
                                 fontSize: 11,
                                 fontWeight: 600,
-                                color: '#2563EB',
-                                background: '#EFF6FF',
-                                border: '1px solid #BFDBFE',
-                                borderRadius: 3,
+                                color: '#2864E8',
+                                background: '#EAF1FF',
+                                border: '1px solid #D6E4FF',
+                                borderRadius: 4,
                                 padding: '1px 5px',
                                 cursor: 'pointer'
                               }}
-                              title="Click to view application dossier"
                             >
                               {ref}
                             </button>
                           ) : (
-                            <span style={{ fontSize: 11, color: '#64748B' }}>({ref})</span>
+                            <span style={{ fontSize: 11, color: '#69788C' }}>({ref})</span>
                           )}
                         </div>
                         <small style={{ fontSize: 11, color: '#94A3B8' }}>
@@ -1208,240 +1213,143 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                           })}
                         </small>
                       </div>
-
-                      <p style={{ margin: '3px 0 0', fontSize: 11.5, color: '#475569', lineHeight: 1.4 }}>
+                      <p style={{ margin: '2px 0 0', fontSize: 12, color: '#69788C', lineHeight: 1.35, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {aud.details || 'Workflow transition recorded in tamper-evident audit ledger.'}
                       </p>
-
-                      <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, color: '#64748B' }}>
-                        <span>Actor: <b>{aud.actor}</b> ({aud.actor_role})</span>
-                        {aud.from_stage && aud.to_stage && (
-                          <span>
-                            Transition: <span style={{ color: '#2563EB' }}>{aud.from_stage}</span> → <span style={{ color: '#15803D' }}>{aud.to_stage}</span>
-                          </span>
-                        )}
-                      </div>
                     </div>
                   </div>
                 );
               })
             ) : alerts.length > 0 ? (
-              alerts.slice(0, 5).map((al) => (
-                <div
-                  key={al.id}
-                  style={{
-                    padding: '10px 12px',
+              alerts.slice(0, 3).map((al) => (
+                <div key={al.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0' }}>
+                  <div style={{
+                    width: 28,
+                    height: 28,
                     borderRadius: 6,
-                    background: al.severity === 'CRITICAL' ? '#FEF2F2' : al.severity === 'WARNING' ? '#FFFBEB' : '#F8FAFC',
-                    border: `1px solid ${al.severity === 'CRITICAL' ? '#FECACA' : al.severity === 'WARNING' ? '#FDE68A' : '#E2E8F0'}`,
+                    background: al.severity === 'CRITICAL' ? '#FDF2F2' : '#EAF1FF',
                     display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 10
-                  }}
-                >
-                  <div style={{ marginTop: 2, flexShrink: 0 }}>
-                    {al.severity === 'CRITICAL' ? (
-                      <AlertTriangle size={15} color="#B91C1C" />
-                    ) : (
-                      <Clock size={15} color="#2563EB" />
-                    )}
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginTop: 2,
+                    flexShrink: 0
+                  }}>
+                    <AlertTriangle size={14} color={al.severity === 'CRITICAL' ? '#D64545' : '#2864E8'} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <b style={{ fontSize: 12, color: '#172B4D' }}>{al.title}</b>
-                      <small style={{ fontSize: 10.5, color: '#94A3B8' }}>
+                      <b style={{ fontSize: 12.5, color: '#172B4D' }}>{al.title}</b>
+                      <small style={{ fontSize: 11, color: '#94A3B8' }}>
                         {new Date(al.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </small>
                     </div>
-                    <p style={{ margin: '2px 0 0', fontSize: 11.5, color: '#475569', lineHeight: 1.35 }}>
+                    <p style={{ margin: '2px 0 0', fontSize: 12, color: '#69788C', lineHeight: 1.35 }}>
                       {al.message}
                     </p>
                   </div>
                 </div>
               ))
             ) : (
-              <div style={{ padding: '24px', textAlign: 'center', color: '#94A3B8', fontSize: 12 }}>
-                No recent regulatory events logged for authorized jurisdiction.
+              <div style={{ padding: '20px 0', textAlign: 'center', color: '#94A3B8', fontSize: 12 }}>
+                No recent regulatory events logged.
               </div>
             )}
           </div>
         </div>
 
-        {/* F. Regional Jurisdiction Workload or Regional Office Status */}
+        {/* Workload Distribution / Shortcuts */}
         <div style={{
           background: '#FFFFFF',
-          border: '1px solid #E2E8F0',
-          borderRadius: 8,
-          padding: '18px 20px',
-          boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+          border: '1px solid #E6EBF2',
+          borderRadius: 12,
+          padding: '20px 24px',
+          boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)',
           display: 'flex',
-          flexDirection: 'column'
+          flexDirection: 'column',
+          justifyContent: 'space-between'
         }}>
-          {user?.role === 'bureau' || user?.role === 'admin' || !user?.region || user?.region === 'HQ' ? (
-            // Multi-region National View
-            <>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: 14,
-                paddingBottom: 10,
-                borderBottom: '1px solid #F1F5F9'
-              }}>
-                <div>
-                  <h2 style={{ fontSize: 15, fontWeight: 600, color: '#172B4D', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Compass size={16} color="#2563EB" />
-                    Regional Workload Distribution
-                  </h2>
-                  <span style={{ fontSize: 12, color: '#64748B' }}>
-                    Active applications mapped across AICTE regional offices
-                  </span>
-                </div>
+          <div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 14,
+              paddingBottom: 10,
+              borderBottom: '1px solid #F1F5F9'
+            }}>
+              <div>
+                <h2 style={{ fontSize: 15, fontWeight: 600, color: '#172B4D', margin: 0 }}>
+                  Workload by Category
+                </h2>
+                <span style={{ fontSize: 12, color: '#69788C' }}>
+                  Distribution of applications in scope
+                </span>
               </div>
+            </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {Object.entries(bottlenecks?.region_workload || {}).length === 0 ? (
-                  <div style={{ padding: 18, textAlign: 'center', color: '#64748B', fontSize: 12 }}>
-                    Regional distribution metrics updating from regional databases...
-                  </div>
-                ) : (
-                  Object.entries(bottlenecks?.region_workload || {}).map(([region, cnt]) => {
-                    const maxVal = Math.max(1, ...Object.values(bottlenecks?.region_workload || {}));
-                    const pct = Math.round(((cnt as number) / maxVal) * 100);
-                    return (
-                      <div key={region} style={{ fontSize: 12 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                          <span style={{ fontWeight: 600, color: '#172B4D' }}>{region} Region</span>
-                          <b style={{ fontVariantNumeric: 'tabular-nums', color: '#172B4D' }}>{cnt as number} dossiers</b>
-                        </div>
-                        <div style={{ width: '100%', height: 6, background: '#F1F5F9', borderRadius: 3, overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${pct}%`, background: '#2563EB', borderRadius: 3 }} />
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </>
-          ) : (
-            // Single-Region Officer View
-            <>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: 14,
-                paddingBottom: 10,
-                borderBottom: '1px solid #F1F5F9'
-              }}>
-                <div>
-                  <h2 style={{ fontSize: 15, fontWeight: 600, color: '#172B4D', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Shield size={16} color="#2563EB" />
-                    Jurisdictional Office Status
-                  </h2>
-                  <span style={{ fontSize: 12, color: '#64748B' }}>
-                    Operational overview for {user?.region} Regional Office
-                  </span>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{
-                  background: '#F8FAFC',
-                  padding: '12px 14px',
-                  borderRadius: 6,
-                  border: '1px solid #E2E8F0',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <div>
-                    <span style={{ fontSize: 11, color: '#64748B', fontWeight: 600, textTransform: 'uppercase' }}>
-                      Assigned Applications
-                    </span>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: '#172B4D', marginTop: 2 }}>
-                      {totalAppsCount}
+            {/* Clean Horizontal Bars */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {Object.entries(typeBreakdown).map(([typeName, cnt]) => {
+                const pct = totalAppsCount > 0 ? Math.round((cnt / totalAppsCount) * 100) : 0;
+                return (
+                  <div key={typeName} style={{ fontSize: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontWeight: 600, color: '#172B4D' }}>{typeName}</span>
+                      <span style={{ color: '#69788C', fontVariantNumeric: 'tabular-nums' }}>
+                        <b>{cnt}</b> ({pct}%)
+                      </span>
+                    </div>
+                    <div style={{ width: '100%', height: 5, background: '#F1F5F9', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: '#2864E8', borderRadius: 3 }} />
                     </div>
                   </div>
-                  <Building2 size={24} color="#94A3B8" />
-                </div>
+                );
+              })}
+            </div>
+          </div>
 
-                <div style={{
-                  background: '#F8FAFC',
-                  padding: '12px 14px',
-                  borderRadius: 6,
-                  border: '1px solid #E2E8F0',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <div>
-                    <span style={{ fontSize: 11, color: '#64748B', fontWeight: 600, textTransform: 'uppercase' }}>
-                      SLA Compliance Rate
-                    </span>
-                    <div style={{
-                      fontSize: 20,
-                      fontWeight: 700,
-                      color: overdueApps.length > 0 ? '#B45309' : '#15803D',
-                      marginTop: 2
-                    }}>
-                      {totalAppsCount > 0
-                        ? `${Math.round(((totalAppsCount - overdueApps.length) / totalAppsCount) * 100)}%`
-                        : '100%'}
-                    </div>
-                  </div>
-                  <Activity size={24} color={overdueApps.length > 0 ? '#B45309' : '#15803D'} />
-                </div>
-
-                <div style={{ fontSize: 11.5, color: '#64748B', lineHeight: 1.4 }}>
-                  Operating under AICTE Approval Process Handbook (APH 2024–2027) norms for {user?.region} regional jurisdiction.
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Quick Nav Actions */}
-          <div style={{ marginTop: 'auto', paddingTop: 14, borderTop: '1px solid #F1F5F9', display: 'flex', gap: 8 }}>
+          {/* Quick Module Shortcuts */}
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #F1F5F9', display: 'flex', gap: 8 }}>
             <button
               onClick={() => onNavigate('Compliance')}
               style={{
                 flex: 1,
-                padding: '7px 10px',
-                fontSize: 11.5,
+                padding: '8px 10px',
+                fontSize: 12,
                 fontWeight: 600,
-                borderRadius: 5,
-                background: '#F8FAFC',
-                border: '1px solid #CBD5E1',
+                borderRadius: 6,
+                background: '#F7F9FC',
+                border: '1px solid #E6EBF2',
                 color: '#172B4D',
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: 5
+                gap: 6
               }}
             >
-              <FileCheck2 size={13} color="#2563EB" />
+              <FileCheck2 size={14} color="#0F9D91" />
               <span>Compliance</span>
             </button>
             <button
               onClick={() => onNavigate('EVC Inspections')}
               style={{
                 flex: 1,
-                padding: '7px 10px',
-                fontSize: 11.5,
+                padding: '8px 10px',
+                fontSize: 12,
                 fontWeight: 600,
-                borderRadius: 5,
-                background: '#F8FAFC',
-                border: '1px solid #CBD5E1',
+                borderRadius: 6,
+                background: '#F7F9FC',
+                border: '1px solid #E6EBF2',
                 color: '#172B4D',
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: 5
+                gap: 6
               }}
             >
-              <Calendar size={13} color="#7C3AED" />
+              <Calendar size={14} color="#2864E8" />
               <span>EVC Inspections</span>
             </button>
           </div>
