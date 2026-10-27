@@ -150,6 +150,8 @@ export interface AuditEvent {
   prev_hash?: string | null;
   event_hash?: string | null;
   created_at: string;
+  application_reference?: string | null;
+  institution_name?: string | null;
 }
 
 export interface DocumentRecord {

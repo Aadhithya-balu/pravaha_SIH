@@ -107,6 +107,11 @@ class AuditEventOut(BaseModel):
     created_at: datetime
 
 
+class RecentAuditEventOut(AuditEventOut):
+    application_reference: Optional[str] = None
+    institution_name: Optional[str] = None
+
+
 class ComplianceCreate(BaseModel):
     institution_name: str
     application_id: Optional[int] = None

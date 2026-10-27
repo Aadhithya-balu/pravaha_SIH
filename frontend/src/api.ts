@@ -301,3 +301,11 @@ export async function updateFindingDisposition(findingId: number, disposition: s
 export async function fetchApplicationScrutiny(applicationId: number): Promise<any> {
   return api(`/scrutiny/applications/${applicationId}`);
 }
+
+export async function fetchRecentAuditEvents(limit: number = 10): Promise<any[]> {
+  try {
+    return await api<any[]>('/audit/recent?limit=' + limit);
+  } catch (err) {
+    return [];
+  }
+}

@@ -28,7 +28,7 @@ from .schemas import (
     OfficerRescrutinyComplete, OfficerAdvanceStage, OfficerDecisionRequest,
     FindingDispositionRequest, NextBestActionOut, CandidateFieldOut,
     ApplyExtractedFieldsRequest, BottleneckAnalyticsOut,
-    ScrutinyFindingDispositionUpdate, ScrutinyFindingOut, ScrutinyRunOut, DocumentReviewOut
+    ScrutinyFindingDispositionUpdate, ScrutinyFindingOut, ScrutinyRunOut, DocumentReviewOut, RecentAuditEventOut
 )
 from .workflow import (
     get_available_transitions, validate_transition, TRANSITION_RULES,
@@ -709,6 +709,53 @@ def get_application_timeline(aid: int, db: Session = Depends(get_db), user: User
     if user.role == "institution" and a.institution_name != user.institution_name:
         raise HTTPException(status_code=403, detail="Forbidden.")
     return db.query(AuditEvent).filter(AuditEvent.application_id == aid).order_by(desc(AuditEvent.created_at)).all()
+
+
+@app.get("/api/audit/recent", response_model=List[RecentAuditEventOut])
+def get_recent_audit_events(
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    q = db.query(
+        AuditEvent,
+        Application.reference,
+        Application.institution_name
+    ).join(Application, AuditEvent.application_id == Application.id)
+
+    if user.role == "institution":
+        q = q.filter(Application.institution_name == user.institution_name)
+    elif user.role == "officer" and user.region and user.region != "HQ":
+        q = q.filter(or_(Application.region == user.region, Application.assigned_to == user.name))
+    elif user.role == "evc_expert":
+        assigned_app_ids = db.query(EVCVisit.application_id).filter(
+            or_(
+                EVCVisit.committee_members.ilike(f"%{user.name}%"),
+                EVCVisit.committee_members.ilike(f"%{user.email}%")
+            )
+        ).all()
+        app_ids = [x[0] for x in assigned_app_ids]
+        q = q.filter(Application.id.in_(app_ids))
+
+    results = q.order_by(desc(AuditEvent.created_at)).limit(limit).all()
+    events = []
+    for ev, ref, inst in results:
+        events.append(RecentAuditEventOut(
+            id=ev.id,
+            application_id=ev.application_id,
+            application_reference=ref,
+            institution_name=inst,
+            actor=ev.actor,
+            actor_role=ev.actor_role,
+            action=ev.action,
+            from_stage=ev.from_stage,
+            to_stage=ev.to_stage,
+            details=ev.details,
+            prev_hash=ev.prev_hash,
+            event_hash=ev.event_hash,
+            created_at=ev.created_at
+        ))
+    return events
 
 
 @app.get("/api/applications/{aid}/next-action", response_model=NextBestActionOut)
@@ -2441,6 +2488,11 @@ def v1_apply_application_extracted_fields(aid: int, req: ApplyExtractedFieldsReq
 @v1_router.get("/analytics/bottlenecks", response_model=BottleneckAnalyticsOut)
 def v1_get_bottleneck_analytics(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     return get_bottleneck_analytics(db=db, user=user)
+
+
+@v1_router.get("/audit/recent", response_model=List[RecentAuditEventOut])
+def v1_get_recent_audit_events(limit: int = 10, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return get_recent_audit_events(limit=limit, db=db, user=user)
 
 
 app.include_router(v1_router)

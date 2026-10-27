@@ -104,3 +104,17 @@ def test_bottleneck_analytics_endpoint(client):
         assert "stage" in s
         assert "count" in s
         assert "avg_age_days" in s
+
+
+def test_recent_audit_events_endpoint(client):
+    officer_token = get_token(client, 'officer@demo.local')
+    res = client.get('/api/audit/recent?limit=5', headers={'Authorization': f'Bearer {officer_token}'})
+    assert res.status_code == 200
+    events = res.json()
+    assert isinstance(events, list)
+    if events:
+        first = events[0]
+        assert 'application_id' in first
+        assert 'action' in first
+        assert 'actor' in first
+        assert 'application_reference' in first
