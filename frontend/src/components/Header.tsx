@@ -1,5 +1,5 @@
 import React from 'react';
-import { PlayCircle, Bell, RefreshCw, Menu, ArrowLeft } from 'lucide-react';
+import { PlayCircle, Bell, RefreshCw, Menu, ArrowLeft, Compass, Search } from 'lucide-react';
 import { User } from '../types';
 
 interface HeaderProps {
@@ -12,6 +12,8 @@ interface HeaderProps {
   onNavigateTab?: (tab: string) => void;
   unreadCount?: number;
   onToggleMobileMenu?: () => void;
+  onOpenGuide?: () => void;
+  onOpenCommandPalette?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -23,7 +25,9 @@ export const Header: React.FC<HeaderProps> = ({
   isScanning,
   onNavigateTab,
   unreadCount = 0,
-  onToggleMobileMenu
+  onToggleMobileMenu,
+  onOpenGuide,
+  onOpenCommandPalette
 }) => {
   // Phase 4: 3 Canonical Demo Accounts (Institution, Combined RO/Admin, EVC Expert)
   const demoAccounts = [
@@ -129,6 +133,66 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right Actions */}
       <div className="topbar-actions">
+        {/* Global Quick Search / Command Palette Shortcut */}
+        {onOpenCommandPalette && (
+          <button
+            type="button"
+            className="topbar-search-trigger"
+            onClick={onOpenCommandPalette}
+            title="Search applications, tabs, or switch personas (Ctrl + K)"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '5px 10px',
+              borderRadius: 6,
+              background: '#F1F5F9',
+              border: '1px solid #CBD5E1',
+              color: '#64748B',
+              fontSize: 12,
+              cursor: 'pointer',
+              height: 28,
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Search size={13} color="#2563EB" />
+            <span style={{ fontSize: 11.5, color: '#475569' }}>Quick Search...</span>
+            <kbd style={{
+              background: '#FFFFFF',
+              border: '1px solid #CBD5E1',
+              borderRadius: 3,
+              padding: '1px 4px',
+              fontSize: 10,
+              fontWeight: 700,
+              color: '#64748B'
+            }}>
+              Ctrl K
+            </kbd>
+          </button>
+        )}
+
+        {/* Interactive Platform Guide / User Instructions */}
+        {onOpenGuide && (
+          <button
+            type="button"
+            className="btn-secondary btn-nav-action"
+            onClick={onOpenGuide}
+            title="Open platform guide, interactive user manual and glossary"
+            style={{
+              background: '#EFF6FF',
+              borderColor: '#BFDBFE',
+              color: '#2563EB',
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5
+            }}
+          >
+            <Compass size={13} color="#2563EB" />
+            <span>How to Use</span>
+          </button>
+        )}
+
         {/* Quick Demo Role Switcher for SIH Evaluators (Phase 4) */}
         <div className="quick-role-bar" title="Switch persona to evaluate role-based permissions">
           <span className="quick-role-label">Persona:</span>

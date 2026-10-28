@@ -14,6 +14,8 @@ import {
   Check,
   X,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Info,
   Edit3,
   Save,
@@ -26,7 +28,9 @@ import {
   Database,
   Building2,
   Lock,
-  RefreshCw
+  RefreshCw,
+  SlidersHorizontal,
+  CheckSquare
 } from 'lucide-react';
 import { AiAnalysisResult, User, CandidateField, Application } from '../types';
 import { api, fetchApplications, applyExtractedFields } from '../api';
@@ -67,8 +71,8 @@ export const DocumentReviewTab: React.FC<DocumentReviewTabProps> = ({ user, init
   const [docFileSize, setDocFileSize] = useState<number>(245760); // 240 KB
   const [docMimeType, setDocMimeType] = useState('application/pdf');
 
-  // Preview & Search within doc
-  const [isPreviewOpen, setIsPreviewOpen] = useState(true);
+  // Preview & Search within doc - CLOSED BY DEFAULT as requested
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [previewSearchQuery, setPreviewSearchQuery] = useState('');
   const [selectedHighlight, setSelectedHighlight] = useState<string | null>(null);
 
@@ -77,6 +81,16 @@ export const DocumentReviewTab: React.FC<DocumentReviewTabProps> = ({ user, init
   const [analysisResult, setAnalysisResult] = useState<AiAnalysisResult | null>(null);
   const [editableFields, setEditableFields] = useState<CandidateField[]>([]);
   const [scrutinyChecks, setScrutinyChecks] = useState<ScrutinyCheckItem[]>([]);
+
+  // UI Redesign States
+  const [isEngineDetailsOpen, setIsEngineDetailsOpen] = useState(false);
+  const [reviewTab, setReviewTab] = useState<'findings' | 'fields' | 'all'>('findings');
+  const [fieldFilter, setFieldFilter] = useState<'ALL' | 'NEEDS_REVIEW' | 'VERIFIED' | 'APPLICANT_ENTERED'>('ALL');
+  const [editingFieldKey, setEditingFieldKey] = useState<string | null>(null);
+  const [editValueDraft, setEditValueDraft] = useState<string>('');
+  const [editStatusDraft, setEditStatusDraft] = useState<'EXTRACTED' | 'APPLICANT_ENTERED' | 'VERIFIED' | 'NEEDS_REVIEW'>('VERIFIED');
+  const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
+  const [expandedFindingId, setExpandedFindingId] = useState<string | null>(null);
 
   // Filtering findings
   const [filterResult, setFilterResult] = useState<string>('ALL');
@@ -191,6 +205,8 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
     setSelectedHighlight(null);
     setErrorMsg('');
     setSuccessMsg('');
+    setExpandedFindingId(null);
+    setExpandedSources({});
     runLocalEvaluation(sample.name, sample.type, sample.text);
   }
 
@@ -262,7 +278,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
     }
 
     // Validity / Dates
-    const dates = text.match(/\b(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b/gi);
+    const dates = text.match(/\b(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}|\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})\b/gi);
     if (dates && dates.length >= 2) {
       fields.push({
         field_key: 'validity_period',
@@ -385,7 +401,6 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
       });
     } else if (type === 'FIRE_NOC' || lower.includes('fire')) {
       const hasNbc = lower.includes('nbc 2016') || lower.includes('national building code');
-      const hasAnnual = lower.includes('annual') || lower.includes('valid until') || lower.includes('expiring');
 
       // Check 1: NBC 2016 Part 4 Life Safety Norms
       checks.push({
@@ -485,6 +500,13 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
     }
 
     setScrutinyChecks(checks);
+    // Auto expand the first issue if any, or keep first finding open
+    const firstIssue = checks.find(c => c.result === 'POTENTIAL_ISSUE' || c.result === 'MISSING_EVIDENCE');
+    if (firstIssue) {
+      setExpandedFindingId(firstIssue.id);
+    } else if (checks.length > 0) {
+      setExpandedFindingId(checks[0].id);
+    }
   }
 
   // Handle live upload
@@ -597,6 +619,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
         validation_status: 'EXTRACTED'
       }))
     );
+    setEditingFieldKey(null);
     setSuccessMsg('Reset all fields to original OCR extraction values.');
   }
 
@@ -656,6 +679,29 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
     }
   }
 
+  // Start inline editing of a field
+  function startInlineEdit(field: CandidateField) {
+    setEditingFieldKey(field.field_key);
+    setEditValueDraft(field.extracted_value);
+    const validStatus = (['EXTRACTED', 'APPLICANT_ENTERED', 'VERIFIED', 'NEEDS_REVIEW'].includes(field.validation_status || '')
+      ? field.validation_status
+      : 'VERIFIED') as 'EXTRACTED' | 'APPLICANT_ENTERED' | 'VERIFIED' | 'NEEDS_REVIEW';
+    setEditStatusDraft(validStatus);
+  }
+
+  function saveInlineEdit(fieldKey: string) {
+    handleFieldChange(fieldKey, editValueDraft);
+    handleFieldStatusChange(fieldKey, editStatusDraft);
+    setEditingFieldKey(null);
+  }
+
+  function toggleSourceExpansion(fieldKey: string) {
+    setExpandedSources(prev => ({
+      ...prev,
+      [fieldKey]: !prev[fieldKey]
+    }));
+  }
+
   // Filtered findings
   const filteredFindings = scrutinyChecks.filter((c) => {
     if (filterResult !== 'ALL' && c.result !== filterResult) return false;
@@ -669,171 +715,480 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
     return true;
   });
 
-  // Finding counters
-  const totalFindings = scrutinyChecks.length;
-  const passCount = scrutinyChecks.filter((c) => c.result === 'PASS').length;
-  const issueCount = scrutinyChecks.filter((c) => c.result === 'POTENTIAL_ISSUE').length;
+  // Filtered fields
+  const filteredFields = editableFields.filter((f) => {
+    if (fieldFilter === 'ALL') return true;
+    if (fieldFilter === 'NEEDS_REVIEW') return f.validation_status === 'NEEDS_REVIEW';
+    if (fieldFilter === 'VERIFIED') return f.validation_status === 'VERIFIED';
+    if (fieldFilter === 'APPLICANT_ENTERED') return f.validation_status === 'APPLICANT_ENTERED';
+    return true;
+  });
+
+  // Metric counts
+  const passedCount = scrutinyChecks.filter((c) => c.result === 'PASS').length;
+  const issuesCount = scrutinyChecks.filter((c) => c.result === 'POTENTIAL_ISSUE').length;
   const missingCount = scrutinyChecks.filter((c) => c.result === 'MISSING_EVIDENCE').length;
   const reviewCount = scrutinyChecks.filter((c) => c.result === 'NEEDS_REVIEW').length;
 
+  const verifiedFieldsCount = editableFields.filter(f => f.validation_status === 'VERIFIED').length;
+  const needsReviewFieldsCount = editableFields.filter(f => f.validation_status === 'NEEDS_REVIEW').length;
+  const verifiedPercentage = editableFields.length > 0 ? Math.round((verifiedFieldsCount / editableFields.length) * 100) : 0;
+
+  const currentApp = applications.find(a => a.id === selectedAppId);
+
   return (
     <div className="page-container" style={{ gap: 16 }}>
-      {/* 1. Header & SIH Quick Evaluation Presets */}
-      <div className="panel-card" style={{ padding: '16px 20px', borderLeft: '4px solid var(--color-navy)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+      {/* ====================================================================
+          1. SIMPLIFIED PAGE HEADER & TOOLBAR (Government Enterprise Design)
+          ==================================================================== */}
+      <div style={{
+        background: '#FFFFFF',
+        border: '1px solid #E2E8F0',
+        borderRadius: 10,
+        padding: '18px 22px',
+        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)'
+      }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          flexWrap: 'wrap',
+          gap: 16
+        }}>
+          {/* Left: Clean Title & Subtitle */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Sparkles size={20} color="var(--color-navy)" />
-              <h2 style={{ margin: 0, fontSize: 18, color: 'var(--color-navy)', fontWeight: 800 }}>
-                AICTE Regulatory Scrutiny & Document Intelligence
-              </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                background: '#EFF6FF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <ShieldCheck size={18} color="#2563EB" />
+              </div>
+              <h1 style={{
+                margin: 0,
+                fontSize: 22,
+                fontWeight: 600,
+                color: '#172B4D',
+                letterSpacing: '-0.01em'
+              }}>
+                AI Document Scrutiny
+              </h1>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                background: '#F1F5F9',
+                padding: '2px 8px',
+                borderRadius: 12,
+                fontSize: 11,
+                fontWeight: 600,
+                color: '#475569'
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16845B' }} />
+                <span>Engine Ready</span>
+              </div>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '2px 8px',
+                borderRadius: 12,
+                fontSize: 10.5,
+                fontWeight: 700,
+                background: '#EFF6FF',
+                color: '#2563EB',
+                border: '1px solid #BFDBFE'
+              }}>
+                SIH26262 DEMO
+              </div>
             </div>
-            <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
-              Explainable AI compliance engine combining deterministic APH 2024-2027 statutory rule checks with semantic extraction and human verification guardrails.
+            <p style={{
+              margin: '6px 0 0',
+              fontSize: 13.5,
+              color: '#64748B',
+              lineHeight: 1.4
+            }}>
+              Review extracted information, verify regulatory rules and record findings.
             </p>
           </div>
 
-          {/* Application linking selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-primary)' }}>Linked Application Dossier:</span>
-            <select
-              value={selectedAppId || ''}
-              onChange={(e) => setSelectedAppId(e.target.value ? Number(e.target.value) : null)}
-              style={{ fontSize: 12, padding: '5px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-medium)' }}
+          {/* Right: Compact Dossier Selector & Quick Actions */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            flexWrap: 'wrap'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>Dossier:</span>
+              <select
+                value={selectedAppId || ''}
+                onChange={(e) => setSelectedAppId(e.target.value ? Number(e.target.value) : null)}
+                style={{
+                  fontSize: 12.5,
+                  padding: '6px 10px',
+                  borderRadius: 6,
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  color: '#172B4D',
+                  fontWeight: 500,
+                  maxWidth: 260
+                }}
+              >
+                <option value="">Sandbox (Independent Evaluation)</option>
+                {applications.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.reference} · {a.institution_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleAnalyze}
+              disabled={isAnalyzing || !docText.trim()}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 14px',
+                background: '#2457C5',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: 6,
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: isAnalyzing ? 'wait' : 'pointer',
+                boxShadow: '0 1px 2px rgba(36, 87, 197, 0.25)',
+                transition: 'all 0.15s ease'
+              }}
+              title="Execute full statutory scrutiny against current document"
             >
-              <option value="">Sandbox (Independent Document Evaluation)</option>
-              {applications.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.reference} — {a.institution_name} ({a.current_stage})
-                </option>
-              ))}
-            </select>
+              <Sparkles size={14} className={isAnalyzing ? 'spin' : ''} />
+              <span>{isAnalyzing ? 'Scrutinizing...' : 'Run Scrutiny'}</span>
+            </button>
           </div>
         </div>
 
-        {/* Quick Evaluation Sample Buttons */}
-        <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border-subtle)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              SIH Jury Evaluation Presets: Test Pre-Formatted Regulatory Documents
-            </span>
-            <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Click to trigger instant OCR, field extraction, and rule evaluation</span>
+        {/* SIH Evaluation Presets Toolbar */}
+        <div style={{
+          marginTop: 14,
+          paddingTop: 12,
+          borderTop: '1px solid #F1F5F9',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 10
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748B' }}>
+            <span style={{ fontWeight: 600, color: '#172B4D' }}>Sample Documents:</span>
+            <span>Load pre-verified test cases:</span>
           </div>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {samples.map((s) => (
-              <button
-                key={s.title}
-                className="btn-secondary"
-                style={{
-                  fontSize: 11,
-                  padding: '6px 12px',
-                  background: docName === s.name ? '#EFF6FF' : '#FFFFFF',
-                  borderColor: docName === s.name ? '#2563EB' : 'var(--border-subtle)'
-                }}
-                onClick={() => loadSample(s)}
-              >
-                <FileText size={12} color="#2563EB" />
-                <span>{s.title}</span>
-                <span
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {samples.map((s) => {
+              const isSelected = docName === s.name;
+              return (
+                <button
+                  key={s.title}
+                  type="button"
+                  onClick={() => loadSample(s)}
                   style={{
-                    fontSize: 9,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '4px 10px',
+                    borderRadius: 6,
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: isSelected ? '#EFF6FF' : '#F8FAFC',
+                    border: `1px solid ${isSelected ? '#2563EB' : '#E2E8F0'}`,
+                    color: isSelected ? '#2563EB' : '#475569',
+                    transition: 'all 0.12s ease'
+                  }}
+                  title={`Load ${s.title}`}
+                >
+                  <FileText size={12} color={isSelected ? '#2563EB' : '#64748B'} />
+                  <span>{s.title}</span>
+                  <span style={{
+                    fontSize: 9.5,
                     fontWeight: 700,
                     padding: '1px 5px',
                     borderRadius: 3,
                     background: s.badge.includes('PASS') ? '#DCFCE7' : s.badge.includes('DEFICIENCY') ? '#FEE2E2' : '#FEF3C7',
                     color: s.badge.includes('PASS') ? '#166534' : s.badge.includes('DEFICIENCY') ? '#991B1B' : '#92400E'
-                  }}
-                >
-                  {s.badge}
-                </span>
-              </button>
-            ))}
+                  }}>
+                    {s.badge.includes('PASS') ? 'PASS' : s.badge.includes('DEFICIENCY') ? 'DEFICIENT' : 'ANNUAL'}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* 2. Genuine AI Transparency & Engine State Banner */}
-      <div className="scrutiny-transparency-card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-          <div className="transparency-badges-row">
-            <span className="transparency-pill engine">
-              <Layers size={11} />
-              {analysisResult?.execution_mode === 'real_llm'
-                ? 'Live LLM Semantic Analysis'
-                : 'Deterministic APH Rule Engine'}
-            </span>
-
-            <span className="transparency-pill provider">
-              <Database size={11} />
-              Provider: {analysisResult?.provider || 'none (deterministic engine)'}
-            </span>
-
-            <span className="transparency-pill ruleset">
-              <ShieldCheck size={11} />
-              Norms: AICTE APH 2024–2027
-            </span>
-
-            <span className="transparency-pill guardrail">
-              <Lock size={11} />
-              Human-in-the-Loop Guardrail Active
-            </span>
-          </div>
-
-          <span style={{ fontSize: 11, color: '#4B5563', fontWeight: 600 }}>
-            Confidence: <b>{Math.round((analysisResult?.confidence_score ?? 0.95) * 100)}%</b>
-          </span>
-        </div>
-
-        <p style={{ margin: 0, fontSize: 11.5, color: '#334155', lineHeight: 1.45 }}>
-          <b>Engine Transparency: </b>
-          {analysisResult?.mode_fallback_reason ||
-            'Deterministic statutory rule engine active (offline verification). Evaluates numerical land acres, registered tenure years, and life safety norms directly without ungrounded LLM claims.'}
-        </p>
-
-        <div style={{ fontSize: 10.5, color: '#6B7280', borderTop: '1px dashed #CBD5E1', paddingTop: 6 }}>
-          <b>Statutory Guardrail Notice: </b>
-          AI scrutiny provides automated assistive analysis and highlights discrepancies. Statutory approval, rejection, or waiver decisions remain exclusively under authorized human officers.
-        </div>
-      </div>
-
-      {/* Error & Success Feedback Banners */}
-      {errorMsg && <div className="alert-banner danger">{errorMsg}</div>}
-      {successMsg && <div className="alert-banner info">{successMsg}</div>}
-
-      {/* 3. Main 3-Column Split-Panel Layout */}
-      <div className="scrutiny-3col-layout">
-        {/* COLUMN 1: DOCUMENT PROCESSING & PREVIEW AREA */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div className="panel-card" style={{ padding: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Upload size={15} color="var(--color-navy)" />
-                <h4 style={{ margin: 0, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-navy)' }}>
-                  Document Processing
-                </h4>
-              </div>
-              <span className="badge badge-completed" style={{ fontSize: 9.5 }}>
-                Status: Ingested & Parsed
+      {/* ====================================================================
+          2. COMPACT SCRUTINY ENGINE STATUS STRIP (With Collapsible Details)
+          ==================================================================== */}
+      <div style={{
+        background: '#FFFFFF',
+        border: '1px solid #E2E8F0',
+        borderRadius: 8,
+        padding: '10px 16px',
+        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.02)'
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 10,
+          fontSize: 12.5
+        }}>
+          {/* Left: Four Concise Status Indicators */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#16845B' }} />
+              <span style={{ fontWeight: 600, color: '#172B4D' }}>Engine:</span>
+              <span style={{ color: '#475569' }}>
+                {analysisResult?.execution_mode === 'real_llm' ? 'Live LLM Scrutiny' : 'Deterministic Rule Engine'}
               </span>
             </div>
 
-            {/* Document metadata summary */}
-            <div style={{ background: '#F8FAFC', padding: '10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', marginBottom: 14, fontSize: 11.5 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                <b style={{ color: 'var(--text-primary)' }}>{docName}</b>
-                <span style={{ color: 'var(--text-muted)' }}>{(docFileSize / 1024).toFixed(0)} KB</span>
+            <span style={{ color: '#CBD5E1' }}>|</span>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <ShieldCheck size={14} color="#2563EB" />
+              <span style={{ fontWeight: 600, color: '#172B4D' }}>Ruleset:</span>
+              <span style={{ color: '#475569' }}>AICTE APH 2024–2027</span>
+            </div>
+
+            <span style={{ color: '#CBD5E1' }}>|</span>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Database size={14} color="#64748B" />
+              <span style={{ fontWeight: 600, color: '#172B4D' }}>Provider:</span>
+              <span style={{ color: '#475569' }}>
+                {analysisResult?.provider || 'Deterministic / Offline'}
+              </span>
+            </div>
+
+            <span style={{ color: '#CBD5E1' }}>|</span>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Lock size={13} color="#D97706" />
+              <span style={{ color: '#64748B', fontStyle: 'italic', fontSize: 12 }}>
+                Human approval required · Officers make final decisions
+              </span>
+            </div>
+          </div>
+
+          {/* Right: Collapsible Details Toggle */}
+          <button
+            type="button"
+            onClick={() => setIsEngineDetailsOpen(!isEngineDetailsOpen)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#2563EB',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4
+            }}
+          >
+            <Info size={13} />
+            <span>{isEngineDetailsOpen ? 'Hide Details' : 'Engine Details'}</span>
+            {isEngineDetailsOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </button>
+        </div>
+
+        {/* Collapsible Info Drawer */}
+        {isEngineDetailsOpen && (
+          <div style={{
+            marginTop: 10,
+            paddingTop: 10,
+            borderTop: '1px dashed #E2E8F0',
+            fontSize: 12,
+            color: '#475569',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6
+          }}>
+            <p style={{ margin: 0 }}>
+              <b>Statutory Methodology: </b>
+              {analysisResult?.mode_fallback_reason ||
+                'Hybrid compliance framework. Deterministic validation verifies quantitative land acreage, 30-year lease tenure, and fire safety norms directly against codified APH rules.'}
+            </p>
+            <p style={{ margin: 0, color: '#64748B' }}>
+              <b>Human-in-the-Loop Safeguard: </b>
+              AI findings assist regulatory review and identify discrepancies. Statutory approval, rejection, or waiver decisions remain exclusively with authorised human officers.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Error & Success Feedback Banners */}
+      {errorMsg && (
+        <div style={{
+          padding: '10px 14px',
+          borderRadius: 6,
+          background: '#FDF2F2',
+          border: '1px solid #FDE2E2',
+          color: '#D64545',
+          fontSize: 13,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <span>{errorMsg}</span>
+          <button onClick={() => setErrorMsg('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#D64545', fontWeight: 700 }}>×</button>
+        </div>
+      )}
+      {successMsg && (
+        <div style={{
+          padding: '10px 14px',
+          borderRadius: 6,
+          background: '#F0FDF4',
+          border: '1px solid #DCFCE7',
+          color: '#16845B',
+          fontSize: 13,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <span>{successMsg}</span>
+          <button onClick={() => setSuccessMsg('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16845B', fontWeight: 700 }}>×</button>
+        </div>
+      )}
+
+      {/* ====================================================================
+          3. MAIN TWO-COLUMN SPLIT-PANEL LAYOUT (42% Left / 58% Right)
+          ==================================================================== */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.38fr)',
+        gap: 20,
+        alignItems: 'start'
+      }} className="scrutiny-2col-layout">
+
+        {/* ------------------------------------------------------------------
+            LEFT PANEL: DOCUMENT WORKSPACE (~42%)
+            ------------------------------------------------------------------ */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Document Ingestion & Overview Card */}
+          <div style={{
+            background: '#FFFFFF',
+            border: '1px solid #E2E8F0',
+            borderRadius: 10,
+            padding: '20px',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 14,
+              paddingBottom: 10,
+              borderBottom: '1px solid #F1F5F9'
+            }}>
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 600, color: '#172B4D', margin: 0 }}>
+                  Document Workspace
+                </h2>
+                <span style={{ fontSize: 12, color: '#64748B' }}>
+                  Ingested regulatory dossier file
+                </span>
               </div>
-              <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>
-                Type: <b>{docType}</b> · MIME: {docMimeType}
+              <span style={{
+                fontSize: 11,
+                fontWeight: 600,
+                padding: '3px 8px',
+                borderRadius: 4,
+                background: '#F0FDF4',
+                color: '#16845B',
+                border: '1px solid #DCFCE7'
+              }}>
+                ● Ingested & Parsed
+              </span>
+            </div>
+
+            {/* Clean Document File Summary */}
+            <div style={{
+              background: '#F8FAFC',
+              border: '1px solid #E2E8F0',
+              borderRadius: 8,
+              padding: '12px 14px',
+              marginBottom: 16
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 6,
+                  background: '#EFF6FF',
+                  border: '1px solid #BFDBFE',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <FileText size={18} color="#2563EB" />
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <b style={{
+                    fontSize: 13,
+                    color: '#172B4D',
+                    display: 'block',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {docName}
+                  </b>
+                  <div style={{ fontSize: 11.5, color: '#64748B', marginTop: 2, display: 'flex', gap: 8 }}>
+                    <span>{(docFileSize / 1024).toFixed(0)} KB</span>
+                    <span>·</span>
+                    <span>{docMimeType}</span>
+                    {currentApp && (
+                      <>
+                        <span>·</span>
+                        <span style={{ color: '#2563EB' }}>{currentApp.reference}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Ingestion & Action Controls */}
+            {/* Category Selector & Upload Action */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div className="form-group">
-                <label>Regulatory Document Category</label>
-                <select value={docType} onChange={(e) => setDocType(e.target.value)} style={{ fontSize: 12 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+                  Regulatory Document Category
+                </label>
+                <select
+                  value={docType}
+                  onChange={(e) => setDocType(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 10px',
+                    borderRadius: 6,
+                    border: '1px solid #CBD5E1',
+                    fontSize: 13,
+                    color: '#172B4D',
+                    background: '#FFFFFF'
+                  }}
+                >
                   <option value="LEASE_DEED">Registered Land Lease Deed / Ownership</option>
                   <option value="FIRE_NOC">Fire & Life Safety Clearance (NOC)</option>
                   <option value="BUILDING_PLAN">Approved Building Plan & Structural Stability</option>
@@ -843,620 +1198,1257 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
                 </select>
               </div>
 
-              <div className="form-group">
-                <label>Upload Document File (PDF, DOCX, TXT)</label>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+                  Replace / Upload New File (PDF, DOCX, TXT)
+                </label>
                 <input
                   type="file"
                   accept=".pdf,.docx,.txt"
                   onChange={handleFileUpload}
-                  style={{ fontSize: 11.5, padding: '6px' }}
+                  style={{
+                    width: '100%',
+                    padding: '6px 8px',
+                    borderRadius: 6,
+                    border: '1px solid #CBD5E1',
+                    fontSize: 12,
+                    background: '#FFFFFF'
+                  }}
                 />
               </div>
 
-              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  style={{ flex: 1, justifyContent: 'center', fontSize: 11.5 }}
-                  disabled={isAnalyzing || !docText.trim()}
-                  onClick={handleAnalyze}
-                >
-                  <Sparkles size={13} />
-                  <span>{isAnalyzing ? 'Scrutinizing...' : 'Re-Run Scrutiny'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  style={{ fontSize: 11.5 }}
-                  onClick={() => setIsPreviewOpen(!isPreviewOpen)}
-                  title="Toggle Document Preview"
-                >
-                  {isPreviewOpen ? <EyeOff size={13} /> : <Eye size={13} />}
-                  <span>{isPreviewOpen ? 'Hide' : 'Preview'}</span>
-                </button>
-              </div>
+              {/* Primary Action Button: Run Scrutiny */}
+              <button
+                type="button"
+                onClick={handleAnalyze}
+                disabled={isAnalyzing || !docText.trim()}
+                style={{
+                  width: '100%',
+                  marginTop: 6,
+                  padding: '10px 16px',
+                  background: '#2457C5',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: 6,
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  cursor: isAnalyzing ? 'wait' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  boxShadow: '0 1px 3px rgba(36, 87, 197, 0.25)',
+                  transition: 'background-color 0.15s ease'
+                }}
+              >
+                <Sparkles size={15} className={isAnalyzing ? 'spin' : ''} />
+                <span>{isAnalyzing ? 'Executing AI Scrutiny...' : 'Run Scrutiny Pipeline'}</span>
+              </button>
             </div>
           </div>
 
-          {/* Collapsible Document Preview Pane */}
-          {isPreviewOpen && (
-            <div className="doc-preview-container">
-              <div className="doc-preview-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <FileText size={13} color="var(--color-navy)" />
-                  <b style={{ fontSize: 11.5, color: 'var(--color-navy)' }}>Document Text Preview</b>
-                </div>
-
-                {/* In-doc search */}
-                <div style={{ position: 'relative', width: 140 }}>
-                  <input
-                    type="text"
-                    placeholder="Search in text..."
-                    value={previewSearchQuery}
-                    onChange={(e) => setPreviewSearchQuery(e.target.value)}
-                    style={{ fontSize: 10.5, padding: '3px 8px', width: '100%' }}
-                  />
-                </div>
-              </div>
-
-              <div className="doc-preview-body">
-                {previewSearchQuery ? (
-                  // Simple highlight
-                  docText.split(new RegExp(`(${previewSearchQuery})`, 'gi')).map((part, i) =>
-                    part.toLowerCase() === previewSearchQuery.toLowerCase() ? (
-                      <mark key={i} className="doc-highlight-snippet">
-                        {part}
-                      </mark>
-                    ) : (
-                      <span key={i}>{part}</span>
-                    )
-                  )
-                ) : selectedHighlight ? (
-                  docText.split(new RegExp(`(${selectedHighlight})`, 'gi')).map((part, i) =>
-                    part.toLowerCase() === selectedHighlight.toLowerCase() ? (
-                      <mark key={i} className="doc-highlight-snippet">
-                        {part}
-                      </mark>
-                    ) : (
-                      <span key={i}>{part}</span>
-                    )
-                  )
-                ) : (
-                  docText
-                )}
-              </div>
-
-              <div style={{ padding: '8px 12px', background: '#F8FAFC', borderTop: '1px solid var(--border-subtle)', fontSize: 10.5, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
-                <span>Length: {docText.length} characters</span>
-                <span>Format: Extracted Legal Text</span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* COLUMN 2: STRUCTURED, EDITABLE EXTRACTED FIELDS */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div className="panel-card" style={{ padding: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Database size={15} color="var(--color-navy)" />
-                <h4 style={{ margin: 0, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-navy)' }}>
-                  Extracted Fields ({editableFields.length})
-                </h4>
-              </div>
-
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button
-                  className="btn-secondary"
-                  style={{ fontSize: 10.5, padding: '3px 8px' }}
-                  onClick={handleResetFields}
-                  title="Reset to original OCR extraction values"
-                >
-                  <RotateCcw size={11} />
-                  <span>Reset</span>
-                </button>
-
-                <button
-                  className="btn-primary"
-                  style={{ fontSize: 10.5, padding: '3px 8px', background: '#16A34A', borderColor: '#16A34A' }}
-                  disabled={isSavingFields}
-                  onClick={handleSaveConfirmedFields}
-                  title="Apply confirmed fields to application dossier"
-                >
-                  <Save size={11} />
-                  <span>{isSavingFields ? 'Saving...' : 'Apply Fields'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Validation status legend */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12, padding: '6px 8px', background: '#F8FAFC', borderRadius: 'var(--radius-sm)' }}>
-              <span className="badge badge-status-extracted" style={{ fontSize: 9 }}>● EXTRACTED (AI)</span>
-              <span className="badge badge-status-applicant" style={{ fontSize: 9 }}>● APPLICANT ENTERED</span>
-              <span className="badge badge-status-verified" style={{ fontSize: 9 }}>● VERIFIED</span>
-              <span className="badge badge-status-review" style={{ fontSize: 9 }}>● NEEDS REVIEW</span>
-            </div>
-
-            {/* Field card list */}
-            {editableFields.length === 0 ? (
-              <div style={{ padding: '36px', textAlign: 'center', background: '#F8FAFC', borderRadius: 'var(--radius-md)' }}>
-                <Database size={28} color="#94A3B8" style={{ margin: '0 auto 8px' }} />
-                <b style={{ fontSize: 12, display: 'block', color: 'var(--text-primary)' }}>No fields extracted yet</b>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  Select a document sample or upload a file on the left.
+          {/* Collapsible Document Text Preview - CLOSED BY DEFAULT */}
+          <div style={{
+            background: '#FFFFFF',
+            border: '1px solid #E2E8F0',
+            borderRadius: 10,
+            overflow: 'hidden',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)'
+          }}>
+            <button
+              type="button"
+              onClick={() => setIsPreviewOpen(!isPreviewOpen)}
+              style={{
+                width: '100%',
+                padding: '12px 18px',
+                background: '#FFFFFF',
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                cursor: 'pointer'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <FileText size={15} color="#2457C5" />
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: '#172B4D' }}>
+                  Extracted Document Text
+                </span>
+                <span style={{ fontSize: 11.5, color: '#64748B' }}>
+                  ({docText.length} characters)
                 </span>
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {editableFields.map((field) => {
-                  let borderClass = 'field-card';
-                  if (field.user_edited) borderClass += ' user-edited';
-                  else if (field.validation_status === 'VERIFIED') borderClass += ' verified';
-                  else if (field.validation_status === 'NEEDS_REVIEW') borderClass += ' needs-review';
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#2563EB', fontWeight: 600 }}>
+                <span>{isPreviewOpen ? 'Collapse' : 'Expand'}</span>
+                {isPreviewOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </div>
+            </button>
 
-                  return (
-                    <div key={field.field_key} className={borderClass}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                        <div>
-                          <b style={{ fontSize: 12, color: 'var(--text-primary)' }}>{field.field_label}</b>
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'JetBrains Mono' }}>
-                            {field.field_key}
-                          </div>
-                        </div>
+            {isPreviewOpen && (
+              <div style={{ borderTop: '1px solid #F1F5F9' }}>
+                {/* Search Bar in Text */}
+                <div style={{
+                  padding: '10px 16px',
+                  background: '#F8FAFC',
+                  borderBottom: '1px solid #E2E8F0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 10
+                }}>
+                  <div style={{ position: 'relative', flex: 1 }}>
+                    <Search size={13} color="#94A3B8" style={{ position: 'absolute', left: 9, top: 8 }} />
+                    <input
+                      type="text"
+                      placeholder="Search within extracted legal text..."
+                      value={previewSearchQuery}
+                      onChange={(e) => setPreviewSearchQuery(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '5px 10px 5px 28px',
+                        borderRadius: 5,
+                        border: '1px solid #CBD5E1',
+                        fontSize: 12,
+                        background: '#FFFFFF',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  {previewSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewSearchQuery('')}
+                      style={{ background: 'none', border: 'none', fontSize: 11.5, color: '#64748B', cursor: 'pointer' }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
 
-                        {/* Status dropdown */}
-                        <select
-                          value={field.validation_status || 'EXTRACTED'}
-                          onChange={(e) => handleFieldStatusChange(field.field_key, e.target.value as any)}
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            padding: '2px 6px',
-                            borderRadius: 4,
-                            border: '1px solid var(--border-medium)',
-                            background:
-                              field.validation_status === 'VERIFIED'
-                                ? '#F0FDF4'
-                                : field.validation_status === 'NEEDS_REVIEW'
-                                ? '#FEF3C7'
-                                : field.validation_status === 'APPLICANT_ENTERED'
-                                ? '#EFF6FF'
-                                : '#F3E8FF',
-                            color:
-                              field.validation_status === 'VERIFIED'
-                                ? '#15803D'
-                                : field.validation_status === 'NEEDS_REVIEW'
-                                ? '#B45309'
-                                : field.validation_status === 'APPLICANT_ENTERED'
-                                ? '#1D4ED8'
-                                : '#7E22CE'
-                          }}
-                        >
-                          <option value="EXTRACTED">EXTRACTED</option>
-                          <option value="APPLICANT_ENTERED">APPLICANT ENTERED</option>
-                          <option value="VERIFIED">VERIFIED</option>
-                          <option value="NEEDS_REVIEW">NEEDS REVIEW</option>
-                        </select>
-                      </div>
+                {/* Text Body */}
+                <div style={{
+                  padding: '14px 18px',
+                  maxHeight: 340,
+                  overflowY: 'auto',
+                  fontFamily: 'JetBrains Mono, Menlo, monospace',
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  color: '#1E293B',
+                  background: '#FAFAFA',
+                  whiteSpace: 'pre-wrap'
+                }}>
+                  {previewSearchQuery ? (
+                    docText.split(new RegExp(`(${previewSearchQuery})`, 'gi')).map((part, i) =>
+                      part.toLowerCase() === previewSearchQuery.toLowerCase() ? (
+                        <mark key={i} style={{ background: '#FEF08A', color: '#172B4D', padding: '1px 2px', borderRadius: 2 }}>
+                          {part}
+                        </mark>
+                      ) : (
+                        <span key={i}>{part}</span>
+                      )
+                    )
+                  ) : selectedHighlight ? (
+                    docText.split(new RegExp(`(${selectedHighlight})`, 'gi')).map((part, i) =>
+                      part.toLowerCase() === selectedHighlight.toLowerCase() ? (
+                        <mark key={i} style={{ background: '#BFDBFE', color: '#1E3A8A', padding: '1px 2px', borderRadius: 2 }}>
+                          {part}
+                        </mark>
+                      ) : (
+                        <span key={i}>{part}</span>
+                      )
+                    )
+                  ) : (
+                    docText
+                  )}
+                </div>
 
-                      {/* Editable value input */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <input
-                          type="text"
-                          value={field.extracted_value}
-                          onChange={(e) => handleFieldChange(field.field_key, e.target.value)}
-                          style={{
-                            flex: 1,
-                            fontSize: 12,
-                            padding: '5px 8px',
-                            fontWeight: 600,
-                            color: '#1E293B',
-                            background: field.user_edited ? '#EFF6FF' : '#FFFFFF',
-                            borderColor: field.user_edited ? '#3B82F6' : 'var(--border-medium)'
-                          }}
-                        />
-                        {field.user_edited && (
-                          <span
-                            style={{
-                              fontSize: 9,
-                              fontWeight: 700,
-                              background: '#DBEAFE',
-                              color: '#1D4ED8',
-                              padding: '2px 5px',
-                              borderRadius: 3
-                            }}
-                            title={`Original extracted value was: "${field.original_value}"`}
-                          >
-                            Corrected
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Evidence quote & source */}
-                      {field.evidence_quote && (
-                        <div
-                          className="evidence-quote-box"
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => setSelectedHighlight(field.evidence_quote || null)}
-                          title="Click to highlight this quote in Document Preview"
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                            <span style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--text-muted)' }}>
-                              Source: {field.source_document} {field.page_number ? `(${field.page_number})` : ''}
-                            </span>
-                            <span style={{ fontSize: 9.5, color: '#16A34A', fontWeight: 600 }}>
-                              {Math.round((field.confidence ?? 0.95) * 100)}% Conf
-                            </span>
-                          </div>
-                          <span style={{ fontStyle: 'italic' }}>"{field.evidence_quote}"</span>
-                        </div>
-                      )}
-
-                      {field.user_edited && field.original_value && (
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                          Original OCR Value: <del>{field.original_value}</del>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                {/* Footer metadata */}
+                <div style={{
+                  padding: '8px 16px',
+                  background: '#F8FAFC',
+                  borderTop: '1px solid #E2E8F0',
+                  fontSize: 11.5,
+                  color: '#64748B',
+                  display: 'flex',
+                  justifyContent: 'space-between'
+                }}>
+                  <span>Source: Ingested legal document text</span>
+                  <span>OCR Accuracy: Verified</span>
+                </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* COLUMN 3: SCRUTINY FINDINGS & DISPOSITIONS */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div className="panel-card" style={{ padding: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <ShieldCheck size={16} color="var(--color-navy)" />
-                <h4 style={{ margin: 0, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-navy)' }}>
-                  Scrutiny Findings ({filteredFindings.length}/{totalFindings})
-                </h4>
-              </div>
-
-              {/* Disposition status filter */}
-              <select
-                value={filterDisposition}
-                onChange={(e) => setFilterDisposition(e.target.value)}
-                style={{ fontSize: 11, padding: '3px 8px' }}
-              >
-                <option value="ALL">All Dispositions</option>
-                <option value="PENDING">Pending Review</option>
-                <option value="ACCEPTED">Accepted</option>
-                <option value="WAIVED">Waived</option>
-                <option value="CORRECTION_REQUESTED">Clarification Demanded</option>
-              </select>
-            </div>
-
-            {/* Metric counters */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 12 }}>
-              <button
-                type="button"
-                onClick={() => setFilterResult(filterResult === 'PASS' ? 'ALL' : 'PASS')}
-                style={{
-                  padding: '6px 4px',
-                  borderRadius: 4,
-                  textAlign: 'center',
-                  background: filterResult === 'PASS' ? '#BBF7D0' : '#F0FDF4',
-                  border: '1px solid #86EFAC',
-                  cursor: 'pointer'
-                }}
-              >
-                <b style={{ fontSize: 14, color: '#166534', display: 'block' }}>{passCount}</b>
-                <span style={{ fontSize: 9.5, color: '#166534', fontWeight: 700 }}>PASSED</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setFilterResult(filterResult === 'POTENTIAL_ISSUE' ? 'ALL' : 'POTENTIAL_ISSUE')}
-                style={{
-                  padding: '6px 4px',
-                  borderRadius: 4,
-                  textAlign: 'center',
-                  background: filterResult === 'POTENTIAL_ISSUE' ? '#FECACA' : '#FEF2F2',
-                  border: '1px solid #FCA5A5',
-                  cursor: 'pointer'
-                }}
-              >
-                <b style={{ fontSize: 14, color: '#991B1B', display: 'block' }}>{issueCount}</b>
-                <span style={{ fontSize: 9.5, color: '#991B1B', fontWeight: 700 }}>ISSUES</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setFilterResult(filterResult === 'MISSING_EVIDENCE' ? 'ALL' : 'MISSING_EVIDENCE')}
-                style={{
-                  padding: '6px 4px',
-                  borderRadius: 4,
-                  textAlign: 'center',
-                  background: filterResult === 'MISSING_EVIDENCE' ? '#FDE68A' : '#FFFBEB',
-                  border: '1px solid #FCD34D',
-                  cursor: 'pointer'
-                }}
-              >
-                <b style={{ fontSize: 14, color: '#92400E', display: 'block' }}>{missingCount}</b>
-                <span style={{ fontSize: 9.5, color: '#92400E', fontWeight: 700 }}>MISSING</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setFilterResult(filterResult === 'NEEDS_REVIEW' ? 'ALL' : 'NEEDS_REVIEW')}
-                style={{
-                  padding: '6px 4px',
-                  borderRadius: 4,
-                  textAlign: 'center',
-                  background: filterResult === 'NEEDS_REVIEW' ? '#E9D5FF' : '#FAF5FF',
-                  border: '1px solid #C4B5FD',
-                  cursor: 'pointer'
-                }}
-              >
-                <b style={{ fontSize: 14, color: '#6D28D9', display: 'block' }}>{reviewCount}</b>
-                <span style={{ fontSize: 9.5, color: '#6D28D9', fontWeight: 700 }}>REVIEW</span>
-              </button>
-            </div>
-
-            {/* Quick search input */}
-            <div style={{ marginBottom: 12 }}>
-              <input
-                type="text"
-                placeholder="Filter findings by rule, keyword, or citation..."
-                value={findingSearch}
-                onChange={(e) => setFindingSearch(e.target.value)}
-                style={{ fontSize: 11.5, padding: '5px 10px', width: '100%' }}
-              />
-            </div>
-
-            {/* Finding cards */}
-            {filteredFindings.length === 0 ? (
-              <div style={{ padding: '36px', textAlign: 'center', background: '#F8FAFC', borderRadius: 'var(--radius-md)' }}>
-                <FileCheck size={28} color="#16A34A" style={{ margin: '0 auto 8px' }} />
-                <b style={{ fontSize: 12, display: 'block', color: 'var(--text-primary)' }}>No matching findings</b>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                  Clear active filters to view all compliance items.
+        {/* ------------------------------------------------------------------
+            RIGHT PANEL: REVIEW WORKSPACE (~58%)
+            ------------------------------------------------------------------ */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Main Review Card with Tab Switcher */}
+          <div style={{
+            background: '#FFFFFF',
+            border: '1px solid #E2E8F0',
+            borderRadius: 10,
+            padding: '20px',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)'
+          }}>
+            {/* Header: Segmented Review View Switcher */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 16,
+              paddingBottom: 14,
+              borderBottom: '1px solid #F1F5F9',
+              flexWrap: 'wrap',
+              gap: 12
+            }}>
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 600, color: '#172B4D', margin: 0 }}>
+                  Review Workspace
+                </h2>
+                <span style={{ fontSize: 12, color: '#64748B' }}>
+                  Statutory rule checks & candidate field verification
                 </span>
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {filteredFindings.map((check) => {
-                  let cardClass = 'finding-card';
-                  if (check.result === 'PASS') cardClass += ' result-pass';
-                  else if (check.result === 'POTENTIAL_ISSUE') cardClass += ' result-issue';
-                  else if (check.result === 'MISSING_EVIDENCE') cardClass += ' result-missing';
-                  else cardClass += ' result-review';
 
-                  return (
-                    <div key={check.id} className={cardClass}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span
-                            className={`result-badge ${
-                              check.result === 'PASS'
-                                ? 'pass'
-                                : check.result === 'POTENTIAL_ISSUE'
-                                ? 'issue'
-                                : check.result === 'MISSING_EVIDENCE'
-                                ? 'missing'
-                                : 'review'
-                            }`}
-                          >
-                            {check.result.replace(/_/g, ' ')}
-                          </span>
+              {/* Segmented Control Buttons */}
+              <div style={{
+                display: 'inline-flex',
+                background: '#F1F5F9',
+                borderRadius: 7,
+                padding: 3,
+                border: '1px solid #E2E8F0'
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setReviewTab('findings')}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 5,
+                    border: 'none',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: reviewTab === 'findings' ? '#FFFFFF' : 'transparent',
+                    color: reviewTab === 'findings' ? '#2563EB' : '#64748B',
+                    boxShadow: reviewTab === 'findings' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    transition: 'all 0.12s ease'
+                  }}
+                >
+                  <ShieldCheck size={13} />
+                  <span>Rule Findings ({scrutinyChecks.length})</span>
+                  {issuesCount > 0 && (
+                    <span style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: '#DC2626'
+                    }} />
+                  )}
+                </button>
 
-                          <b style={{ fontFamily: 'JetBrains Mono', fontSize: 11.5, color: 'var(--text-primary)' }}>
-                            {check.rule_id}
-                          </b>
+                <button
+                  type="button"
+                  onClick={() => setReviewTab('fields')}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 5,
+                    border: 'none',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: reviewTab === 'fields' ? '#FFFFFF' : 'transparent',
+                    color: reviewTab === 'fields' ? '#2563EB' : '#64748B',
+                    boxShadow: reviewTab === 'fields' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    transition: 'all 0.12s ease'
+                  }}
+                >
+                  <Database size={13} />
+                  <span>Extracted Fields ({editableFields.length})</span>
+                  {needsReviewFieldsCount > 0 && (
+                    <span style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: '#D97706'
+                    }} />
+                  )}
+                </button>
 
-                          <span
-                            style={{
-                              fontSize: 9,
-                              fontWeight: 700,
-                              padding: '1px 5px',
-                              borderRadius: 3,
-                              background: '#F1F5F9',
-                              color: '#475569'
-                            }}
-                          >
-                            {check.engine_source === 'DETERMINISTIC_RULE_ENGINE' ? 'APH Rule' : 'AI Check'}
-                          </span>
-                        </div>
+                <button
+                  type="button"
+                  onClick={() => setReviewTab('all')}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 5,
+                    border: 'none',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: reviewTab === 'all' ? '#FFFFFF' : 'transparent',
+                    color: reviewTab === 'all' ? '#2563EB' : '#64748B',
+                    boxShadow: reviewTab === 'all' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    transition: 'all 0.12s ease'
+                  }}
+                >
+                  <Layers size={13} />
+                  <span>Combined</span>
+                </button>
+              </div>
+            </div>
 
-                        {/* Officer disposition pill */}
-                        <span
+            {/* ================================================================
+                SECTION A: SCRUTINY FINDINGS (Displayed if 'findings' or 'all')
+                ================================================================ */}
+            {(reviewTab === 'findings' || reviewTab === 'all') && (
+              <div style={{ marginBottom: reviewTab === 'all' ? 24 : 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <ShieldCheck size={16} color="#2563EB" />
+                    <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 600, color: '#172B4D' }}>
+                      Scrutiny Findings
+                    </h3>
+                  </div>
+                  <span style={{ fontSize: 11.5, color: '#64748B' }}>
+                    Evaluated against APH 2024–2027 statutory criteria
+                  </span>
+                </div>
+
+                {/* 4 Compact Summary Metrics (Equal Dimensions, Restrained Colours) */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(4, 1fr)',
+                  gap: 10,
+                  marginBottom: 14
+                }}>
+                  {/* Metric 1: Passed */}
+                  <div
+                    onClick={() => setFilterResult(filterResult === 'PASS' ? 'ALL' : 'PASS')}
+                    style={{
+                      background: '#F0FDF4',
+                      border: `1px solid ${filterResult === 'PASS' ? '#16845B' : '#DCFCE7'}`,
+                      borderRadius: 8,
+                      padding: '10px 12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      height: 56,
+                      boxSizing: 'border-box'
+                    }}
+                    title="Click to filter passed rules"
+                  >
+                    <span style={{ fontSize: 11.5, fontWeight: 600, color: '#16845B' }}>Passed</span>
+                    <b style={{ fontSize: 18, color: '#16845B', lineHeight: 1 }}>{passedCount}</b>
+                  </div>
+
+                  {/* Metric 2: Issues */}
+                  <div
+                    onClick={() => setFilterResult(filterResult === 'POTENTIAL_ISSUE' ? 'ALL' : 'POTENTIAL_ISSUE')}
+                    style={{
+                      background: '#FDF2F2',
+                      border: `1px solid ${filterResult === 'POTENTIAL_ISSUE' ? '#D64545' : '#FDE2E2'}`,
+                      borderRadius: 8,
+                      padding: '10px 12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      height: 56,
+                      boxSizing: 'border-box'
+                    }}
+                    title="Click to filter potential issues"
+                  >
+                    <span style={{ fontSize: 11.5, fontWeight: 600, color: '#D64545' }}>Issues</span>
+                    <b style={{ fontSize: 18, color: '#D64545', lineHeight: 1 }}>{issuesCount}</b>
+                  </div>
+
+                  {/* Metric 3: Missing */}
+                  <div
+                    onClick={() => setFilterResult(filterResult === 'MISSING_EVIDENCE' ? 'ALL' : 'MISSING_EVIDENCE')}
+                    style={{
+                      background: '#FEF7EC',
+                      border: `1px solid ${filterResult === 'MISSING_EVIDENCE' ? '#D98B16' : '#FCE6CA'}`,
+                      borderRadius: 8,
+                      padding: '10px 12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      height: 56,
+                      boxSizing: 'border-box'
+                    }}
+                    title="Click to filter missing evidence"
+                  >
+                    <span style={{ fontSize: 11.5, fontWeight: 600, color: '#D98B16' }}>Missing</span>
+                    <b style={{ fontSize: 18, color: '#D98B16', lineHeight: 1 }}>{missingCount}</b>
+                  </div>
+
+                  {/* Metric 4: Needs Review */}
+                  <div
+                    onClick={() => setFilterResult(filterResult === 'NEEDS_REVIEW' ? 'ALL' : 'NEEDS_REVIEW')}
+                    style={{
+                      background: '#F8FAFC',
+                      border: `1px solid ${filterResult === 'NEEDS_REVIEW' ? '#64748B' : '#E2E8F0'}`,
+                      borderRadius: 8,
+                      padding: '10px 12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      height: 56,
+                      boxSizing: 'border-box'
+                    }}
+                    title="Click to filter items needing review"
+                  >
+                    <span style={{ fontSize: 11.5, fontWeight: 600, color: '#64748B' }}>Needs Review</span>
+                    <b style={{ fontSize: 18, color: '#172B4D', lineHeight: 1 }}>{reviewCount}</b>
+                  </div>
+                </div>
+
+                {/* Compact Filter Row & Search */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginBottom: 12,
+                  flexWrap: 'wrap'
+                }}>
+                  <div style={{ position: 'relative', flex: '1 1 180px' }}>
+                    <Search size={13} color="#94A3B8" style={{ position: 'absolute', left: 9, top: 8 }} />
+                    <input
+                      type="text"
+                      placeholder="Search rule, citation or text..."
+                      value={findingSearch}
+                      onChange={(e) => setFindingSearch(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '5px 10px 5px 28px',
+                        borderRadius: 6,
+                        border: '1px solid #CBD5E1',
+                        fontSize: 12,
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+
+                  <select
+                    value={filterDisposition}
+                    onChange={(e) => setFilterDisposition(e.target.value)}
+                    style={{
+                      padding: '5px 8px',
+                      borderRadius: 6,
+                      border: '1px solid #CBD5E1',
+                      fontSize: 11.5,
+                      background: '#FFFFFF'
+                    }}
+                  >
+                    <option value="ALL">All Dispositions</option>
+                    <option value="PENDING">Pending Disposition</option>
+                    <option value="ACCEPTED">Accepted</option>
+                    <option value="WAIVED">Waived</option>
+                    <option value="CORRECTION_REQUESTED">Clarification Requested</option>
+                  </select>
+
+                  {(filterResult !== 'ALL' || filterDisposition !== 'ALL' || findingSearch) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilterResult('ALL');
+                        setFilterDisposition('ALL');
+                        setFindingSearch('');
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        fontSize: 11.5,
+                        color: '#2563EB',
+                        cursor: 'pointer',
+                        fontWeight: 600
+                      }}
+                    >
+                      Reset filters
+                    </button>
+                  )}
+                </div>
+
+                {/* Concise Expandable Findings List */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {filteredFindings.length === 0 ? (
+                    <div style={{ padding: '24px', textAlign: 'center', color: '#64748B', fontSize: 13 }}>
+                      No scrutiny findings match the selected filter criteria.
+                    </div>
+                  ) : (
+                    filteredFindings.map((check) => {
+                      const isExpanded = expandedFindingId === check.id;
+
+                      let statusBadgeBg = '#F0FDF4';
+                      let statusBadgeBorder = '#DCFCE7';
+                      let statusBadgeText = '#16845B';
+                      let statusLabel = 'PASS';
+
+                      if (check.result === 'POTENTIAL_ISSUE') {
+                        statusBadgeBg = '#FDF2F2';
+                        statusBadgeBorder = '#FDE2E2';
+                        statusBadgeText = '#D64545';
+                        statusLabel = 'ISSUE';
+                      } else if (check.result === 'MISSING_EVIDENCE') {
+                        statusBadgeBg = '#FEF7EC';
+                        statusBadgeBorder = '#FCE6CA';
+                        statusBadgeText = '#D98B16';
+                        statusLabel = 'MISSING';
+                      } else if (check.result === 'NEEDS_REVIEW') {
+                        statusBadgeBg = '#F8FAFC';
+                        statusBadgeBorder = '#E2E8F0';
+                        statusBadgeText = '#64748B';
+                        statusLabel = 'REVIEW';
+                      }
+
+                      return (
+                        <div
+                          key={check.id}
                           style={{
-                            fontSize: 9.5,
-                            fontWeight: 700,
-                            padding: '2px 7px',
-                            borderRadius: 999,
-                            background:
-                              check.officer_disposition === 'ACCEPTED'
-                                ? '#DCFCE7'
-                                : check.officer_disposition === 'WAIVED'
-                                ? '#EDE9FE'
-                                : check.officer_disposition === 'CORRECTION_REQUESTED'
-                                ? '#FFEDD5'
-                                : '#F1F5F9',
-                            color:
-                              check.officer_disposition === 'ACCEPTED'
-                                ? '#166534'
-                                : check.officer_disposition === 'WAIVED'
-                                ? '#6D28D9'
-                                : check.officer_disposition === 'CORRECTION_REQUESTED'
-                                ? '#C2410C'
-                                : '#475569'
+                            background: '#FFFFFF',
+                            border: `1px solid ${isExpanded ? '#CBD5E1' : '#E2E8F0'}`,
+                            borderRadius: 8,
+                            overflow: 'hidden',
+                            transition: 'border-color 0.15s ease'
                           }}
                         >
-                          {check.officer_disposition === 'PENDING' ? 'Pending Disposition' : check.officer_disposition}
-                        </span>
-                      </div>
+                          {/* Collapsed Header Row */}
+                          <div
+                            onClick={() => setExpandedFindingId(isExpanded ? null : check.id)}
+                            style={{
+                              padding: '10px 14px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              background: isExpanded ? '#F8FAFC' : '#FFFFFF',
+                              gap: 10
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                              <span style={{
+                                fontSize: 10.5,
+                                fontWeight: 700,
+                                padding: '2px 7px',
+                                borderRadius: 4,
+                                background: statusBadgeBg,
+                                border: `1px solid ${statusBadgeBorder}`,
+                                color: statusBadgeText,
+                                flexShrink: 0
+                              }}>
+                                {statusLabel}
+                              </span>
 
-                      <b style={{ fontSize: 12, color: 'var(--text-primary)' }}>{check.rule_title}</b>
+                              <span style={{
+                                fontFamily: 'JetBrains Mono, monospace',
+                                fontSize: 11.5,
+                                fontWeight: 600,
+                                color: '#64748B',
+                                flexShrink: 0
+                              }}>
+                                {check.rule_id}
+                              </span>
 
-                      <p style={{ margin: 0, fontSize: 11.5, color: '#334155', lineHeight: 1.45 }}>
-                        {check.plain_explanation}
-                      </p>
+                              <b style={{
+                                fontSize: 13,
+                                color: '#172B4D',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap'
+                              }}>
+                                {check.rule_title}
+                              </b>
+                            </div>
 
-                      {/* Evidence quote */}
-                      {check.evidence_quote && (
-                        <div
-                          className="evidence-quote-box"
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => setSelectedHighlight(check.evidence_quote || null)}
-                          title="Click to locate quote in document preview"
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                            <span style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--text-muted)' }}>
-                              Citation: {check.source_document} {check.page_number ? `(${check.page_number})` : ''}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                              {check.officer_disposition !== 'PENDING' && (
+                                <span style={{
+                                  fontSize: 10.5,
+                                  fontWeight: 600,
+                                  padding: '2px 6px',
+                                  borderRadius: 4,
+                                  background: check.officer_disposition === 'ACCEPTED' ? '#F0FDF4' : '#FEF7EC',
+                                  color: check.officer_disposition === 'ACCEPTED' ? '#16845B' : '#B45309',
+                                  border: `1px solid ${check.officer_disposition === 'ACCEPTED' ? '#DCFCE7' : '#FDE68A'}`
+                                }}>
+                                  {check.officer_disposition}
+                                </span>
+                              )}
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11.5, color: '#2563EB', fontWeight: 500 }}>
+                                <span>{isExpanded ? 'Collapse' : 'Details'}</span>
+                                {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                              </div>
+                            </div>
                           </div>
-                          <span style={{ fontStyle: 'italic' }}>"{check.evidence_quote}"</span>
+
+                          {/* Expanded Finding Details & Officer Actions */}
+                          {isExpanded && (
+                            <div style={{
+                              padding: '14px 16px',
+                              borderTop: '1px solid #F1F5F9',
+                              background: '#FFFFFF',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 12
+                            }}>
+                              {/* Rationale / Plain Explanation */}
+                              <div>
+                                <span style={{ fontSize: 11.5, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 2 }}>
+                                  Regulatory Evaluation:
+                                </span>
+                                <p style={{ margin: 0, fontSize: 13, color: '#172B4D', lineHeight: 1.45 }}>
+                                  {check.plain_explanation}
+                                </p>
+                              </div>
+
+                              {/* Source Evidence Quote */}
+                              {check.evidence_quote && (
+                                <div style={{
+                                  background: '#F8FAFC',
+                                  border: '1px solid #E2E8F0',
+                                  borderLeft: '3px solid #2563EB',
+                                  borderRadius: 6,
+                                  padding: '8px 12px',
+                                  fontSize: 12
+                                }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, fontSize: 11, color: '#64748B' }}>
+                                    <span>Citation: <b>{check.source_document}</b> {check.page_number ? `(${check.page_number})` : ''}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setIsPreviewOpen(true);
+                                        setSelectedHighlight(check.evidence_quote || null);
+                                      }}
+                                      style={{ background: 'none', border: 'none', color: '#2563EB', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
+                                    >
+                                      Locate in document →
+                                    </button>
+                                  </div>
+                                  <div style={{ fontStyle: 'italic', color: '#334155' }}>
+                                    "{check.evidence_quote}"
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Recommended Action */}
+                              {check.recommended_action && (
+                                <div style={{ fontSize: 12, color: '#475569' }}>
+                                  <span style={{ fontWeight: 600, color: '#172B4D' }}>Recommended Action: </span>
+                                  <span>{check.recommended_action}</span>
+                                </div>
+                              )}
+
+                              {/* Recorded Dispositions if any */}
+                              {check.disposition_notes && (
+                                <div style={{
+                                  padding: '8px 12px',
+                                  background: '#F8FAFC',
+                                  borderRadius: 6,
+                                  fontSize: 12,
+                                  border: '1px solid #E2E8F0'
+                                }}>
+                                  <b>Recorded Disposition: </b>
+                                  <span>{check.disposition_notes}</span>
+                                  {check.disposed_by && (
+                                    <span style={{ color: '#64748B' }}> — {check.disposed_by}</span>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Officer Action Buttons */}
+                              {user?.role !== 'institution' && check.officer_disposition === 'PENDING' && (
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 8,
+                                  paddingTop: 8,
+                                  borderTop: '1px solid #F1F5F9',
+                                  flexWrap: 'wrap'
+                                }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleFindingDisposition(check.id, 'ACCEPTED')}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 5,
+                                      padding: '5px 12px',
+                                      borderRadius: 6,
+                                      background: '#FFFFFF',
+                                      border: '1px solid #16845B',
+                                      color: '#16845B',
+                                      fontSize: 12,
+                                      fontWeight: 600,
+                                      cursor: 'pointer',
+                                      transition: 'all 0.12s ease'
+                                    }}
+                                  >
+                                    <Check size={13} />
+                                    <span>Accept Finding</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedCheckForCorrection(check);
+                                      setCorrectionNote(`Please rectify: ${check.plain_explanation}`);
+                                      setIsCorrectionOpen(true);
+                                    }}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 5,
+                                      padding: '5px 12px',
+                                      borderRadius: 6,
+                                      background: '#FFFFFF',
+                                      border: '1px solid #D97706',
+                                      color: '#D97706',
+                                      fontSize: 12,
+                                      fontWeight: 600,
+                                      cursor: 'pointer',
+                                      transition: 'all 0.12s ease'
+                                    }}
+                                  >
+                                    <RotateCcw size={13} />
+                                    <span>Request Clarification</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedCheckForWaive(check);
+                                      setWaiveJustification('');
+                                      setIsWaiveOpen(true);
+                                    }}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 5,
+                                      padding: '5px 12px',
+                                      borderRadius: 6,
+                                      background: '#FFFFFF',
+                                      border: '1px solid #64748B',
+                                      color: '#64748B',
+                                      fontSize: 12,
+                                      fontWeight: 600,
+                                      cursor: 'pointer',
+                                      transition: 'all 0.12s ease'
+                                    }}
+                                  >
+                                    <HelpCircle size={13} />
+                                    <span>Waive with Justification</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
-                      )}
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
 
-                      {/* Recommended action */}
-                      <div style={{ fontSize: 11, color: '#1E40AF', background: '#EFF6FF', padding: '5px 8px', borderRadius: 4 }}>
-                        <b>Recommended Action: </b>
-                        {check.recommended_action}
-                      </div>
-
-                      {/* Reviewer disposition notes if recorded */}
-                      {check.disposition_notes && (
-                        <div style={{ fontSize: 10.5, color: '#166534', background: '#F0FDF4', padding: '4px 8px', borderRadius: 4 }}>
-                          <b>Recorded Disposition: </b> {check.disposition_notes}{' '}
-                          <span style={{ color: 'var(--text-muted)' }}>({check.disposed_by})</span>
-                        </div>
-                      )}
-
-                      {/* Officer review action controls */}
-                      {user?.role !== 'institution' && check.officer_disposition === 'PENDING' && (
-                        <div style={{ display: 'flex', gap: 6, marginTop: 4, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            style={{ fontSize: 10.5, padding: '3px 8px', color: '#166534', borderColor: '#86EFAC' }}
-                            onClick={() => handleFindingDisposition(check.id, 'ACCEPTED')}
-                          >
-                            <Check size={11} />
-                            <span>Accept</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            style={{ fontSize: 10.5, padding: '3px 8px', color: '#6D28D9', borderColor: '#C4B5FD' }}
-                            onClick={() => {
-                              setSelectedCheckForWaive(check);
-                              setWaiveJustification('');
-                              setIsWaiveOpen(true);
-                            }}
-                          >
-                            <ShieldCheck size={11} />
-                            <span>Waive</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            style={{ fontSize: 10.5, padding: '3px 8px', color: '#C2410C', borderColor: '#FDBA74' }}
-                            onClick={() => {
-                              setSelectedCheckForCorrection(check);
-                              setCorrectionNote(`Please rectify: ${check.plain_explanation}`);
-                              setIsCorrectionOpen(true);
-                            }}
-                          >
-                            <RotateCcw size={11} />
-                            <span>Request Clarification</span>
-                          </button>
-                        </div>
-                      )}
+            {/* ================================================================
+                SECTION B: EXTRACTED FIELDS (Displayed if 'fields' or 'all')
+                ================================================================ */}
+            {(reviewTab === 'fields' || reviewTab === 'all') && (
+              <div>
+                {/* Header Row: Title, Progress, Reset & Apply Actions */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 12,
+                  flexWrap: 'wrap',
+                  gap: 10
+                }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                      <Database size={16} color="#2563EB" />
+                      <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 600, color: '#172B4D' }}>
+                        Extracted Fields
+                      </h3>
+                      <span style={{ fontSize: 12, color: '#64748B', fontWeight: 500 }}>
+                        ({editableFields.length} candidate fields)
+                      </span>
                     </div>
-                  );
-                })}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                      <span style={{ fontSize: 11.5, color: '#475569' }}>
+                        {verifiedFieldsCount} of {editableFields.length} verified ({verifiedPercentage}%)
+                      </span>
+                      <div style={{ width: 100, height: 5, background: '#F1F5F9', borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${verifiedPercentage}%`, background: '#16845B', borderRadius: 3 }} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions: Reset & Save Confirmed */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={handleResetFields}
+                      style={{
+                        padding: '5px 10px',
+                        borderRadius: 6,
+                        border: '1px solid #CBD5E1',
+                        background: '#FFFFFF',
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        color: '#64748B',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4
+                      }}
+                      title="Reset all fields to original OCR extraction values"
+                    >
+                      <RotateCcw size={12} />
+                      <span>Reset</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSaveConfirmedFields}
+                      disabled={isSavingFields}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: 6,
+                        border: 'none',
+                        background: '#16845B',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: '#FFFFFF',
+                        cursor: isSavingFields ? 'wait' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        boxShadow: '0 1px 2px rgba(22, 132, 91, 0.2)'
+                      }}
+                      title="Apply confirmed fields to linked application form"
+                    >
+                      <Save size={13} />
+                      <span>{isSavingFields ? 'Saving...' : 'Apply Verified Fields'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filter Chips: All, Needs Review, Verified, Applicant Entered */}
+                <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+                  {[
+                    { key: 'ALL', label: `All (${editableFields.length})` },
+                    { key: 'NEEDS_REVIEW', label: `Needs Review (${needsReviewFieldsCount})` },
+                    { key: 'VERIFIED', label: `Verified (${verifiedFieldsCount})` },
+                    { key: 'APPLICANT_ENTERED', label: `Applicant Entered (${editableFields.filter(f => f.validation_status === 'APPLICANT_ENTERED').length})` }
+                  ].map((tab) => {
+                    const isSel = fieldFilter === tab.key;
+                    return (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setFieldFilter(tab.key as any)}
+                        style={{
+                          padding: '3px 9px',
+                          borderRadius: 14,
+                          fontSize: 11,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          background: isSel ? '#EFF6FF' : '#F8FAFC',
+                          border: `1px solid ${isSel ? '#2563EB' : '#E2E8F0'}`,
+                          color: isSel ? '#2563EB' : '#64748B',
+                          transition: 'all 0.12s ease'
+                        }}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Compact Field Review List */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {filteredFields.map((field) => {
+                    const isEditing = editingFieldKey === field.field_key;
+                    const isSourceOpen = !!expandedSources[field.field_key];
+
+                    let statusBadgeBg = '#F0FDF4';
+                    let statusBadgeBorder = '#DCFCE7';
+                    let statusBadgeColor = '#16845B';
+                    let statusText = 'Verified';
+
+                    if (field.validation_status === 'NEEDS_REVIEW') {
+                      statusBadgeBg = '#FEF7EC';
+                      statusBadgeBorder = '#FCE6CA';
+                      statusBadgeColor = '#D98B16';
+                      statusText = 'Needs Review';
+                    } else if (field.validation_status === 'APPLICANT_ENTERED') {
+                      statusBadgeBg = '#F8FAFC';
+                      statusBadgeBorder = '#E2E8F0';
+                      statusBadgeColor = '#64748B';
+                      statusText = 'Applicant Entered';
+                    } else if (field.validation_status === 'EXTRACTED') {
+                      statusBadgeBg = '#EFF6FF';
+                      statusBadgeBorder = '#BFDBFE';
+                      statusBadgeColor = '#2563EB';
+                      statusText = 'Extracted';
+                    }
+
+                    return (
+                      <div
+                        key={field.field_key}
+                        style={{
+                          background: '#FFFFFF',
+                          border: `1px solid ${isEditing ? '#3B82F6' : '#E2E8F0'}`,
+                          borderRadius: 8,
+                          padding: '10px 14px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 6
+                        }}
+                      >
+                        {/* Top Row: Label, Value, Status Badge & Actions */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                          gap: 8
+                        }}>
+                          {/* Left: Field Name & Current Value */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: '#172B4D', minWidth: 170 }}>
+                              {field.field_label || field.field_key}
+                            </span>
+
+                            {!isEditing && (
+                              <b style={{
+                                fontSize: 13.5,
+                                color: '#2563EB',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap'
+                              }}>
+                                {field.extracted_value}
+                              </b>
+                            )}
+                          </div>
+
+                          {/* Right: Status Chip, View Source & Edit Actions */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                            <span style={{
+                              fontSize: 10.5,
+                              fontWeight: 600,
+                              padding: '2px 7px',
+                              borderRadius: 4,
+                              background: statusBadgeBg,
+                              border: `1px solid ${statusBadgeBorder}`,
+                              color: statusBadgeColor
+                            }}>
+                              {statusText}
+                            </span>
+
+                            {field.evidence_quote && (
+                              <button
+                                type="button"
+                                onClick={() => toggleSourceExpansion(field.field_key)}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#64748B',
+                                  fontSize: 11.5,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3
+                                }}
+                              >
+                                <span>Source</span>
+                                {isSourceOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                              </button>
+                            )}
+
+                            {!isEditing ? (
+                              <button
+                                type="button"
+                                onClick={() => startInlineEdit(field)}
+                                style={{
+                                  padding: '3px 8px',
+                                  borderRadius: 4,
+                                  border: '1px solid #CBD5E1',
+                                  background: '#FFFFFF',
+                                  color: '#2563EB',
+                                  fontSize: 11.5,
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3
+                                }}
+                              >
+                                <Edit3 size={11} />
+                                <span>Edit</span>
+                              </button>
+                            ) : (
+                              <div style={{ display: 'flex', gap: 4 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => saveInlineEdit(field.field_key)}
+                                  style={{
+                                    padding: '3px 8px',
+                                    borderRadius: 4,
+                                    border: 'none',
+                                    background: '#16845B',
+                                    color: '#FFFFFF',
+                                    fontSize: 11.5,
+                                    fontWeight: 600,
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  Done
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingFieldKey(null)}
+                                  style={{
+                                    padding: '3px 8px',
+                                    borderRadius: 4,
+                                    border: '1px solid #CBD5E1',
+                                    background: '#FFFFFF',
+                                    color: '#64748B',
+                                    fontSize: 11.5,
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Inline Edit Panel when user clicks Edit */}
+                        {isEditing && (
+                          <div style={{
+                            marginTop: 4,
+                            paddingTop: 8,
+                            borderTop: '1px dashed #E2E8F0',
+                            display: 'flex',
+                            gap: 8,
+                            alignItems: 'center'
+                          }}>
+                            <input
+                              type="text"
+                              value={editValueDraft}
+                              onChange={(e) => setEditValueDraft(e.target.value)}
+                              style={{
+                                flex: 2,
+                                padding: '5px 8px',
+                                borderRadius: 5,
+                                border: '1px solid #3B82F6',
+                                fontSize: 12.5,
+                                background: '#EFF6FF'
+                              }}
+                              autoFocus
+                            />
+
+                            <select
+                              value={editStatusDraft}
+                              onChange={(e) => setEditStatusDraft(e.target.value as any)}
+                              style={{
+                                flex: 1,
+                                padding: '5px 8px',
+                                borderRadius: 5,
+                                border: '1px solid #CBD5E1',
+                                fontSize: 11.5
+                              }}
+                            >
+                              <option value="VERIFIED">Verified</option>
+                              <option value="NEEDS_REVIEW">Needs Review</option>
+                              <option value="APPLICANT_ENTERED">Applicant Entered</option>
+                              <option value="EXTRACTED">Extracted</option>
+                            </select>
+                          </div>
+                        )}
+
+                        {/* Source Evidence Accordion */}
+                        {isSourceOpen && field.evidence_quote && (
+                          <div style={{
+                            marginTop: 4,
+                            padding: '8px 10px',
+                            background: '#F8FAFC',
+                            borderRadius: 6,
+                            fontSize: 11.5,
+                            border: '1px solid #E2E8F0',
+                            color: '#475569'
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2, color: '#64748B' }}>
+                              <span>Citation: <b>{field.source_document}</b> {field.page_number ? `(${field.page_number})` : ''}</span>
+                              <span>{Math.round((field.confidence ?? 0.95) * 100)}% Confidence</span>
+                            </div>
+                            <div style={{ fontStyle: 'italic', color: '#1E293B' }}>
+                              "{field.evidence_quote}"
+                            </div>
+                            {field.user_edited && field.original_value && (
+                              <div style={{ marginTop: 3, color: '#64748B', fontSize: 11 }}>
+                                Original OCR Value: <del>{field.original_value}</del>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* DIALOG 1: Mandatory Waiver Justification */}
+      {/* ====================================================================
+          4. DIALOGS: MANDATORY WAIVER JUSTIFICATION & CLARIFICATION
+          ==================================================================== */}
+      {/* Dialog 1: Mandatory Waiver Justification */}
       {isWaiveOpen && selectedCheckForWaive && (
-        <div className="modal-backdrop" style={{ zIndex: 130 }}>
-          <div className="modal-dialog" style={{ width: 'min(520px, 92%)' }}>
+        <div className="modal-backdrop">
+          <div className="modal-dialog" style={{ maxWidth: 520 }}>
             <div className="modal-header">
-              <h3 style={{ margin: 0, fontSize: 15, color: '#6D28D9' }}>Record Statutory Finding Waiver</h3>
-              <button style={{ background: 'transparent', border: 0, cursor: 'pointer' }} onClick={() => setIsWaiveOpen(false)}>
-                <X size={18} />
+              <h4 style={{ margin: 0, fontSize: 14 }}>Mandatory Waiver Justification</h4>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsWaiveOpen(false);
+                  setSelectedCheckForWaive(null);
+                }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}
+              >
+                <X size={16} />
               </button>
             </div>
-            <div className="modal-body">
-              <p style={{ fontSize: 12, color: '#475569', margin: 0 }}>
-                Waiving rule <b>{selectedCheckForWaive.rule_id} ({selectedCheckForWaive.rule_title})</b> requires mandatory regulatory justification recorded permanently in the tamper-evident audit log.
-              </p>
-              <div className="form-group" style={{ marginTop: 12 }}>
-                <label>Mandatory Waiver Justification (Min 5 chars) *</label>
-                <textarea
-                  rows={4}
-                  required
-                  placeholder="e.g. Special exemption approved by Executive Committee resolution dated 14 Feb 2026 for state university affiliate..."
-                  value={waiveJustification}
-                  onChange={(e) => setWaiveJustification(e.target.value)}
-                />
+
+            <div className="modal-body" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ fontSize: 12.5, color: '#172B4D' }}>
+                Waiving rule: <b>{selectedCheckForWaive.rule_id} — {selectedCheckForWaive.rule_title}</b>
               </div>
+
+              <div style={{ fontSize: 12, color: '#D97706', background: '#FEF7EC', padding: '8px 12px', borderRadius: 6, border: '1px solid #FDE68A' }}>
+                ⚠️ A regulatory waiver requires an explicit statutory justification recorded in the permanent audit ledger.
+              </div>
+
+              <textarea
+                placeholder="Enter mandatory regulatory justification for waiver..."
+                value={waiveJustification}
+                onChange={(e) => setWaiveJustification(e.target.value)}
+                style={{
+                  width: '100%',
+                  minHeight: 90,
+                  padding: '8px',
+                  borderRadius: 6,
+                  border: '1px solid #CBD5E1',
+                  fontSize: 12.5,
+                  boxSizing: 'border-box'
+                }}
+              />
             </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setIsWaiveOpen(false)}>
+
+            <div className="modal-footer" style={{ padding: '12px 16px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  setIsWaiveOpen(false);
+                  setSelectedCheckForWaive(null);
+                }}
+              >
                 Cancel
               </button>
               <button
+                type="button"
                 className="btn-primary"
-                style={{ background: '#7C3AED', borderColor: '#7C3AED' }}
                 disabled={waiveJustification.trim().length < 5}
-                onClick={() => handleFindingDisposition(selectedCheckForWaive.id, 'WAIVED', waiveJustification.trim())}
+                onClick={() => handleFindingDisposition(selectedCheckForWaive.id, 'WAIVED', waiveJustification)}
+                style={{ background: '#16845B', borderColor: '#16845B' }}
               >
-                Confirm Statutory Waiver
+                Confirm Waiver
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* DIALOG 2: Request Clarification / Demand Correction */}
+      {/* Dialog 2: Request Clarification / Demand Correction */}
       {isCorrectionOpen && selectedCheckForCorrection && (
-        <div className="modal-backdrop" style={{ zIndex: 130 }}>
-          <div className="modal-dialog" style={{ width: 'min(520px, 92%)' }}>
+        <div className="modal-backdrop">
+          <div className="modal-dialog" style={{ maxWidth: 520 }}>
             <div className="modal-header">
-              <h3 style={{ margin: 0, fontSize: 15, color: '#C2410C' }}>Demand Institutional Clarification</h3>
-              <button style={{ background: 'transparent', border: 0, cursor: 'pointer' }} onClick={() => setIsCorrectionOpen(false)}>
-                <X size={18} />
+              <h4 style={{ margin: 0, fontSize: 14 }}>Request Clarification from Institution</h4>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCorrectionOpen(false);
+                  setSelectedCheckForCorrection(null);
+                }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}
+              >
+                <X size={16} />
               </button>
             </div>
-            <div className="modal-body">
-              <p style={{ fontSize: 12, color: '#475569', margin: 0 }}>
-                Rule <b>{selectedCheckForCorrection.rule_id}</b> will be returned to the institutional applicant as a cited deficiency.
-              </p>
-              <div className="form-group" style={{ marginTop: 12 }}>
-                <label>Cited Deficiency Observation Notice *</label>
-                <textarea
-                  rows={4}
-                  required
-                  value={correctionNote}
-                  onChange={(e) => setCorrectionNote(e.target.value)}
-                />
+
+            <div className="modal-body" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ fontSize: 12.5, color: '#172B4D' }}>
+                Drafting clarification demand for: <b>{selectedCheckForCorrection.rule_id} — {selectedCheckForCorrection.rule_title}</b>
               </div>
+
+              <textarea
+                placeholder="Specify deficiency notice instructions for the applicant..."
+                value={correctionNote}
+                onChange={(e) => setCorrectionNote(e.target.value)}
+                style={{
+                  width: '100%',
+                  minHeight: 90,
+                  padding: '8px',
+                  borderRadius: 6,
+                  border: '1px solid #CBD5E1',
+                  fontSize: 12.5,
+                  boxSizing: 'border-box'
+                }}
+              />
             </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setIsCorrectionOpen(false)}>
+
+            <div className="modal-footer" style={{ padding: '12px 16px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  setIsCorrectionOpen(false);
+                  setSelectedCheckForCorrection(null);
+                }}
+              >
                 Cancel
               </button>
               <button
+                type="button"
                 className="btn-primary"
-                style={{ background: '#EA580C', borderColor: '#EA580C' }}
-                disabled={!correctionNote.trim()}
-                onClick={() => handleFindingDisposition(selectedCheckForCorrection.id, 'CORRECTION_REQUESTED', correctionNote.trim())}
+                disabled={correctionNote.trim().length < 5}
+                onClick={() => handleFindingDisposition(selectedCheckForCorrection.id, 'CORRECTION_REQUESTED', correctionNote)}
+                style={{ background: '#D97706', borderColor: '#D97706' }}
               >
-                Dispatch Deficiency Notice
+                Send Clarification Demand
               </button>
             </div>
           </div>
@@ -1465,4 +2457,3 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
     </div>
   );
 };
-

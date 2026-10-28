@@ -14,7 +14,8 @@ import {
   ChevronLeft,
   ChevronRight,
   UserCheck,
-  X
+  X,
+  Compass
 } from 'lucide-react';
 import { User } from '../types';
 
@@ -28,6 +29,7 @@ interface SidebarProps {
   onToggleCollapse?: () => void;
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
+  onOpenGuide?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -39,7 +41,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isCollapsed: controlledCollapsed,
   onToggleCollapse,
   mobileOpen = false,
-  onCloseMobile
+  onCloseMobile,
+  onOpenGuide
 }) => {
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const isCollapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
@@ -181,6 +184,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         ))}
       </div>
+
+      {/* Platform Guide & Instructions */}
+      {onOpenGuide && (
+        <div style={{ padding: '0 12px 8px 12px' }}>
+          <button
+            type="button"
+            className="nav-item"
+            onClick={onOpenGuide}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 10px',
+              borderRadius: 6,
+              background: '#EFF6FF',
+              color: '#2563EB',
+              fontWeight: 600,
+              fontSize: 12,
+              border: '1px solid #BFDBFE',
+              cursor: 'pointer'
+            }}
+            title="Open PRAVAHA Platform Guide and User Instructions"
+          >
+            <Compass size={16} color="#2563EB" style={{ flexShrink: 0 }} />
+            {!isCollapsed && <span>How to Use Guide</span>}
+          </button>
+        </div>
+      )}
 
       {/* User Footer Profile */}
       <div className="sidebar-user">

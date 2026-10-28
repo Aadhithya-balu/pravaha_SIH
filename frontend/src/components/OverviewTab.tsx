@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
+  Compass,
+  Lightbulb,
+  Sparkles,
+  X,
+  ChevronDown,
+  ChevronUp,
   FileText,
   Clock,
   RotateCcw,
@@ -30,6 +36,7 @@ interface OverviewTabProps {
   onNavigateWithFilter?: (tab: string, stageFilter?: string, statusFilter?: string) => void;
   onSelectApplication?: (app: Application) => void;
   onRefresh?: () => void;
+  onOpenGuide?: () => void;
 }
 
 export const OverviewTab: React.FC<OverviewTabProps> = ({
@@ -40,9 +47,11 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   onNavigate,
   onNavigateWithFilter,
   onSelectApplication,
-  onRefresh
+  onRefresh,
+  onOpenGuide
 }) => {
   const [selectedYear, setSelectedYear] = useState<string>('ALL');
+  const [isQuickTourOpen, setIsQuickTourOpen] = useState(true);
   const [bottlenecks, setBottlenecks] = useState<BottleneckAnalytics | null>(null);
   const [recentAudits, setRecentAudits] = useState<AuditEvent[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -504,6 +513,243 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </span>
         </div>
       </div>
+
+      {/* ====================================================================
+          1.5. GETTING STARTED & HOW TO USE QUICK TOUR (User-Friendly Guidance)
+          ==================================================================== */}
+      {isQuickTourOpen ? (
+        <div style={{
+          background: 'linear-gradient(180deg, #F0F7FF 0%, #FFFFFF 100%)',
+          border: '1px solid #BFDBFE',
+          borderRadius: 10,
+          padding: '16px 20px',
+          boxShadow: '0 2px 6px rgba(37, 99, 235, 0.06)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                background: '#2563EB',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#FFFFFF'
+              }}>
+                <Compass size={18} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <b style={{ fontSize: 14.5, color: '#1E3A8A' }}>How to Use PRAVAHA — Quick Evaluation Guide</b>
+                  <span style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    background: '#DBEAFE',
+                    color: '#1E40AF'
+                  }}>
+                    User Friendly Walkthrough
+                  </span>
+                </div>
+                <p style={{ margin: '2px 0 0 0', fontSize: 12, color: '#475569' }}>
+                  Explore the 3 core statutory workflows below, or press <kbd style={{ background: '#E2E8F0', padding: '1px 5px', borderRadius: 3 }}>Ctrl + K</kbd> anytime to search dossiers or switch personas.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {onOpenGuide && (
+                <button
+                  type="button"
+                  onClick={onOpenGuide}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 12px',
+                    background: '#2563EB',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                  title="Open full interactive manual with glossary"
+                >
+                  <Compass size={13} />
+                  <span>Open Full User Guide</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsQuickTourOpen(false)}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid #CBD5E1',
+                  borderRadius: 6,
+                  color: '#64748B',
+                  padding: '5px 8px',
+                  cursor: 'pointer',
+                  fontSize: 11.5,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}
+                title="Collapse this guide"
+              >
+                <span>Dismiss</span>
+                <X size={13} />
+              </button>
+            </div>
+          </div>
+
+          {/* 3 Step Action Cards */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+            gap: 12,
+            marginTop: 4
+          }}>
+            {/* Step 1: AI Scrutiny */}
+            <div
+              onClick={() => onNavigate('Document Scrutiny')}
+              style={{
+                background: '#FFFFFF',
+                border: '1px solid #DBEAFE',
+                borderRadius: 8,
+                padding: '12px 14px',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between'
+              }}
+              className="kpi-card-hover"
+            >
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#2563EB', background: '#EFF6FF', padding: '2px 6px', borderRadius: 4 }}>
+                    STEP 1 • SCRUTINY
+                  </span>
+                  <Sparkles size={15} color="#2563EB" />
+                </div>
+                <b style={{ fontSize: 13, color: '#172B4D', display: 'block', marginBottom: 4 }}>
+                  Test AI Document Scrutiny
+                </b>
+                <p style={{ margin: 0, fontSize: 12, color: '#64748B', lineHeight: 1.4 }}>
+                  Inspect candidate dossiers, automated OCR extraction, land minimums & discrepancy checks.
+                </p>
+              </div>
+              <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 4, color: '#2563EB', fontSize: 12, fontWeight: 600 }}>
+                <span>Launch Scrutiny</span>
+                <ArrowRight size={13} />
+              </div>
+            </div>
+
+            {/* Step 2: EVC Inspections */}
+            <div
+              onClick={() => onNavigate('EVC Inspections')}
+              style={{
+                background: '#FFFFFF',
+                border: '1px solid #DCFCE7',
+                borderRadius: 8,
+                padding: '12px 14px',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between'
+              }}
+              className="kpi-card-hover"
+            >
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#16845B', background: '#F0FDF4', padding: '2px 6px', borderRadius: 4 }}>
+                    STEP 2 • INSPECTIONS
+                  </span>
+                  <Calendar size={15} color="#16845B" />
+                </div>
+                <b style={{ fontSize: 13, color: '#172B4D', display: 'block', marginBottom: 4 }}>
+                  Review EVC Committee Queue
+                </b>
+                <p style={{ margin: 0, fontSize: 12, color: '#64748B', lineHeight: 1.4 }}>
+                  Toggle between List & Calendar views, inspect expert rosters, and review statutory visit reports.
+                </p>
+              </div>
+              <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 4, color: '#16845B', fontSize: 12, fontWeight: 600 }}>
+                <span>View EVC Queue</span>
+                <ArrowRight size={13} />
+              </div>
+            </div>
+
+            {/* Step 3: Compliance & Audit */}
+            <div
+              onClick={() => onNavigate('Compliance')}
+              style={{
+                background: '#FFFFFF',
+                border: '1px solid #FEF3C7',
+                borderRadius: 8,
+                padding: '12px 14px',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between'
+              }}
+              className="kpi-card-hover"
+            >
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#B45309', background: '#FEF3C7', padding: '2px 6px', borderRadius: 4 }}>
+                    STEP 3 • AUDIT
+                  </span>
+                  <FileCheck2 size={15} color="#B45309" />
+                </div>
+                <b style={{ fontSize: 13, color: '#172B4D', display: 'block', marginBottom: 4 }}>
+                  Verify Tamper-Evident Audit
+                </b>
+                <p style={{ margin: 0, fontSize: 12, color: '#64748B', lineHeight: 1.4 }}>
+                  Validate 30-year lease deeds, fire NOCs, and verify cryptographic SHA-256 integrity chains.
+                </p>
+              </div>
+              <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 4, color: '#B45309', fontSize: 12, fontWeight: 600 }}>
+                <span>Check Compliance</span>
+                <ArrowRight size={13} />
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -10 }}>
+          <button
+            type="button"
+            onClick={() => setIsQuickTourOpen(true)}
+            style={{
+              background: '#EFF6FF',
+              border: '1px solid #BFDBFE',
+              borderRadius: 6,
+              color: '#2563EB',
+              padding: '4px 10px',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6
+            }}
+          >
+            <Compass size={13} />
+            <span>Show Quick Evaluation Guide</span>
+            <ChevronDown size={13} />
+          </button>
+        </div>
+      )}
 
       {/* ====================================================================
           2. EXACTLY FOUR PRIMARY KPI CARDS (Restrained, Equal Height, Clear Baselines)

@@ -11,7 +11,8 @@ import {
   Shield,
   Building2,
   Menu,
-  X
+  X,
+  Compass
 } from 'lucide-react';
 import { api, token, fetchApplications, fetchNotifications, showToast, ToastItem } from './api';
 import { User, Application, AlertItem, DashboardMetrics } from './types';
@@ -26,6 +27,8 @@ import { ComplianceTab } from './components/ComplianceTab';
 import { AlertsTab } from './components/AlertsTab';
 import { ReportsTab } from './components/ReportsTab';
 import { RoleMatrixTab } from './components/RoleMatrixTab';
+import { PlatformGuideModal } from './components/PlatformGuideModal';
+import { CommandPalette } from './components/CommandPalette';
 
 export default function App() {
   const [authToken, setAuthToken] = useState<string>(token());
@@ -38,6 +41,24 @@ export default function App() {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false);
   const [appStageFilter, setAppStageFilter] = useState<string>('ALL');
   const [appStatusFilter, setAppStatusFilter] = useState<string>('ALL');
+  const [isGuideOpen, setIsGuideOpen] = useState<boolean>(false);
+  const [isPaletteOpen, setIsPaletteOpen] = useState<boolean>(false);
+
+  // Global Keyboard Shortcuts (Ctrl+K for Quick Search, ? for Guide)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsPaletteOpen((prev) => !prev);
+      }
+      if (e.key === '?' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
+        e.preventDefault();
+        setIsGuideOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   function handleNavigateWithFilter(tab: string, stageFilter: string = 'ALL', statusFilter: string = 'ALL') {
     setAppStageFilter(stageFilter);
@@ -318,6 +339,7 @@ export default function App() {
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         mobileOpen={mobileDrawerOpen}
         onCloseMobile={() => setMobileDrawerOpen(false)}
+        onOpenGuide={() => setIsGuideOpen(true)}
       />
 
       {/* Mobile Drawer Backdrop */}
@@ -344,6 +366,8 @@ export default function App() {
           }}
           unreadCount={unreadCount}
           onToggleMobileMenu={() => setMobileDrawerOpen(!mobileDrawerOpen)}
+          onOpenGuide={() => setIsGuideOpen(true)}
+          onOpenCommandPalette={() => setIsPaletteOpen(true)}
         />
 
         {/* Scrollable Viewport - Pinned Navbar Remains Fixed Above */}
@@ -387,56 +411,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Navigation Breadcrumb & Back to Dashboard Banner */}
-        {currentTab !== 'Overview' && (
-          <div className="page-container" style={{ paddingBottom: 0, paddingTop: 14 }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '10px 16px',
-              background: '#FFFFFF',
-              border: '1px solid #E2E8F0',
-              borderRadius: 8,
-              boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
-              marginBottom: 16
-            }}>
-              <button
-                type="button"
-                onClick={() => setTab('Overview')}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '7px 16px',
-                  background: '#2563EB',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: 6,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  boxShadow: '0 1px 3px rgba(37, 99, 235, 0.25)',
-                  transition: 'background-color 0.15s ease'
-                }}
-                onMouseOver={(e) => (e.currentTarget.style.backgroundColor = '#1D4ED8')}
-                onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '#2563EB')}
-                title="Return to Regulatory Operations Dashboard"
-              >
-                <ArrowLeft size={16} />
-                <span>← Back to Dashboard</span>
-              </button>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#64748B' }}>
-                <span>Active Section:</span>
-                <span style={{ fontWeight: 600, color: '#172B4D', background: '#F8FAFC', padding: '3px 10px', borderRadius: 4, border: '1px solid #E2E8F0' }}>
-                  {currentTab}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Active View Routing */}
         {currentTab === 'Overview' && (
           <OverviewTab
@@ -448,6 +422,7 @@ export default function App() {
             onNavigateWithFilter={handleNavigateWithFilter}
             onSelectApplication={(app) => setSelectedApp(app)}
             onRefresh={loadData}
+            onOpenGuide={() => setIsGuideOpen(true)}
           />
         )}
 
@@ -492,6 +467,63 @@ export default function App() {
           <RoleMatrixTab onSwitchRole={handleSwitchRole} />
         )}
         </div>
+
+        {/* Platform Guide & Interactive User Manual Modal */}
+        <PlatformGuideModal
+          isOpen={isGuideOpen}
+          onClose={() => setIsGuideOpen(false)}
+          onNavigateTab={(tab) => {
+            setTab(tab);
+            setMobileDrawerOpen(false);
+          }}
+          onSwitchRole={handleSwitchRole}
+          currentUserRole={user?.role}
+        />
+
+        {/* Global Quick Search & Command Palette (Ctrl + K) */}
+        <CommandPalette
+          isOpen={isPaletteOpen}
+          onClose={() => setIsPaletteOpen(false)}
+          applications={applications}
+          onNavigateTab={(tab) => {
+            setTab(tab);
+            setMobileDrawerOpen(false);
+          }}
+          onSelectApplication={(app) => setSelectedApp(app)}
+          onSwitchRole={handleSwitchRole}
+          onOpenGuide={() => setIsGuideOpen(true)}
+          onRunEscalation={handleRunEscalation}
+        />
+
+        {/* Floating Quick Guide Button */}
+        <button
+          type="button"
+          onClick={() => setIsGuideOpen(true)}
+          className="floating-help-btn"
+          title="Open Platform Guide and User Instructions (or press ?)"
+          style={{
+            position: 'fixed',
+            bottom: 22,
+            right: 22,
+            zIndex: 990,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 7,
+            padding: '9px 16px',
+            borderRadius: 30,
+            background: '#1E3A8A',
+            color: '#FFFFFF',
+            border: '1.5px solid rgba(255, 255, 255, 0.4)',
+            boxShadow: '0 4px 14px rgba(30, 58, 138, 0.35)',
+            fontSize: 12.5,
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          <Compass size={16} color="#93C5FD" />
+          <span>How to Use</span>
+        </button>
 
         {/* Application Details & Workflow Timeline Modal */}
         {selectedApp && (
