@@ -345,6 +345,8 @@ export default function App() {
           onToggleMobileMenu={() => setMobileDrawerOpen(!mobileDrawerOpen)}
         />
 
+        {/* Scrollable Viewport - Pinned Navbar Remains Fixed Above */}
+        <div className="main-scrollable-body">
         {/* Floating Toast Notification Stack (Phase 6) */}
         <div className="toast-container" aria-live="polite">
           {toasts.map((t) => (
@@ -438,6 +440,7 @@ export default function App() {
         {currentTab === 'Role Matrix' && (
           <RoleMatrixTab onSwitchRole={handleSwitchRole} />
         )}
+        </div>
 
         {/* Application Details & Workflow Timeline Modal */}
         {selectedApp && (

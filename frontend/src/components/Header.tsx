@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, PlayCircle, Bell, Search, ShieldCheck, RefreshCw, Menu } from 'lucide-react';
+import { PlayCircle, Bell, RefreshCw, Menu } from 'lucide-react';
 import { User } from '../types';
 
 interface HeaderProps {
@@ -33,25 +33,27 @@ export const Header: React.FC<HeaderProps> = ({
   ];
 
   const pageSubtitles: Record<string, string> = {
-    Overview: 'Executive operations summary, stage pipeline, and regional workload metrics',
-    Applications: 'Centralized case register with Next Best Action triggers and full lifecycle routing',
-    'AI Assistant': 'Explainable document verification, candidate field extraction, and discrepancy drafting',
-    'EVC Inspections': 'Expert Visit Committee scheduling, committee roster allocation, and visit reports',
-    Compliance: 'Time-bound undertakings, 30-year lease verification, and statutory safety clearances',
-    Alerts: 'SLA countdowns, regulatory notifications, and automated escalation logs',
-    Reports: 'Official regulatory registers, bottleneck intelligence, and formula-safe CSV exports',
-    'Role Matrix': 'SIH26262 statutory governance model, access boundaries, and evaluation accounts',
+    Overview: 'Executive operations summary & regulatory pipeline',
+    Applications: 'Centralized dossier register & lifecycle management',
+    'AI Assistant': 'Statutory scrutiny, candidate extraction & discrepancy review',
+    'Document Scrutiny': 'Statutory scrutiny, candidate extraction & discrepancy review',
+    'EVC Inspections': 'Expert Visit Committee roster & compliance reports',
+    Compliance: 'Statutory clearances, 30-year lease & undertakings',
+    Alerts: 'SLA countdowns & regulatory escalations',
+    Reports: 'Official regulatory registers & data export',
+    'Role Matrix': 'Governance model, permissions & evaluation personas',
   };
 
   const tabCategories: Record<string, string> = {
-    Overview: 'Core Operations',
-    Applications: 'Core Operations',
-    'AI Assistant': 'Regulatory Scrutiny',
-    'EVC Inspections': 'Regulatory Scrutiny',
-    Compliance: 'Compliance & Evidence',
-    Alerts: 'Governance & Analytics',
-    Reports: 'Governance & Analytics',
-    'Role Matrix': 'System Access'
+    Overview: 'Operations',
+    Applications: 'Operations',
+    'AI Assistant': 'Scrutiny',
+    'Document Scrutiny': 'Scrutiny',
+    'EVC Inspections': 'Scrutiny',
+    Compliance: 'Compliance',
+    Alerts: 'Governance',
+    Reports: 'Governance',
+    'Role Matrix': 'Access'
   };
 
   const currentCategory = tabCategories[currentTab] || 'Operations';
@@ -60,53 +62,51 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="topbar">
       {/* Left: Mobile Menu Toggle & Official GovTech Header & Breadcrumb */}
       <div className="topbar-left">
-        {onToggleMobileMenu && (
-          <button
-            type="button"
-            className="mobile-hamburger-btn"
-            onClick={onToggleMobileMenu}
-            aria-label="Open mobile navigation"
-            title="Open navigation menu"
-          >
-            <Menu size={20} />
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {onToggleMobileMenu && (
+            <button
+              type="button"
+              className="mobile-hamburger-btn"
+              onClick={onToggleMobileMenu}
+              aria-label="Open navigation menu"
+              title="Open navigation menu"
+            >
+              <Menu size={18} />
+            </button>
+          )}
 
-        <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, color: 'var(--text-muted)' }}>
-          <button
-            type="button"
-            className="topbar-agency-tag breadcrumb-link"
-            style={{ margin: 0, cursor: onNavigateTab ? 'pointer' : 'default' }}
-            onClick={() => onNavigateTab && onNavigateTab('Overview')}
-            title="Navigate to Command Centre"
-          >
-            AICTE WORKFLOW HUB
-          </button>
-          <span>/</span>
-          <span style={{ fontWeight: 600 }}>{currentCategory}</span>
-          <span>/</span>
-          <span style={{ color: 'var(--color-navy)', fontWeight: 700 }}>{currentTab}</span>
-        </nav>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2 }}>
-          <h2 style={{ margin: 0, fontSize: 18, color: 'var(--color-navy)', fontWeight: 800 }}>{currentTab}</h2>
-          {/* Phase 4: Restrained Header Demo Badge */}
-          <div className="topbar-demo-pill" title="Demonstration environment. Uses synthetic institutional data. Not connected to official AICTE production systems.">
-            <span className="demo-pulse-dot" />
-            <span>PRAVAHA | SIH26262 DEMO MODE</span>
+          <div>
+            <nav aria-label="Breadcrumb" className="topbar-breadcrumb">
+              <button
+                type="button"
+                className="topbar-agency-tag breadcrumb-link"
+                onClick={() => onNavigateTab && onNavigateTab('Overview')}
+                title="Navigate to Command Centre"
+              >
+                AICTE PRAVAHA
+              </button>
+              <span>/</span>
+              <span>{currentCategory}</span>
+              <span>/</span>
+              <span className="breadcrumb-current">{currentTab}</span>
+            </nav>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 1 }}>
+              <h2 className="topbar-title">{currentTab}</h2>
+              <div className="topbar-demo-pill" title="Demonstration environment (SIH26262)">
+                <span className="demo-pulse-dot" />
+                <span>SIH26262 DEMO</span>
+              </div>
+            </div>
           </div>
         </div>
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-          {pageSubtitles[currentTab] || `AICTE Regulatory Console · ${user?.designation || user?.role}`}
-        </span>
       </div>
 
       {/* Right Actions */}
       <div className="topbar-actions">
         {/* Quick Demo Role Switcher for SIH Evaluators (Phase 4) */}
         <div className="quick-role-bar" title="Switch persona to evaluate role-based permissions">
-          <span className="quick-role-label">
-            Demo Persona:
-          </span>
+          <span className="quick-role-label">Persona:</span>
           {demoAccounts.map((acc) => {
             const isCurrent = user?.role === acc.role;
             return (
@@ -127,13 +127,13 @@ export const Header: React.FC<HeaderProps> = ({
         {user?.role !== 'institution' && (
           <button
             type="button"
-            className="btn-secondary"
+            className="btn-secondary btn-nav-action"
             onClick={onRunEscalation}
             disabled={isScanning}
             title="Scan active case deadlines and auto-trigger SLA escalation alerts"
           >
-            <PlayCircle size={14} color="#D97706" />
-            <span>{isScanning ? 'Evaluating...' : 'Scan Deadlines'}</span>
+            <PlayCircle size={13} color="#D97706" />
+            <span>{isScanning ? 'Scanning...' : 'Scan Deadlines'}</span>
           </button>
         )}
 
@@ -141,22 +141,25 @@ export const Header: React.FC<HeaderProps> = ({
         {onNavigateTab && (
           <button
             type="button"
-            className="btn-icon"
+            className="btn-icon btn-nav-action"
             onClick={() => onNavigateTab('Alerts')}
             title={`View notifications (${unreadCount} unread)`}
             style={{ position: 'relative' }}
           >
-            <Bell size={16} />
+            <Bell size={15} />
             {unreadCount > 0 && (
-              <span style={{
-                position: 'absolute',
-                top: -3,
-                right: -3,
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                background: '#DC2626'
-              }} />
+              <span
+                style={{
+                  position: 'absolute',
+                  top: 3,
+                  right: 3,
+                  width: 7,
+                  height: 7,
+                  borderRadius: '50%',
+                  background: '#DC2626',
+                  boxShadow: '0 0 0 1.5px #FFFFFF'
+                }}
+              />
             )}
           </button>
         )}
@@ -164,11 +167,11 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Refresh Live Database Records */}
         <button
           type="button"
-          className="btn-secondary"
+          className="btn-secondary btn-nav-action"
           onClick={onRefresh}
           title="Reload live database records"
         >
-          <RefreshCw size={13} />
+          <RefreshCw size={12} />
           <span>Refresh</span>
         </button>
       </div>
