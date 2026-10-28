@@ -6,6 +6,7 @@ import {
   Lock,
   Mail,
   ArrowRight,
+  ArrowLeft,
   Info,
   Shield,
   Building2,
@@ -382,6 +383,56 @@ export default function App() {
               >
                 ×
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Navigation Breadcrumb & Back to Dashboard Banner */}
+        {currentTab !== 'Overview' && (
+          <div className="page-container" style={{ paddingBottom: 0, paddingTop: 14 }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 16px',
+              background: '#FFFFFF',
+              border: '1px solid #E2E8F0',
+              borderRadius: 8,
+              boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+              marginBottom: 16
+            }}>
+              <button
+                type="button"
+                onClick={() => setTab('Overview')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '7px 16px',
+                  background: '#2563EB',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: 6,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 1px 3px rgba(37, 99, 235, 0.25)',
+                  transition: 'background-color 0.15s ease'
+                }}
+                onMouseOver={(e) => (e.currentTarget.style.backgroundColor = '#1D4ED8')}
+                onMouseOut={(e) => (e.currentTarget.style.backgroundColor = '#2563EB')}
+                title="Return to Regulatory Operations Dashboard"
+              >
+                <ArrowLeft size={16} />
+                <span>← Back to Dashboard</span>
+              </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#64748B' }}>
+                <span>Active Section:</span>
+                <span style={{ fontWeight: 600, color: '#172B4D', background: '#F8FAFC', padding: '3px 10px', borderRadius: 4, border: '1px solid #E2E8F0' }}>
+                  {currentTab}
+                </span>
+              </div>
             </div>
           </div>
         )}

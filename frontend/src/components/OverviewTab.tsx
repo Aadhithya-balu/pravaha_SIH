@@ -508,11 +508,14 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       {/* ====================================================================
           2. EXACTLY FOUR PRIMARY KPI CARDS (Restrained, Equal Height, Clear Baselines)
           ==================================================================== */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
-        gap: 16
-      }}>
+      <div
+        className="kpi-cards-grid"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+          gap: 16
+        }}
+      >
         {/* KPI 1: Total Applications */}
         <div
           onClick={() => handleFilterNav('Applications', 'ALL', 'ALL')}
@@ -1027,7 +1030,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                   <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#64748B', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     Due Date
                   </th>
-                  <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: '#64748B', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: '#64748B', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.04em', width: 175, minWidth: 175 }}>
                     Action
                   </th>
                 </tr>
@@ -1126,12 +1129,16 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                       </td>
 
                       {/* 6. Action */}
-                      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                      <td style={{ padding: '10px 14px', textAlign: 'right', width: 175, minWidth: 175 }}>
                         <button
                           onClick={() => onSelectApplication && onSelectApplication(app)}
                           style={{
-                            padding: '6px 12px',
-                            fontSize: 12,
+                            width: 156,
+                            minWidth: 156,
+                            maxWidth: 156,
+                            height: 32,
+                            padding: '0 8px',
+                            fontSize: 11.5,
                             fontWeight: 600,
                             borderRadius: 6,
                             background: '#FFFFFF',
@@ -1140,13 +1147,16 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                             cursor: 'pointer',
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: 5,
+                            justifyContent: 'center',
+                            gap: 6,
+                            whiteSpace: 'nowrap',
+                            boxSizing: 'border-box',
                             transition: 'all 0.15s ease'
                           }}
                           className="btn-action-hover"
                         >
-                          <Eye size={13} color="#2563EB" />
-                          <span>{actionLabel}</span>
+                          <Eye size={13} color="#2563EB" style={{ flexShrink: 0 }} />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{actionLabel}</span>
                         </button>
                       </td>
                     </tr>

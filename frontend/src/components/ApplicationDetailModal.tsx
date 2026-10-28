@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   ArrowRight,
+  ArrowLeft,
   FileText,
   Building2,
   ShieldCheck,
@@ -691,6 +692,28 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                background: 'rgba(255,255,255,0.18)',
+                border: '1px solid rgba(255,255,255,0.35)',
+                color: '#FFFFFF',
+                borderRadius: 'var(--radius-sm)',
+                padding: '5px 12px',
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: 600,
+                transition: 'all 0.15s ease'
+              }}
+              onClick={handleAttemptClose}
+              title="Return to Regulatory Operations Dashboard"
+            >
+              <ArrowLeft size={14} />
+              <span>Back to Dashboard</span>
+            </button>
             <button
               style={{
                 background: 'rgba(255,255,255,0.1)',

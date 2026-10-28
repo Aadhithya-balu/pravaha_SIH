@@ -1,5 +1,5 @@
 import React from 'react';
-import { PlayCircle, Bell, RefreshCw, Menu } from 'lucide-react';
+import { PlayCircle, Bell, RefreshCw, Menu, ArrowLeft } from 'lucide-react';
 import { User } from '../types';
 
 interface HeaderProps {
@@ -97,6 +97,31 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="demo-pulse-dot" />
                 <span>SIH26262 DEMO</span>
               </div>
+              {currentTab !== 'Overview' && onNavigateTab && (
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('Overview')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '3px 10px',
+                    borderRadius: 6,
+                    background: '#EFF6FF',
+                    border: '1px solid #BFDBFE',
+                    color: '#2563EB',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    height: 26,
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Return to Regulatory Operations Dashboard"
+                >
+                  <ArrowLeft size={13} />
+                  <span>Back to Dashboard</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
