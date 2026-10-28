@@ -93,10 +93,17 @@ def get_current_user(creds: HTTPAuthorizationCredentials | None = Depends(bearer
 
 def require_roles(allowed_roles: list[str]):
     def role_checker(user: User = Depends(get_current_user)) -> User:
-        if user.role not in allowed_roles and user.role != "admin":
+        effective_roles = set(allowed_roles)
+        # Combined Regional Officer / Admin demo role interoperability
+        if "admin" in effective_roles:
+            effective_roles.add("officer")
+        if "officer" in effective_roles:
+            effective_roles.add("admin")
+
+        if user.role not in effective_roles and user.role != "admin":
             raise HTTPException(
                 status_code=403,
-                detail=f"Access denied. Requires one of roles: {allowed_roles}. Current role: '{user.role}'."
+                detail=f"Access denied. Requires one of roles: {list(effective_roles)}. Current role: '{user.role}'."
             )
         return user
     return role_checker

@@ -1,170 +1,115 @@
 # PRAVAHA — SIH26262 End-to-End Demonstration Runbook
-**Official Evaluation & Evaluation Jury Demonstration Manual**  
-*Problem Statement Code: SIH26262 | Integrated AICTE Approval Workflow Automation*  
-*Target Environment: Local Development & Live Demonstration Testbed*
+**Official SIH26262 Jury Evaluation & Operations Manual**  
+*Problem Statement Code: SIH26262 | Integrated AICTE Approval Workflow Automation & Compliance System*  
+*Demonstration Mode: Active | Synthetic Institutional Data*
 
 ---
 
-## 1. Startup & Environment Verification
+## 1. Quick Startup Commands
 
-### 1.1 Backend Startup
-Open a PowerShell terminal in the repository root:
+To start the complete full-stack platform (FastAPI backend on port 8000 and Vite frontend on port 5173):
+
 ```powershell
-# Navigate to backend directory
-cd C:\PS4_AICTE_FullStack_Scaffold\backend
-
-# Activate Python virtual environment
-.\.venv\Scripts\Activate.ps1
-
-# Run FastAPI backend service on port 8000
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+# In repository root
+npm run dev:all
 ```
-*Health Check:* Open `http://127.0.0.1:8000/api/health` in your browser.  
-*Expected Output:* `{"status": "ok", "service": "Pravaha SIH26262 Regulatory Backend"}`
 
-### 1.2 Frontend Startup
-Open a second PowerShell terminal:
+Alternatively, start services individually in separate terminals:
+
 ```powershell
-# Navigate to frontend directory
-cd C:\PS4_AICTE_FullStack_Scaffold\frontend
+# Terminal 1 — Backend (FastAPI on http://127.0.0.1:8000)
+cd backend
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
-# Start Vite dev server on port 5173
+# Terminal 2 — Frontend (Vite on http://localhost:5173)
+cd frontend
 npm run dev
 ```
-*Application URL:* Open `http://localhost:5173/` in your browser.
+
+### Seeding Demo Data (Idempotent)
+To re-seed or ensure all 8 application lifecycle cases and 3 demo personas are present:
+
+```powershell
+npm run seed
+# or: python scripts/seed_demo.py
+```
 
 ---
 
 ## 2. Certified Demo User Accounts
 
-All accounts are pre-seeded in the database with the common password: **`DemoPass123!`**
+All demo accounts use the standard password: **`DemoPass123!`**  
+Quick one-click evaluation buttons are provided on the login page.
 
-| Role | Email Login | Password | Jurisdiction / Region | Designation |
+| Role | Email Login | Password | Jurisdiction / Scope | Demonstration Purpose |
 | :--- | :--- | :--- | :--- | :--- |
-| **Institution Applicant** | `college@demo.local` | `DemoPass123!` | Southern (`Sri Sairam Institute`) | Principal / Registrar |
-| **Regional Officer** | `officer@demo.local` | `DemoPass123!` | Southern | Regional Scrutiny Officer |
-| **Bureau / Appellate** | `bureau@demo.local` | `DemoPass123!` | HQ (National) | Director (Approval Bureau) |
-| **EVC Expert** | `evc@demo.local` | `DemoPass123!` | Southern | Senior Committee Inspector |
-| **System Administrator** | `admin@demo.local` | `DemoPass123!` | All Jurisdictions | National System Administrator |
+| **🏢 1. Institution Applicant** | `college@demo.local` | `DemoPass123!` | ABC Engineering College (Strict Tenant Isolation) | Application drafting, document upload, clarification resubmission |
+| **⚖️ 2. Regional Officer / Admin** | `officer@demo.local` | `DemoPass123!` | Combined Scrutiny, Compliance & Governance (RO-North) | Document scrutiny, deficiency return, EVC referral, administrative approval |
+| **🔍 3. EVC Expert** | `evc@demo.local` | `DemoPass123!` | Assigned Inspection Panels (Senior Committee Inspector) | Campus lab inspections, site observations, formal recommendations |
+
+*(Note: `admin@demo.local` and `bureau@demo.local` are also active and share the same operational capabilities as the combined Regional Officer / Admin persona).*
 
 ---
 
-## 3. Demonstration Scenarios
+## 3. Step-by-Step SIH Evaluation Walk-Through
+
+### Scenario 1: Applicant Workflow — Draft, Document Upload, & Submission
+1. Open [http://localhost:5173](http://localhost:5173).
+2. Click **"🏢 1. Institution Applicant"** to log in as Prof. Anand Deshmukh (`college@demo.local`).
+3. Notice the **PRAVAHA \| SIH26262 DEMO MODE** notice.
+4. Navigate to **Application Dossiers**:
+   - Open case `AICTE-2026-1007` (Draft proposal for M.Tech Cyber Security).
+   - In the detail modal, review the form fields and upload a lease deed or compliance document.
+   - Click **"Formally Submit Application"**.
+   - Notice the green toast confirmation: *"Application submitted successfully."*
+   - The application transitions to `SCRUTINY` state.
 
 ---
 
-### SCENARIO 1: End-to-End Scrutiny, Officer Return, Resubmission & Approval
-**Objective:** Prove workflow state enforcement, candidate field prefill, return justification, applicant rectification, and final statutory order issuance.
-
-#### Step 1: Login as Institution Applicant
-1. Navigate to `http://localhost:5173/`.
-2. Login with `college@demo.local` / `DemoPass123!`.
-3. Notice top banner: Restrained GovTech palette with subtle Indian tricolor accent and prototype demonstration disclaimer.
-
-#### Step 2: Ingest Document & Auto-Prefill Application
-1. Click **Applications** in the navigation bar.
-2. Click **+ New Application**.
-3. In the creation modal, click the demo helper button **"Load Sample Land Deed & Ingest"**.
-4. Observe candidate field extraction: Notice `EXTRACTED_FROM_DOCUMENT` and `DETERMINISTIC_PARSED` provenance tags.
-5. Click **"Apply & Prefill Form"**: Notice Survey Number (`42/1A, 42/1B`) and Land Lease Tenure (`33 Years`) instantly prefill into the application fields!
-6. Click **Create Application Draft**.
-
-#### Step 3: View Dossier & Submit for Scrutiny
-1. In the application list, click the newly created application (e.g. `APP-2026-SR-901`).
-2. Notice the **Next Best Action Banner**:  
-   - Action: `Submit Application for Scrutiny` (Target Role: `institution`).
-3. Click **Execute: Submit Application for Scrutiny**.
-4. Case transitions from `DRAFT` to `SUBMITTED`.
-
-#### Step 4: Login as Regional Officer & Return for Clarification
-1. Logout and login as `officer@demo.local` / `DemoPass123!`.
-2. Click **Scrutiny Workbench**.
-3. Open the submitted application.
-4. Advance the case to `SCRUTINY`.
-5. Under Available Actions, click **Return for Clarification**.
-6. Enter mandatory deficiency remark:  
-   `"Registered lease deed page 4 seal is blurry. Please upload certified copy with clear Sub-Registrar endorsement."`
-7. Click **Confirm Return**.
-8. Notice status immediately transitions to `RETURNED_FOR_CLARIFICATION`.
-
-#### Step 5: Applicant Rectification & Resubmission
-1. Logout and login as `college@demo.local`.
-2. Open the application dossier.
-3. Observe the prominent orange **Deficiency Alert Banner** showing the exact officer remarks.
-4. Click **Resubmit Case** (or upload corrected document first).
-5. Enter institutional rectification explanation:  
-   `"Clear certified true copy of registered lease deed uploaded with Sub-Registrar seal."`
-6. Click **Resubmit Application**.
-7. Observe stage progresses automatically to `RE_SCRUTINY`.
-
-#### Step 6: Officer Re-Scrutiny & Statutory Approval Order
-1. Logout and login as `officer@demo.local`.
-2. Open the dossier: Notice the **Next Best Action** is `Complete Re-Scrutiny`.
-3. Advance through scrutiny to `COMPLIANCE_PENDING` (or direct approval).
-4. Click the **Audit Trail & Hash Chain** tab:
-   - Click **Verify Cryptographic Chain**.
-   - Observe live SHA-256 verification:  
-     `"✓ Cryptographic Integrity Verified Intact (All events chained with SHA-256)"`.
-5. Issue final approval order. Outcome: `APPROVED`.
+### Scenario 2: Officer Scrutiny & Groq AI Document Scrutiny
+1. Use the topbar **Demo Persona** switcher to switch to **"RO / Admin"** (`officer@demo.local`).
+2. Navigate to **Document Scrutiny** (AI Assistant tab):
+   - Select application `AICTE-2026-1001` or upload a sample PDF/DOCX file.
+   - Click **Run Regulatory Scrutiny Pipeline**.
+   - If `GROQ_API_KEY` is configured in `backend/.env`, notice real-time LPU analysis (`mode: "real_llm"`, `provider: "groq"`).
+   - If `GROQ_API_KEY` is empty, notice honest, deterministic evaluation (`mode: "demo_mode"`, `provider: "deterministic_local"`).
+   - Review the candidate fields with explicit source evidence (Lease Tenure, Survey No, CFO Fire NOC expiry).
+   - Click **1-Click Form Prefill** to merge candidate fields into the application record.
+3. Open **Application Register** and select `AICTE-2026-1005` (Returned for Clarification):
+   - Review deficiency history and institutional clarification.
+   - Perform next action: **SCRUTINY_PASS** or **SEND_EVC**.
 
 ---
 
-### SCENARIO 2: New Technical Programme Route with Mandatory EVC Inspection
-**Objective:** Prove configurable routing (Route B) where new programmes strictly mandate an on-site Expert Visit Committee inspection before approval.
-
-1. Login as `college@demo.local`.
-2. Create application selecting type **"New Technical Programme Introduction"**.
-3. Upload DPR (Detailed Project Report) and submit.
-4. Login as `officer@demo.local`.
-5. Run Scrutiny: Notice that the system **does not** allow skipping EVC. The mandatory route enforces transition from `SCRUTINY` → `EVC_PENDING`.
-6. Click **Schedule EVC Inspection**:
-   - Set Inspection Mode: `PHYSICAL`.
-   - Committee Experts: `evc@demo.local, Prof. K. Ramanathan (IIT Madras)`.
-   - Scheduled Date: Select tomorrow's date.
-   - Click **Confirm EVC Schedule**.
-7. Logout and login as `evc@demo.local`:
-   - Click **EVC Operations**.
-   - Only assigned inspections for `evc@demo.local` are visible!
-   - Click **Submit Inspection Report**: Enter findings (`RECOMMENDED - All labs and computing infrastructure verified compliant with APH Appendix 4`).
-   - Click **Submit Committee Recommendation**.
-8. Application automatically advances to `EVC_COMPLETED` ready for final competent authority decision.
+### Scenario 3: EVC Committee Scheduling & Report Filing
+1. In the **RO / Admin** console, navigate to **EVC Committee Queue**.
+2. Click **Schedule Inspection** for application `AICTE-2026-1010`:
+   - Set Inspection Date, select Committee Chairperson (*Prof. S. Ramanujan*), choose Physical mode.
+   - Click **Confirm EVC Scheduling**.
+   - Notice success toast: *"Inspection scheduled successfully."*
+3. Switch persona to **"EVC Expert"** (`evc@demo.local`):
+   - Open **EVC Committee Queue** to view assigned inspections (`AICTE-2026-1002`).
+   - Click **Submit Inspection Report**:
+     - Enter campus infrastructure observations (Server rooms, AI lab equipment).
+     - Select recommendation: **RECOMMENDED FOR APPROVAL (60 SEATS)**.
+     - Submit report.
+   - Notice audit trail event and timeline update.
 
 ---
 
-### SCENARIO 3: Compliance & Lease Validity Monitoring (30-Year Rule)
-**Objective:** Prove time-bound undertaking tracking, lease tenure validation, and overdue escalation.
-
-1. Login as `officer@demo.local`.
-2. Click **Compliance & Undertakings**:
-   - Observe the Compliance Register tracking:
-     - 30-Year Land Lease Tenure Check
-     - Fire Safety Clearance NOC Expiry Countdown
-     - Faculty 7th Pay Commission Scale Undertaking
-3. Notice items approaching deadline (<30 days) highlighted with amber warnings.
-4. Click **Reports & Analytics**:
-   - Scroll to **Operational Bottlenecks & SLA Risk Intelligence**.
-   - Review Identified Bottlenecks: Shows stage backlogs, average ageing days, SLA limits, and resource rebalancing recommendations.
-   - Click **Export Applications CSV** or **Export Compliance CSV**: Observe RFC-4180 formula-safe CSV downloaded instantly.
+### Scenario 4: SLA Deadlines, Escalations, and Audits
+1. Switch back to **RO / Admin** (`officer@demo.local`).
+2. Click **Scan Deadlines** in the top header.
+3. Notice automated SLA calculation: overdue cases (`AICTE-2026-1003`) generate high-priority statutory warning alerts.
+4. Navigate to **Reports & Export**:
+   - Inspect Stage Pipeline Ageing and Bottleneck Intelligence diagnostics.
+   - Click **Export Regulatory Register (CSV)** to download sanitized RFC-4180 audit records.
 
 ---
 
-## 4. Reset & Safe Restore Procedure
-
-Pravaha maintains non-destructive synthetic seed scripts. If you wish to reset demo state back to pristine default data without deleting user accounts:
-
-```powershell
-# Navigate to backend directory
-cd C:\PS4_AICTE_FullStack_Scaffold\backend
-
-# Execute idempotent re-seed script
-.\.venv\Scripts\python.exe -c "from app.seed import seed_all; from app.db import SessionLocal; db = SessionLocal(); seed_all(db); db.close(); print('Pravaha DB Pristine Reset Complete!')"
-```
-
----
-
-## 5. Fallback Instructions (100% Offline AI Operation)
-
-If internet connectivity is unavailable during a hackathon evaluation, Pravaha runs flawlessly in offline mode:
-- In `backend/.env`, set `AI_PROVIDER=demo`.
-- The deterministic scrutiny engine will extract candidate fields, calculate lease durations, identify missing NOCs, and generate review questions completely offline with zero latency.
-- The UI will honestly display `Execution Mode: Deterministic Engine (Offline Fallback)`, ensuring full transparency with the evaluation jury.
+## 4. Mobile Screen Verification
+The responsive layout has been verified across key viewport widths:
+- **320px** (Ultra-compact mobile): Single column, scaled typography, no horizontal overflow.
+- **375px & 390px** (iPhone / Android standard): Collapsible hamburger drawer, stacked action buttons, responsive cards.
+- **768px** (Tablet portrait): Off-canvas mobile drawer with backdrop, 2-column KPI cards.
+- **1024px** (Tablet landscape): Clean side navigation, responsive table scroll wrapper.

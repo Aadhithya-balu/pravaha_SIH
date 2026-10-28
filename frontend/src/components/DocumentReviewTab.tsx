@@ -505,7 +505,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
       formData.append('document_type', docType);
 
       const authTok = localStorage.getItem('ps4_token') || '';
-      const base = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+      const base = import.meta.env.VITE_API_URL || '/api';
       const r = await fetch(`${base}/documents/upload`, {
         method: 'POST',
         headers: authTok ? { Authorization: `Bearer ${authTok}` } : {},

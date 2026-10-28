@@ -15,12 +15,12 @@ interface RoleMatrixTabProps {
 export const RoleMatrixTab: React.FC<RoleMatrixTabProps> = ({ onSwitchRole }) => {
   const roles = [
     {
-      title: 'Regional Officer (RO)',
+      title: 'Regional Officer / Admin (Combined Role)',
       role: 'officer',
       email: 'officer@demo.local',
       name: 'Dr. Rajesh Verma',
-      designation: 'Regional Officer (RO-North)',
-      scope: 'Northern Region Applications & Scrutiny',
+      designation: 'Regional Officer & Systems Administrator',
+      scope: 'Unified Scrutiny, Compliance Verification & IT Governance',
       permissions: [
         'Perform primary and re-scrutiny workflow transitions',
         'Return applications with mandatory deficiency justifications',

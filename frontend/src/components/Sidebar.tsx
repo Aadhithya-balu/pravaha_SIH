@@ -13,7 +13,8 @@ import {
   ShieldCheck,
   ChevronLeft,
   ChevronRight,
-  UserCheck
+  UserCheck,
+  X
 } from 'lucide-react';
 import { User } from '../types';
 
@@ -25,6 +26,8 @@ interface SidebarProps {
   onSignOut: () => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -34,7 +37,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   unreadAlertsCount,
   onSignOut,
   isCollapsed: controlledCollapsed,
-  onToggleCollapse
+  onToggleCollapse,
+  mobileOpen = false,
+  onCloseMobile
 }) => {
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const isCollapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
@@ -100,7 +105,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ];
 
   return (
-    <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
+    <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
       {/* Brand Section */}
       <div className="brand-section">
         {!isCollapsed && (
@@ -121,15 +126,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
 
+        {/* Desktop Collapse Toggle */}
         <button
           type="button"
-          className="btn-collapse-toggle"
+          className="btn-collapse-toggle desktop-only-btn"
           onClick={toggleSidebar}
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-label="Toggle sidebar collapse"
         >
           {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
+
+        {/* Mobile Close Button */}
+        {onCloseMobile && (
+          <button
+            type="button"
+            className="mobile-sidebar-close"
+            onClick={onCloseMobile}
+            aria-label="Close mobile sidebar"
+          >
+            <X size={18} />
+          </button>
+        )}
       </div>
 
       {/* Navigation Sections */}
@@ -146,7 +164,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   key={item.id}
                   className={`nav-item ${isActive ? 'active' : ''}`}
-                  onClick={() => setTab(item.id)}
+                  onClick={() => {
+                    setTab(item.id);
+                    if (onCloseMobile) onCloseMobile();
+                  }}
                   title={isCollapsed ? `${item.label}${item.badge ? ` (${item.badge})` : ''}` : undefined}
                 >
                   <Icon size={16} style={{ flexShrink: 0 }} />

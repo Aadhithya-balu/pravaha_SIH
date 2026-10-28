@@ -6,8 +6,10 @@
   "scripts": {
     "dev:all": "node scripts/dev-all.js",
     "dev:frontend": "cd frontend && npm run dev",
-    "dev:backend": "cd backend && .venv\\Scripts\\python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000",
+    "dev:backend": "cd backend && python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000",
     "build:frontend": "cd frontend && npm run build",
-    "test:backend": "cd backend && .venv\\Scripts\\python -m pytest -v tests/test_ps4.py"
+    "test:backend": "pytest backend/tests -v",
+    "test:frontend": "cd frontend && npm test",
+    "seed": "python scripts/seed_demo.py"
   }
 }

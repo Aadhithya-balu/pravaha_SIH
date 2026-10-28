@@ -366,7 +366,7 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
   // Handle Document Download
   async function handleDownloadDoc(docId: number, docName: string) {
     try {
-      const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+      const baseUrl = import.meta.env.VITE_API_URL || '/api';
       const authTok = token();
       const res = await fetch(`${baseUrl}/documents/${docId}/download`, {
         headers: authTok ? { Authorization: `Bearer ${authTok}` } : {}

@@ -7,9 +7,12 @@ import {
   Mail,
   ArrowRight,
   Info,
-  Shield
+  Shield,
+  Building2,
+  Menu,
+  X
 } from 'lucide-react';
-import { api, token, fetchApplications, fetchNotifications } from './api';
+import { api, token, fetchApplications, fetchNotifications, showToast, ToastItem } from './api';
 import { User, Application, AlertItem, DashboardMetrics } from './types';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -28,9 +31,10 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [currentTab, setTab] = useState<string>('Overview');
   const [errorMsg, setErrorMsg] = useState<string>('');
-  const [toastMsg, setToastMsg] = useState<string>('');
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState<boolean>(false);
   const [appStageFilter, setAppStageFilter] = useState<string>('ALL');
   const [appStatusFilter, setAppStatusFilter] = useState<string>('ALL');
 
@@ -38,10 +42,10 @@ export default function App() {
     setAppStageFilter(stageFilter);
     setAppStatusFilter(statusFilter);
     setTab(tab);
+    setMobileDrawerOpen(false);
   }
 
   // Core Data
-
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
@@ -86,9 +90,28 @@ export default function App() {
     function onAuthExpired() {
       handleSignOut();
       setErrorMsg('Your session has expired or the access token was invalid. Please sign in below.');
+      showToast('Session expired. Please sign in again.', 'warning');
     }
+    function onAppToast(e: any) {
+      const detail = e.detail;
+      if (!detail) return;
+      const newToast: ToastItem = {
+        id: detail.id || Math.random().toString(36).substring(2, 9),
+        message: detail.message || 'Operation completed.',
+        type: detail.type || 'success'
+      };
+      setToasts((prev) => [...prev.slice(-4), newToast]);
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== newToast.id));
+      }, 4500);
+    }
+
     window.addEventListener('auth:expired', onAuthExpired);
-    return () => window.removeEventListener('auth:expired', onAuthExpired);
+    window.addEventListener('app:toast', onAppToast);
+    return () => {
+      window.removeEventListener('auth:expired', onAuthExpired);
+      window.removeEventListener('app:toast', onAppToast);
+    };
   }, []);
 
   useEffect(() => {
@@ -110,9 +133,10 @@ export default function App() {
       });
       localStorage.setItem('ps4_token', res.access_token);
       setAuthToken(res.access_token);
-      setToastMsg(`Authenticated as ${res.name} (${res.role.toUpperCase()}).`);
+      showToast(`Authenticated as ${res.name} (${res.role.toUpperCase()}).`, 'success');
     } catch (err: any) {
       setErrorMsg(err.message || 'Authentication failed. Please check credentials.');
+      showToast(err.message || 'Authentication failed.', 'error');
     } finally {
       setIsLoggingIn(false);
     }
@@ -125,6 +149,7 @@ export default function App() {
     setMetrics(null);
     setApplications([]);
     setAlerts([]);
+    showToast('Signed out of regulatory portal.', 'info');
   }
 
   async function handleSwitchRole(targetEmail: string) {
@@ -136,12 +161,14 @@ export default function App() {
     setErrorMsg('');
     try {
       const result = await api('/escalation/run-check', { method: 'POST' });
-      setToastMsg(
-        `Regulatory deadline evaluation complete: ${result.created_alerts} alert(s) triggered, ${result.updated_records} record(s) escalated.`
+      showToast(
+        `Regulatory scan complete: ${result.created_alerts} alert(s) triggered, ${result.updated_records} record(s) escalated.`,
+        'success'
       );
       await loadData();
     } catch (err: any) {
       setErrorMsg(err.message || 'Deadline scan failed.');
+      showToast(err.message || 'Deadline scan failed.', 'error');
     } finally {
       setIsScanning(false);
     }
@@ -167,18 +194,19 @@ export default function App() {
           <div className="login-title-block">
             <h1>Pravaha Regulatory Hub</h1>
             <p>
-              Integrated Approval Workflow Automation, Compliance Monitoring, and Alert Management System (SIH26262)
+              AICTE Approval Workflow Automation, Compliance Monitoring, and AI Scrutiny System
             </p>
           </div>
 
-          {/* Prototype Demonstration Disclaimer */}
-          <div className="prototype-notice-banner">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Info size={14} style={{ flexShrink: 0 }} />
-              <span>
-                <b>SIH Evaluation Prototype:</b> Official testbed demonstration for Smart India Hackathon jury review.
-              </span>
+          {/* Phase 4: Prominent Demo Mode Indicator */}
+          <div className="sih-demo-banner">
+            <div className="sih-demo-pill">
+              <span className="sih-pulse-dot" />
+              <span>PRAVAHA | SIH26262 DEMO MODE</span>
             </div>
+            <p className="sih-demo-notice">
+              Demonstration environment. Uses synthetic institutional data. Not connected to official AICTE production systems.
+            </p>
           </div>
 
           {errorMsg && <div className="alert-banner danger">{errorMsg}</div>}
@@ -215,7 +243,7 @@ export default function App() {
             <button
               type="submit"
               className="btn-primary"
-              style={{ width: '100%', justifyContent: 'center', padding: '10px 14px' }}
+              style={{ width: '100%', justifyContent: 'center', padding: '12px 14px', minHeight: 44 }}
               disabled={isLoggingIn}
             >
               <span>{isLoggingIn ? 'Authenticating with Secure Session...' : 'Sign in to Regulatory Portal'}</span>
@@ -223,53 +251,42 @@ export default function App() {
             </button>
           </form>
 
-          {/* 1-Click Demo Evaluation Personas */}
+          {/* Phase 4: 3 Canonical Demo Account Choices */}
           <div className="demo-account-box">
             <b>Evaluation Personas (Common Password: DemoPass123!)</b>
-            <div className="demo-account-buttons">
+            <div className="demo-account-buttons-3col">
               <button
                 type="button"
-                className="btn-demo-pill"
-                onClick={() => {
-                  setLoginEmail('officer@demo.local');
-                  handleLogin(undefined, 'officer@demo.local', 'DemoPass123!');
-                }}
-              >
-                <b>1. Regional Officer</b>
-                <span>Regional Scrutiny Officer</span>
-              </button>
-              <button
-                type="button"
-                className="btn-demo-pill"
+                className="btn-demo-pill-clean"
                 onClick={() => {
                   setLoginEmail('college@demo.local');
                   handleLogin(undefined, 'college@demo.local', 'DemoPass123!');
                 }}
               >
-                <b>2. College Applicant</b>
-                <span>Sri Sairam Institute</span>
+                <div className="demo-pill-title">🏢 1. Institution Applicant</div>
+                <div className="demo-pill-desc">Prof. Anand Deshmukh · ABC College</div>
               </button>
               <button
                 type="button"
-                className="btn-demo-pill"
+                className="btn-demo-pill-clean"
                 onClick={() => {
-                  setLoginEmail('bureau@demo.local');
-                  handleLogin(undefined, 'bureau@demo.local', 'DemoPass123!');
+                  setLoginEmail('officer@demo.local');
+                  handleLogin(undefined, 'officer@demo.local', 'DemoPass123!');
                 }}
               >
-                <b>3. Bureau Head (HQ)</b>
-                <span>Director (Approval Bureau)</span>
+                <div className="demo-pill-title">⚖️ 2. Regional Officer / Admin</div>
+                <div className="demo-pill-desc">Dr. Rajesh Verma · Combined Scrutiny & Governance</div>
               </button>
               <button
                 type="button"
-                className="btn-demo-pill"
+                className="btn-demo-pill-clean"
                 onClick={() => {
                   setLoginEmail('evc@demo.local');
                   handleLogin(undefined, 'evc@demo.local', 'DemoPass123!');
                 }}
               >
-                <b>4. EVC Panel Expert</b>
-                <span>Senior Committee Inspector</span>
+                <div className="demo-pill-title">🔍 3. EVC Expert</div>
+                <div className="demo-pill-desc">Prof. S. Ramanujan · Inspection Chair</div>
               </button>
             </div>
           </div>
@@ -286,16 +303,30 @@ export default function App() {
       {/* National Tricolor Top Ribbon */}
       <div className="gov-tricolor-bar" />
 
-      {/* Persistent Left Sidebar */}
+      {/* Persistent Left Sidebar with Mobile Drawer support */}
       <Sidebar
         currentTab={currentTab}
-        setTab={setTab}
+        setTab={(t) => {
+          setTab(t);
+          setMobileDrawerOpen(false);
+        }}
         user={user}
         unreadAlertsCount={unreadCount}
         onSignOut={handleSignOut}
         isCollapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        mobileOpen={mobileDrawerOpen}
+        onCloseMobile={() => setMobileDrawerOpen(false)}
       />
+
+      {/* Mobile Drawer Backdrop */}
+      {mobileDrawerOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setMobileDrawerOpen(false)}
+          aria-hidden="true"
+        />
+      )}
 
       {/* Main Content Area */}
       <div className="main-content">
@@ -306,11 +337,38 @@ export default function App() {
           onRunEscalation={handleRunEscalation}
           onSwitchRole={handleSwitchRole}
           isScanning={isScanning}
-          onNavigateTab={setTab}
+          onNavigateTab={(t) => {
+            setTab(t);
+            setMobileDrawerOpen(false);
+          }}
           unreadCount={unreadCount}
+          onToggleMobileMenu={() => setMobileDrawerOpen(!mobileDrawerOpen)}
         />
 
-        {/* Global Feedback Banners */}
+        {/* Floating Toast Notification Stack (Phase 6) */}
+        <div className="toast-container" aria-live="polite">
+          {toasts.map((t) => (
+            <div key={t.id} className={`toast-card toast-${t.type}`}>
+              <div className="toast-icon">
+                {t.type === 'success' && <CheckCircle2 size={16} color="#16845B" />}
+                {t.type === 'error' && <AlertTriangle size={16} color="#D64545" />}
+                {t.type === 'warning' && <AlertTriangle size={16} color="#D98B16" />}
+                {t.type === 'info' && <Info size={16} color="#2864E8" />}
+              </div>
+              <span className="toast-message">{t.message}</span>
+              <button
+                type="button"
+                className="toast-close"
+                onClick={() => setToasts((prev) => prev.filter((item) => item.id !== t.id))}
+                aria-label="Close notification"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {/* Global Feedback Banner */}
         {errorMsg && (
           <div className="page-container" style={{ paddingBottom: 0 }}>
             <div className="alert-banner danger">
@@ -319,24 +377,6 @@ export default function App() {
                 style={{ background: 'transparent', border: 0, cursor: 'pointer', fontWeight: 800 }}
                 onClick={() => setErrorMsg('')}
                 aria-label="Dismiss alert"
-              >
-                ×
-              </button>
-            </div>
-          </div>
-        )}
-
-        {toastMsg && (
-          <div className="page-container" style={{ paddingBottom: 0 }}>
-            <div className="alert-banner info">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <CheckCircle2 size={16} />
-                <span>{toastMsg}</span>
-              </div>
-              <button
-                style={{ background: 'transparent', border: 0, cursor: 'pointer', fontWeight: 800 }}
-                onClick={() => setToastMsg('')}
-                aria-label="Dismiss toast"
               >
                 ×
               </button>

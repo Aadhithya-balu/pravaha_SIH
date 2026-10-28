@@ -268,7 +268,7 @@ def get_available_transitions(current_stage: str, user_role: str, application_ty
     is_new_prog = "new" in application_type.lower() or "programme" in application_type.lower()
     
     for action, rule in stage_rules.items():
-        if user_role in rule["allowed_roles"] or user_role == "admin":
+        if user_role in rule["allowed_roles"] or user_role == "admin" or (user_role == "officer" and "admin" in rule["allowed_roles"]):
             # For new programme route, note if EVC is required before direct approval
             desc = rule["description"]
             if is_new_prog and action == "SCRUTINY_PASS":
@@ -300,7 +300,7 @@ def validate_transition(
         )
         
     rule = stage_rules[action_key]
-    if user_role not in rule["allowed_roles"] and user_role != "admin":
+    if user_role not in rule["allowed_roles"] and user_role != "admin" and not (user_role == "officer" and "admin" in rule["allowed_roles"]):
         raise HTTPException(
             status_code=403,
             detail=f"Role '{user_role}' is not authorized to perform action '{action}' on stage '{current_stage}'"

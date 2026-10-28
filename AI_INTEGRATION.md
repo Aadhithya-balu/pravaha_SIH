@@ -1,5 +1,5 @@
-# PRAVAHA — AI Architecture & Integration Specification
-**Multi-Provider Explainable AI Layer & Deterministic Regulatory Safeguards**  
+# PRAVAHA — AI Architecture & Groq Integration Specification
+**High-Speed Regulatory Document Scrutiny & Explainable GovTech AI Layer**  
 *Problem Statement Code: SIH26262 | Smart India Hackathon 2024 / 2026*  
 *Module Location: `backend/app/ai_service.py`*
 
@@ -7,202 +7,93 @@
 
 ## 1. Architectural Philosophy: Explainable AI with Deterministic Governance
 
-Pravaha integrates Large Language Models (LLMs) strictly as an **explainable assistance and intelligence layer**, never as an autonomous statutory authority. 
-
-### Division of Responsibilities
+Pravaha integrates Large Language Models (LLMs) strictly as an **assistive document analysis and candidate extraction layer**, never as an autonomous statutory authority.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │                   DETERMINISTIC REGULATORY ENGINE                      │
 │                                                                        │
-│ • Statutory workflow state machine transitions (Draft -> Closed)       │
+│ • Statutory workflow state machine transitions (Draft -> Completed)    │
 │ • Legal deadline and SLA calculations (15-day scrutiny, 30-day EVC)    │
-│ • Role-Based Access Control (RBAC) & jurisdictional isolation          │
+│ • Role-Based Access Control (RBAC) & tenant isolation                  │
 │ • 30-year land lease mathematical delta verification                   │
 │ • Cryptographic SHA-256 audit hash chaining                            │
-│ • Final regulatory decision recording (Grant / Reject Approval)        │
+│ • Final regulatory decisions (Statutory Approval Order Issuance)       │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │ Evaluates & Gates
                                     ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│                      EXPLAINABLE AI ASSISTANT LAYER                    │
+│                   GROQ CLOUD AI ASSISTANT LAYER                        │
 │                                                                        │
-│ • Unstructured document text & table extraction (PDF / DOCX)           │
+│ • Document text extraction (PDF via pypdf / DOCX via python-docx)      │
 │ • Candidate field extraction with explicit provenance & evidence       │
-│ • Contextual summarization of institutional proposals                  │
-│ • Cross-document discrepancy identification & discrepancy drafting     │
-│ • Review questions generated for human scrutinizer oversight           │
+│ • Executive summary of institutional proposals                         │
+│ • Cross-document discrepancy identification & deficiency drafting      │
+│ • Targeted verification questions for human scrutinizing officer       │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 2. Supported AI Providers & Models
+## 2. Groq AI Provider Configuration
 
-Pravaha provides a unified, pluggable multi-provider abstraction supporting three major enterprise LLM providers, alongside a robust deterministic offline fallback.
+Pravaha integrates official Groq Cloud API endpoints for ultra-low latency inference, enabling real-time document analysis during live jury scrutiny.
 
-| Provider | Environment Selector (`AI_PROVIDER`) | Default Model (`AI_MODEL`) | Required Environment Key |
+### Environment Variables (`backend/.env`)
+
+| Variable | Description | Default Value | Required |
 | :--- | :--- | :--- | :--- |
-| **OpenAI** | `openai` | `gpt-4o-mini` *(or `gpt-4o`)* | `OPENAI_API_KEY` |
-| **Google Gemini** | `gemini` | `gemini-1.5-flash` *(or `gemini-1.5-pro`)* | `GEMINI_API_KEY` |
-| **Anthropic** | `anthropic` | `claude-3-5-sonnet-20241022` | `ANTHROPIC_API_KEY` |
-| **Deterministic Fallback** | `demo` *(or unset)* | `rule-engine-v1.4` | None *(Runs 100% offline)* |
+| `GROQ_API_KEY` | Official Groq Cloud API Key (format: `gsk_...`) | *None* | Yes (for live AI) |
+| `GROQ_MODEL` | Fast reasoning or large context model | `llama-3.3-70b-versatile` | Optional |
+| `AI_PROVIDER` | Provider selector (`groq`, `openai`, `gemini`, `none`) | `groq` | Optional |
+| `AI_BASE_URL` | API endpoint URL | `https://api.groq.com/openai/v1/chat/completions` | Optional |
+
+### Supported Groq Models
+- `llama-3.3-70b-versatile` (Default — comprehensive multi-page legal reasoning)
+- `llama-3.1-8b-instant` (Ultra-low latency — instant candidate prefill)
+- `mixtral-8x7b-32768` (High context capacity)
+
+> **Security Rule:** `GROQ_API_KEY` is exclusively read by the FastAPI backend (`backend/app/ai_service.py`). It is **never** bundled into Vite variables, frontend source code, browser requests, or client responses.
 
 ---
 
-## 3. Configuration & Environment Variables
+## 3. Upload-to-Extraction Processing Pipeline
 
-Provider selection is managed through standard environment variables in `backend/.env`:
-
-```env
-# ==========================================
-# PRAVAHA AI PROVIDER CONFIGURATION
-# ==========================================
-
-# Choose one: "openai", "gemini", "anthropic", or "demo"
-AI_PROVIDER=demo
-
-# Optional: override default model
-AI_MODEL=
-
-# Provider Credentials (populate the one corresponding to AI_PROVIDER)
-OPENAI_API_KEY=
-GEMINI_API_KEY=
-ANTHROPIC_API_KEY=
-
-# Maximum text context analyzed by LLM (characters)
-AI_MAX_CONTEXT_CHARS=15000
-```
-
-> **Security Rule:** Never commit API keys to version control. Keys must be provisioned via deployment secrets or local `.env` files. The backend log sanitizer strictly strips secrets and bearer tokens from application logs.
+1. **Upload & Validation:**
+   - Institution or Officer uploads a PDF, DOCX, or TXT file via `/api/documents/upload` or `/api/v1/applications/{aid}/documents`.
+   - Backend validates MIME type, file size (< 10 MB limit), and request authorization.
+2. **Text & Table Extraction:**
+   - `pypdf` extracts structured page text, page counts, and inspects for scanned/unreadable text layers.
+   - `python-docx` extracts body paragraphs and table matrix rows.
+   - If a PDF is a scanned image with non-extractable text, the engine explicitly reports:  
+     `"[Notice: PDF has non-extractable text, vector drawings, or is a scanned image]"`.
+3. **Prompt Injection Defense & Sanitization:**
+   - Input text is sanitized (`sanitize_input`): control characters stripped, prompt injection phrases (`DAN mode`, `ignore instructions`) neutralized, text bounded to 25,000 characters.
+   - Text is passed within `<UNTRUSTED_DOCUMENT_CONTENT>` boundary tags.
+4. **Groq LPU Inference:**
+   - Dispatches an asynchronous JSON-mode request to Groq Cloud endpoint.
+   - Groq returns structured candidate fields, executive summary, and potential non-compliances.
+5. **Schema Validation & Provenance Merging:**
+   - Backend validates the response schema (`summary`, `extracted_fields`, `potential_inconsistencies`, `confidence_score`).
+   - Merges Groq fields with deterministic regex candidate fields.
+   - Stamps each candidate field with its provenance (`AI_EXTRACTED_GROQ` vs `DETERMINISTIC_PARSED`), source document, verbatim evidence quote, and confidence assessment.
+6. **Persistence & UI Visualization:**
+   - Persists extraction results in `Document.ai_summary`, `Document.ai_findings`, and `Document.ai_confidence`.
+   - Returns structured payload to frontend `DocumentReviewTab` for 1-click form prefill.
 
 ---
 
-## 4. Real Invocation Pipeline
+## 4. Honest Fallback When Groq Is Unconfigured
 
-When an institution applicant or scrutinizing officer uploads a document, the document traverses the following pipeline in `backend/app/ai_service.py`:
-
-```
-Uploaded Document (.pdf / .docx)
-               │
-               ▼
-1. Text Ingestion & Extraction (pypdf / python-docx)
-               │
-               ▼
-2. Sanitization & Prompt Injection Shield
-   - Enforce 15,000 character length bounding
-   - Strip prompt manipulation markers (e.g., "Ignore previous instructions")
-   - Encapsulate document text in strictly isolated XML tags `<document_source>`
-               │
-               ▼
-3. Provider Resolution & Key Verification
-   ├─► Valid key present: Invoke live provider SDK with JSON schema enforcement
-   └─► Key missing or network error: Gracefully invoke Deterministic Rule Engine
-               │
-               ▼
-4. Output Normalization & Provenance Tagging
-   - Map extracted fields to explicit provenance states
-   - Pair candidate fields with exact verbatim source quotes
-               │
-               ▼
-5. Officer Scrutiny Dossier Delivery (UI displays exact execution mode)
-```
-
----
-
-## 5. Honest AI Labeling & Execution Modes
-
-Pravaha guarantees complete transparency regarding model execution. The frontend displays distinct badges based on backend response metadata:
-
-1. **`mode: "real_llm"`**  
-   Returned only when a live cloud LLM (OpenAI, Gemini, Anthropic) successfully processes the document text. The exact `provider` and `model` are transmitted in the response payload.
-2. **`mode: "demo_mode"` / `execution_mode: "deterministic"`**  
-   Returned when no API keys are provisioned. The system honestly discloses that deterministic rule parsing was utilized.
-3. **`mode: "demo_mode"` / `execution_mode: "deterministic_fallback"`**  
-   Returned if an active cloud provider fails (e.g. rate limit, invalid key, network timeout). Contains `mode_fallback_reason` explaining why fallback was activated without disrupting the officer's workflow.
-
----
-
-## 6. Response Schema (`AiAnalysisResult`)
-
-```json
-{
-  "mode": "real_llm",
-  "execution_mode": "real_llm",
-  "provider": "openai",
-  "model": "gpt-4o-mini",
-  "document_name": "Land_Lease_Deed_Kancheepuram.pdf",
-  "document_type": "LEASE_DEED",
-  "summary": "33-year registered land lease deed for Survey Nos. 42/1A & 42/1B, executed in favour of Sri Sairam Educational Trust.",
-  "extracted_fields": {
-    "institution_name": "Sri Sairam Institute of Advanced Technology",
-    "survey_number": "42/1A, 42/1B",
-    "district": "Kancheepuram",
-    "lease_period_years": "33",
-    "lease_commencement": "2024-04-01",
-    "lease_expiry": "2057-03-31"
-  },
-  "candidate_fields": [
-    {
-      "field_key": "survey_number",
-      "field_label": "Land Survey / Khasra Number",
-      "extracted_value": "42/1A, 42/1B",
-      "provenance": "EXTRACTED_FROM_DOCUMENT",
-      "source_document": "Land_Lease_Deed_Kancheepuram.pdf",
-      "evidence_quote": "Survey Nos. 42/1A and 42/1B situated at Kancheepuram Taluk",
-      "confidence_label": "HIGH",
-      "confidence": 0.95,
-      "target_form_field": "survey_numbers"
-    },
-    {
-      "field_key": "lease_tenure",
-      "field_label": "Lease Tenure (Years)",
-      "extracted_value": "33",
-      "provenance": "DETERMINISTIC_PARSED",
-      "source_document": "Land_Lease_Deed_Kancheepuram.pdf",
-      "evidence_quote": "for a continuous period of 33 (thirty-three) years commencing from",
-      "confidence_label": "HIGH",
-      "confidence": 0.98,
-      "target_form_field": "lease_tenure"
-    }
-  ],
-  "missing_information": [],
-  "potential_inconsistencies": [],
-  "verification_questions": [
-    "Verify whether the lessor possesses unencumbered title on Survey No 42/1A."
-  ],
-  "confidence_score": 0.94,
-  "disclaimer": "AI-assisted scrutiny findings are advisory. Statutory determination rests with the Scrutiny Committee under AICTE APH Regulations."
-}
-```
-
----
-
-## 7. Security, Prompt Injection & Privacy Controls
-
-1. **Prompt Injection Mitigation:**  
-   User-uploaded documents are treated strictly as untrusted data inputs. Text is parsed into a sandboxed data segment delimited by `<document_content>` tags, accompanied by a system directive enforcing that instructions embedded inside the document must be disregarded.
-2. **Context Bounding:**  
-   Document text is truncated to 15,000 characters to prevent denial-of-wallet / context-overflow attacks.
-3. **Data Privacy & Redaction:**  
-   Application logs do not persist document bodies or raw LLM completions. Only cryptographic metadata, token usage stats, and deterministic finding IDs are persisted.
-
----
-
-## 8. Verification Procedure: How to Test Live vs Fallback
-
-### Test A: Verified Fallback Execution (Default)
-1. Run backend without setting provider keys (`AI_PROVIDER=demo`).
-2. Navigate to Scrutiny Workbench or upload a document in an application dossier.
-3. Observe document analysis: metadata reports `mode: "demo_mode"`, `execution_mode: "deterministic"`. All regulatory findings and candidate field extractions work 100% reliably.
-
-### Test B: Live OpenAI Invocation
-1. Export environment variable in `backend/.env`:
-   ```bash
-   AI_PROVIDER=openai
-   OPENAI_API_KEY=sk-proj-...
-   AI_MODEL=gpt-4o-mini
-   ```
-2. Restart FastAPI server (`uvicorn app.main:app`).
-3. Upload a sample lease or building certificate.
-4. Verify response contains `mode: "real_llm"`, `provider: "openai"`, `model: "gpt-4o-mini"`.
+If `GROQ_API_KEY` is absent or the cloud provider experiences an HTTP/rate-limit error:
+- **No Faked AI:** The platform never fabricates LLM responses or claims live AI was used.
+- **Truthful Status:** The response explicitly returns:
+  ```json
+  {
+    "mode": "demo_mode",
+    "provider": "deterministic_local",
+    "model": "rule-engine-v1.2",
+    "mode_fallback_reason": "Live Groq AI is unconfigured (set GROQ_API_KEY in backend/.env). Document evaluated via deterministic APH regulatory rules."
+  }
+  ```
+- **Deterministic Rule Engine:** The local rules engine validates 30-year lease clauses, survey numbers, building areas, and fire safety expiry dates deterministically.

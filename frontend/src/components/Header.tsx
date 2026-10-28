@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, PlayCircle, Bell, Search, ShieldCheck, RefreshCw } from 'lucide-react';
+import { Activity, PlayCircle, Bell, Search, ShieldCheck, RefreshCw, Menu } from 'lucide-react';
 import { User } from '../types';
 
 interface HeaderProps {
@@ -11,6 +11,7 @@ interface HeaderProps {
   isScanning: boolean;
   onNavigateTab?: (tab: string) => void;
   unreadCount?: number;
+  onToggleMobileMenu?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -21,14 +22,14 @@ export const Header: React.FC<HeaderProps> = ({
   onSwitchRole,
   isScanning,
   onNavigateTab,
-  unreadCount = 0
+  unreadCount = 0,
+  onToggleMobileMenu
 }) => {
+  // Phase 4: 3 Canonical Demo Accounts (Institution, Combined RO/Admin, EVC Expert)
   const demoAccounts = [
-    { label: 'RO Officer', email: 'officer@demo.local', role: 'officer' },
-    { label: 'College', email: 'college@demo.local', role: 'institution' },
-    { label: 'Bureau HQ', email: 'bureau@demo.local', role: 'bureau' },
-    { label: 'EVC Expert', email: 'evc@demo.local', role: 'evc_expert' },
-    { label: 'Admin', email: 'admin@demo.local', role: 'admin' },
+    { label: 'Applicant', email: 'college@demo.local', role: 'institution', title: 'Institution Applicant' },
+    { label: 'RO / Admin', email: 'officer@demo.local', role: 'officer', title: 'Regional Officer & Administrator' },
+    { label: 'EVC Expert', email: 'evc@demo.local', role: 'evc_expert', title: 'Expert Visit Committee Inspector' },
   ];
 
   const pageSubtitles: Record<string, string> = {
@@ -57,8 +58,20 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="topbar">
-      {/* Left: Official GovTech Header & Breadcrumb */}
+      {/* Left: Mobile Menu Toggle & Official GovTech Header & Breadcrumb */}
       <div className="topbar-left">
+        {onToggleMobileMenu && (
+          <button
+            type="button"
+            className="mobile-hamburger-btn"
+            onClick={onToggleMobileMenu}
+            aria-label="Open mobile navigation"
+            title="Open navigation menu"
+          >
+            <Menu size={20} />
+          </button>
+        )}
+
         <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, color: 'var(--text-muted)' }}>
           <button
             type="button"
@@ -74,7 +87,14 @@ export const Header: React.FC<HeaderProps> = ({
           <span>/</span>
           <span style={{ color: 'var(--color-navy)', fontWeight: 700 }}>{currentTab}</span>
         </nav>
-        <h2 style={{ margin: '3px 0 0', fontSize: 18, color: 'var(--color-navy)', fontWeight: 800 }}>{currentTab}</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2 }}>
+          <h2 style={{ margin: 0, fontSize: 18, color: 'var(--color-navy)', fontWeight: 800 }}>{currentTab}</h2>
+          {/* Phase 4: Restrained Header Demo Badge */}
+          <div className="topbar-demo-pill" title="Demonstration environment. Uses synthetic institutional data. Not connected to official AICTE production systems.">
+            <span className="demo-pulse-dot" />
+            <span>PRAVAHA | SIH26262 DEMO MODE</span>
+          </div>
+        </div>
         <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
           {pageSubtitles[currentTab] || `AICTE Regulatory Console · ${user?.designation || user?.role}`}
         </span>
@@ -82,7 +102,7 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right Actions */}
       <div className="topbar-actions">
-        {/* Quick Demo Role Switcher for SIH Evaluators */}
+        {/* Quick Demo Role Switcher for SIH Evaluators (Phase 4) */}
         <div className="quick-role-bar" title="Switch persona to evaluate role-based permissions">
           <span className="quick-role-label">
             Demo Persona:
@@ -95,6 +115,7 @@ export const Header: React.FC<HeaderProps> = ({
                 type="button"
                 className={`role-pill ${isCurrent ? 'active' : ''}`}
                 onClick={() => onSwitchRole(acc.email)}
+                title={acc.title}
               >
                 {acc.label}
               </button>
@@ -112,7 +133,7 @@ export const Header: React.FC<HeaderProps> = ({
             title="Scan active case deadlines and auto-trigger SLA escalation alerts"
           >
             <PlayCircle size={14} color="#D97706" />
-            <span>{isScanning ? 'Evaluating SLA...' : 'Scan Deadlines'}</span>
+            <span>{isScanning ? 'Evaluating...' : 'Scan Deadlines'}</span>
           </button>
         )}
 
