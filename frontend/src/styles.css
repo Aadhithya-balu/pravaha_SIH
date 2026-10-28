@@ -1167,6 +1167,9 @@ a:hover {
   justify-content: center;
   z-index: 100;
   padding: 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 .modal-dialog {
@@ -1179,6 +1182,82 @@ a:hover {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  margin: auto;
+  box-sizing: border-box;
+}
+
+/* Dossier Modal - Full screen-safe fit with zero horizontal overflow */
+.application-dossier-modal {
+  width: min(1200px, 96vw) !important;
+  max-width: 96vw !important;
+  max-height: 94vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.modal-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.modal-tabs-bar {
+  display: flex;
+  border-bottom: 1px solid var(--border-subtle);
+  background: #F8FAFC;
+  padding: 0 16px;
+  gap: 4px;
+  overflow-x: auto;
+  white-space: nowrap;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  scrollbar-width: thin;
+}
+
+.modal-tabs-bar::-webkit-scrollbar {
+  height: 4px;
+}
+
+.modal-tabs-bar::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 4px;
+}
+
+.modal-sidebar-right {
+  background: #FAFAFA;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+  width: 280px;
+  max-width: 280px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 960px) {
+  .modal-workspace-grid {
+    grid-template-columns: 1fr !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+
+  .modal-sidebar-right {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-top: 1px solid var(--border-subtle);
+  }
 }
 
 .modal-header {
@@ -2577,6 +2656,12 @@ html, body, #root, .shell {
     margin: 12px auto !important;
     padding: 16px !important;
     max-height: 92vh !important;
+  }
+
+  .application-dossier-modal {
+    padding: 0 !important;
+    width: 96vw !important;
+    max-width: 96vw !important;
   }
 }
 

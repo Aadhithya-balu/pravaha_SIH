@@ -593,14 +593,16 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
   return (
     <div className="modal-backdrop">
       <div
-        className="modal-dialog"
+        className="modal-dialog application-dossier-modal"
         style={{
-          width: 'min(1240px, 98%)',
+          width: 'min(1200px, 96vw)',
+          maxWidth: '96vw',
           maxHeight: '94vh',
           display: 'flex',
           flexDirection: 'column',
           padding: 0,
-          overflow: 'hidden'
+          overflow: 'hidden',
+          boxSizing: 'border-box'
         }}
       >
         {/* National Tricolor Top Stripe */}
@@ -610,17 +612,22 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
         <div
           className="modal-header"
           style={{
-            padding: '14px 20px',
+            padding: '12px 18px',
             background: 'var(--color-navy)',
             color: '#FFFFFF',
-            borderBottom: '1px solid rgba(255,255,255,0.1)'
+            borderBottom: '1px solid rgba(255,255,255,0.1)',
+            boxSizing: 'border-box',
+            width: '100%',
+            minWidth: 0,
+            overflow: 'hidden'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', minWidth: 0, flex: 1 }}>
             <div
               style={{
                 width: 36,
                 height: 36,
+                flexShrink: 0,
                 borderRadius: 'var(--radius-sm)',
                 background: 'rgba(255,255,255,0.15)',
                 display: 'flex',
@@ -632,21 +639,24 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
               <ShieldCheck size={20} />
             </div>
 
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
                 <span
                   style={{
                     fontFamily: 'JetBrains Mono',
                     fontWeight: 700,
                     fontSize: 15,
                     color: '#93C5FD',
-                    letterSpacing: '0.02em'
+                    letterSpacing: '0.02em',
+                    flexShrink: 0
                   }}
                 >
                   {details.reference}
                 </span>
-                <span style={{ color: 'rgba(255,255,255,0.4)' }}>·</span>
-                <b style={{ fontSize: 14, color: '#FFFFFF' }}>{details.institution_name}</b>
+                <span style={{ color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>·</span>
+                <b style={{ fontSize: 14, color: '#FFFFFF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '340px' }} title={details.institution_name}>
+                  {details.institution_name}
+                </b>
                 <span
                   className="badge badge-stage"
                   style={{
@@ -705,15 +715,18 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
               background: '#F0FDF4',
               borderBottom: '1px solid #BBF7D0',
               borderLeft: '5px solid #16A34A',
-              padding: '10px 20px',
+              padding: '10px 18px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
               gap: 12,
-              flexWrap: 'wrap'
+              flexWrap: 'wrap',
+              boxSizing: 'border-box',
+              width: '100%',
+              minWidth: 0
             }}
           >
-            <div style={{ flex: 1, minWidth: 260 }}>
+            <div style={{ flex: 1, minWidth: 220 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
                 <span
                   style={{
@@ -801,18 +814,34 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
 
         {/* Main Workspace 2-Column Split */}
         <div
+          className="modal-workspace-grid"
           style={{
             display: 'grid',
-            gridTemplateColumns: '1fr 320px',
+            gridTemplateColumns: 'minmax(0, 1fr) 280px',
             flex: 1,
-            overflowY: 'hidden',
-            minHeight: 0
+            overflow: 'hidden',
+            minHeight: 0,
+            minWidth: 0,
+            width: '100%',
+            boxSizing: 'border-box'
           }}
         >
           {/* Left Column: Navigation Tabs & Tab Content Panels */}
-          <div style={{ display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border-subtle)', minHeight: 0 }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              borderRight: '1px solid var(--border-subtle)',
+              minHeight: 0,
+              minWidth: 0,
+              width: '100%',
+              overflow: 'hidden',
+              boxSizing: 'border-box'
+            }}
+          >
             {/* Tab Navigation Bar */}
             <div
+              className="modal-tabs-bar"
               style={{
                 display: 'flex',
                 borderBottom: '1px solid var(--border-subtle)',
@@ -820,7 +849,11 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                 padding: '0 16px',
                 gap: 4,
                 overflowX: 'auto',
-                whiteSpace: 'nowrap'
+                whiteSpace: 'nowrap',
+                minWidth: 0,
+                width: '100%',
+                boxSizing: 'border-box',
+                scrollbarWidth: 'thin'
               }}
             >
               <button
@@ -990,7 +1023,16 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
             </div>
 
             {/* Tab Body Container */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '18px 22px' }}>
+            <div
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                padding: '16px 20px',
+                minWidth: 0,
+                boxSizing: 'border-box'
+              }}
+            >
               {/* TAB 1: OVERVIEW & INSTITUTION DETAILS */}
               {activeTab === 'overview' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1014,7 +1056,7 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                       )}
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, fontSize: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, fontSize: 12 }}>
                       <div>
                         <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
                           Institution Name
@@ -1516,7 +1558,7 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                         gap: 12
                       }}
                     >
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, fontSize: 12 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, fontSize: 12 }}>
                         <div>
                           <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
                             Inspection Mode
@@ -1732,7 +1774,7 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                               borderRadius: 'var(--radius-sm)',
                               border: `1px solid ${isChecked ? '#C4B5FD' : 'var(--border-subtle)'}`,
                               display: 'grid',
-                              gridTemplateColumns: 'auto 1.2fr 1fr',
+                              gridTemplateColumns: 'auto minmax(0, 1.2fr) minmax(0, 1fr)',
                               gap: 12,
                               alignItems: 'center'
                             }}
@@ -1870,13 +1912,19 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
 
           {/* Right Column: Workflow Stage Stepper & Officer Action Hub */}
           <div
+            className="modal-sidebar-right"
             style={{
               background: '#FAFAFA',
-              padding: '18px',
+              padding: '16px',
               display: 'flex',
               flexDirection: 'column',
               gap: 16,
-              overflowY: 'auto'
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              minWidth: 0,
+              width: '280px',
+              maxWidth: '280px',
+              boxSizing: 'border-box'
             }}
           >
             {/* Vertical Workflow Stage Stepper */}
@@ -1960,11 +2008,25 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                           <button
                             key={t.action}
                             className="btn-secondary"
-                            style={{ borderColor: '#EA580C', color: '#EA580C', width: '100%', justifyContent: 'center' }}
+                            style={{
+                              borderColor: '#EA580C',
+                              color: '#EA580C',
+                              width: '100%',
+                              whiteSpace: 'normal',
+                              textAlign: 'center',
+                              wordBreak: 'break-word',
+                              lineHeight: 1.35,
+                              padding: '8px 10px',
+                              height: 'auto',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6
+                            }}
                             disabled={isActionLoading}
                             onClick={() => setIsReturnOpen(true)}
                           >
-                            <RotateCcw size={13} />
+                            <RotateCcw size={13} style={{ flexShrink: 0 }} />
                             <span>Return for Clarification</span>
                           </button>
                         );
@@ -1974,12 +2036,24 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                         <button
                           key={t.action}
                           className="btn-primary"
-                          style={{ width: '100%', justifyContent: 'center' }}
+                          style={{
+                            width: '100%',
+                            whiteSpace: 'normal',
+                            textAlign: 'center',
+                            wordBreak: 'break-word',
+                            lineHeight: 1.35,
+                            padding: '8px 10px',
+                            height: 'auto',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6
+                          }}
                           disabled={isActionLoading}
                           onClick={() => handleTransition(t.action, `Advanced via ${t.action}`)}
                         >
-                          <ArrowRight size={13} />
-                          <span>{t.description}</span>
+                          <ArrowRight size={13} style={{ flexShrink: 0 }} />
+                          <span style={{ flex: 1, textAlign: 'center' }}>{t.description}</span>
                         </button>
                       );
                     })
@@ -1995,7 +2069,16 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                         style={{
                           marginTop: 6,
                           width: '100%',
+                          whiteSpace: 'normal',
+                          textAlign: 'center',
+                          wordBreak: 'break-word',
+                          lineHeight: 1.35,
+                          padding: '8px 10px',
+                          height: 'auto',
+                          display: 'flex',
+                          alignItems: 'center',
                           justifyContent: 'center',
+                          gap: 6,
                           borderColor: 'var(--color-navy)',
                           color: 'var(--color-navy)',
                           fontWeight: 700
@@ -2031,14 +2114,20 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
             padding: '12px 20px',
             background: '#FFFFFF',
             borderTop: '1px solid var(--border-subtle)',
-            justifyContent: 'space-between'
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            boxSizing: 'border-box',
+            width: '100%',
+            minWidth: 0
           }}
         >
-          <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             Application Dossier: <b>{details.reference}</b> · Case ID #{details.id}
           </div>
 
-          <button className="btn-secondary" onClick={handleAttemptClose}>
+          <button className="btn-secondary" onClick={handleAttemptClose} style={{ flexShrink: 0 }}>
             Close Case Workspace
           </button>
         </div>
