@@ -7,19 +7,16 @@ import {
   AlertTriangle,
   CheckCircle2,
   Calendar,
-  Building2,
   Shield,
-  ShieldCheck,
   RefreshCw,
   ArrowRight,
   Eye,
   Search,
-  Layers,
   ChevronRight,
   FileCheck2,
-  ExternalLink,
+  Bell,
   SlidersHorizontal,
-  Compass
+  Layers
 } from 'lucide-react';
 import { DashboardMetrics, User, Application, AlertItem, BottleneckAnalytics, AuditEvent } from '../types';
 import { fetchBottleneckAnalytics, fetchRecentAuditEvents } from '../api';
@@ -132,7 +129,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     return counts;
   }, [filteredApps]);
 
-  // 1. Four Core Decision Metrics
+  // 1. Four Core Decision Metrics (Derived from real backend data)
   const totalAppsCount = filteredApps.length;
   const pendingScrutinyCount = (stageCounts['SCRUTINY'] || 0) + (stageCounts['RE_SCRUTINY'] || 0);
   const awaitingCorrectionsCount = stageCounts['RETURNED_FOR_CLARIFICATION'] || 0;
@@ -142,15 +139,15 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     (stageCounts['EVC_PENDING'] || 0) +
     (stageCounts['EVC_SCHEDULED'] || 0);
 
-  // 2. Principal Workflow Stages (Clean 7-Step Progression)
+  // 2. Principal Workflow Stages (Accurate 7-Step Progression)
   const WORKFLOW_STEPS = [
     {
       id: 'SUBMITTED',
       stepNum: 1,
-      label: 'Submitted',
+      label: 'Submission',
       count: stageCounts['SUBMITTED'] || 0,
       stageFilter: 'SUBMITTED',
-      color: '#2864E8'
+      color: '#2563EB'
     },
     {
       id: 'SCRUTINY',
@@ -158,7 +155,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       label: 'Scrutiny',
       count: stageCounts['SCRUTINY'] || 0,
       stageFilter: 'SCRUTINY',
-      color: '#2864E8'
+      color: '#2563EB'
     },
     {
       id: 'RETURNED_FOR_CLARIFICATION',
@@ -174,7 +171,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       label: 'Re-Scrutiny',
       count: stageCounts['RE_SCRUTINY'] || 0,
       stageFilter: 'RE_SCRUTINY',
-      color: '#2864E8'
+      color: '#2563EB'
     },
     {
       id: 'EVC',
@@ -195,30 +192,34 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     {
       id: 'DECISION',
       stepNum: 7,
-      label: 'Decision',
+      label: 'Final Decision',
       count: stageCounts['COMPLETED'] || 0,
       stageFilter: 'COMPLETED',
       color: '#16845B'
     }
   ];
 
-  // 3. Needs Attention (Top 3 High-Priority Categories)
-  const today = new Date();
-  const overdueApps = filteredApps.filter((a) => {
-    if (a.status === 'COMPLETED' || a.status === 'REJECTED') return false;
-    if (a.status === 'OVERDUE') return true;
-    if (a.due_date) {
-      return new Date(a.due_date) < today;
-    }
-    return false;
-  });
+  // 3. Needs Attention (Actionable categories derived from real data)
+  const today = useMemo(() => new Date(), []);
+  const overdueApps = useMemo(() => {
+    return filteredApps.filter((a) => {
+      if (a.status === 'COMPLETED' || a.status === 'REJECTED') return false;
+      if (a.status === 'OVERDUE') return true;
+      if (a.due_date) {
+        return new Date(a.due_date) < today;
+      }
+      return false;
+    });
+  }, [filteredApps, today]);
 
-  const dueSoonApps = filteredApps.filter((a) => {
-    if (!a.due_date || a.status === 'COMPLETED' || a.status === 'REJECTED') return false;
-    const due = new Date(a.due_date);
-    const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    return diffDays >= 0 && diffDays <= 7;
-  });
+  const dueSoonApps = useMemo(() => {
+    return filteredApps.filter((a) => {
+      if (!a.due_date || a.status === 'COMPLETED' || a.status === 'REJECTED') return false;
+      const due = new Date(a.due_date);
+      const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      return diffDays >= 0 && diffDays <= 7;
+    });
+  }, [filteredApps, today]);
 
   const attentionCategories = [
     {
@@ -247,18 +248,27 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       badgeBg: '#FEF7EC',
       badgeText: '#D98B16',
       onClick: () => handleFilterNav('Applications', 'RETURNED_FOR_CLARIFICATION', 'RETURNED')
+    },
+    {
+      id: 'officer_review',
+      label: 'Applications requiring officer review',
+      count: pendingScrutinyCount,
+      color: '#2563EB',
+      badgeBg: '#EFF6FF',
+      badgeText: '#2563EB',
+      onClick: () => handleFilterNav('Applications', 'SCRUTINY', 'ALL')
     }
   ];
 
   const totalNeedsAttention = attentionCategories.reduce((acc, cat) => acc + cat.count, 0);
 
-  // 4. Priority Queue (Top 6 rows sorted by urgency)
+  // 4. Priority Applications Queue (Top 5–6 rows sorted by real urgency)
   const priorityQueue = useMemo(() => {
     const list = [...filteredApps];
     return list
       .sort((a, b) => {
-        const aOverdue = a.status === 'OVERDUE' || (a.due_date && new Date(a.due_date) < today);
-        const bOverdue = b.status === 'OVERDUE' || (b.due_date && new Date(b.due_date) < today);
+        const aOverdue = a.status === 'OVERDUE' || (a.due_date && new Date(a.due_date) < today && a.status !== 'COMPLETED');
+        const bOverdue = b.status === 'OVERDUE' || (b.due_date && new Date(b.due_date) < today && b.status !== 'COMPLETED');
         if (aOverdue && !bOverdue) return -1;
         if (!aOverdue && bOverdue) return 1;
 
@@ -295,7 +305,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     return 'National HQ — All Jurisdictions';
   }, [user]);
 
-  // Workload distribution breakdown (by Type or by Region)
+  // Workload distribution breakdown by Application Type
   const typeBreakdown = useMemo(() => {
     const counts: Record<string, number> = {};
     filteredApps.forEach((a) => {
@@ -305,26 +315,30 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     return counts;
   }, [filteredApps]);
 
+  const unreadAlertsCount = useMemo(() => {
+    return alerts.filter((a) => !a.is_read).length;
+  }, [alerts]);
+
   // Skeleton state
   if (!metrics) {
     return (
       <div className="page-container" style={{ gap: 20 }}>
         <div style={{
           background: '#FFFFFF',
-          border: '1px solid #E6EBF2',
-          borderRadius: 12,
-          padding: '24px',
+          border: '1px solid #E2E8F0',
+          borderRadius: 10,
+          padding: '20px 24px',
           display: 'flex',
           flexDirection: 'column',
           gap: 12
         }}>
-          <div style={{ height: 16, width: 140, background: '#E6EBF2', borderRadius: 4 }} />
-          <div style={{ height: 28, width: 260, background: '#F1F5F9', borderRadius: 4 }} />
-          <div style={{ height: 14, width: 380, background: '#F8FAFC', borderRadius: 4 }} />
+          <div style={{ height: 16, width: 140, background: '#E2E8F0', borderRadius: 4 }} />
+          <div style={{ height: 26, width: 260, background: '#F1F5F9', borderRadius: 4 }} />
+          <div style={{ height: 14, width: 340, background: '#F8FAFC', borderRadius: 4 }} />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} style={{ height: 110, background: '#FFFFFF', border: '1px solid #E6EBF2', borderRadius: 12 }} />
+            <div key={i} style={{ height: 110, background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 10 }} />
           ))}
         </div>
       </div>
@@ -332,42 +346,42 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   }
 
   return (
-    <div className="page-container" style={{ gap: 20, maxWidth: 1440, margin: '0 auto', width: '100%' }}>
+    <div className="page-container" style={{ gap: 20, maxWidth: 1440, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       {/* ====================================================================
-          1. HEADER (Compact, White, Refined Breadcrumb & Controls)
+          1. HEADER (Compact, White, Well-Aligned Government-Grade Navigation)
           ==================================================================== */}
       <div style={{
         background: '#FFFFFF',
-        border: '1px solid #E6EBF2',
-        borderRadius: 12,
+        border: '1px solid #E2E8F0',
+        borderRadius: 10,
         padding: '16px 22px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         flexWrap: 'wrap',
-        gap: 16,
-        boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)'
+        gap: 14,
+        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)'
       }}>
         <div>
           {/* Breadcrumb */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#69788C', marginBottom: 2 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748B', marginBottom: 2 }}>
             <span>Operations</span>
             <span style={{ color: '#CBD5E1' }}>/</span>
-            <span style={{ color: '#16324F', fontWeight: 600 }}>Dashboard</span>
+            <span style={{ color: '#172B4D', fontWeight: 600 }}>Dashboard</span>
           </div>
 
           {/* Heading & Subtitle */}
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
             <h1 style={{
               fontSize: 24,
-              fontWeight: 700,
+              fontWeight: 600,
               margin: 0,
               color: '#172B4D',
               letterSpacing: '-0.015em'
             }}>
               Regulatory Operations
             </h1>
-            <span style={{ fontSize: 13, color: '#69788C' }}>
+            <span style={{ fontSize: 13, color: '#64748B' }}>
               Application scrutiny and approvals
             </span>
           </div>
@@ -376,31 +390,30 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         {/* Right Header Controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {/* Academic Year Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <select
-              aria-label="Filter by Academic Year"
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: '#172B4D',
-                background: '#F7F9FC',
-                border: '1px solid #E6EBF2',
-                borderRadius: 8,
-                padding: '7px 12px',
-                cursor: 'pointer',
-                outline: 'none'
-              }}
-            >
-              <option value="ALL">All Academic Years</option>
-              {availableYears.map((yr) => (
-                <option key={yr} value={yr}>
-                  AY {yr}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            aria-label="Filter by Academic Year"
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(e.target.value)}
+            style={{
+              fontSize: 12.5,
+              fontWeight: 600,
+              color: '#172B4D',
+              background: '#F8FAFC',
+              border: '1px solid #E2E8F0',
+              borderRadius: 6,
+              padding: '6px 12px',
+              cursor: 'pointer',
+              outline: 'none',
+              height: 34
+            }}
+          >
+            <option value="ALL">All Academic Years</option>
+            {availableYears.map((yr) => (
+              <option key={yr} value={yr}>
+                AY {yr}
+              </option>
+            ))}
+          </select>
 
           {/* Jurisdiction indicator */}
           <div
@@ -410,17 +423,55 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               alignItems: 'center',
               gap: 6,
               padding: '6px 12px',
-              borderRadius: 8,
-              background: '#EAF1FF',
-              border: '1px solid #D6E4FF',
+              borderRadius: 6,
+              background: '#EFF6FF',
+              border: '1px solid #DBEAFE',
               fontSize: 12,
               fontWeight: 600,
-              color: '#2864E8'
+              color: '#2563EB',
+              height: 34,
+              boxSizing: 'border-box'
             }}
           >
-            <Shield size={13} color="#2864E8" />
+            <Shield size={13} color="#2563EB" />
             <span>{jurisdictionLabel}</span>
           </div>
+
+          {/* Notification Indicator */}
+          <button
+            onClick={() => onNavigate('Alerts')}
+            title={`View notifications (${unreadAlertsCount} unread alerts)`}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 12px',
+              borderRadius: 6,
+              background: unreadAlertsCount > 0 ? '#FEF7EC' : '#F8FAFC',
+              border: `1px solid ${unreadAlertsCount > 0 ? '#FDE68A' : '#E2E8F0'}`,
+              color: unreadAlertsCount > 0 ? '#B45309' : '#64748B',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              height: 34,
+              boxSizing: 'border-box'
+            }}
+          >
+            <Bell size={13} color={unreadAlertsCount > 0 ? '#B45309' : '#64748B'} />
+            <span>Alerts</span>
+            {unreadAlertsCount > 0 && (
+              <span style={{
+                background: '#B45309',
+                color: '#FFFFFF',
+                fontSize: 10,
+                fontWeight: 700,
+                padding: '1px 6px',
+                borderRadius: 999
+              }}>
+                {unreadAlertsCount}
+              </span>
+            )}
+          </button>
 
           {/* Refresh action */}
           <button
@@ -430,15 +481,16 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               display: 'inline-flex',
               alignItems: 'center',
               gap: 6,
-              padding: '7px 12px',
-              borderRadius: 8,
+              padding: '6px 12px',
+              borderRadius: 6,
               background: '#FFFFFF',
-              border: '1px solid #E6EBF2',
+              border: '1px solid #E2E8F0',
               color: '#172B4D',
               fontSize: 12,
               fontWeight: 600,
               cursor: isRefreshing ? 'wait' : 'pointer',
-              transition: 'all 0.15s ease'
+              height: 34,
+              boxSizing: 'border-box'
             }}
             title="Refresh live metrics from database"
           >
@@ -447,14 +499,14 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </button>
 
           {/* Last updated timestamp */}
-          <span style={{ fontSize: 11.5, color: '#69788C', whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 11.5, color: '#64748B', whiteSpace: 'nowrap' }}>
             Updated {lastRefreshed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
         </div>
       </div>
 
       {/* ====================================================================
-          2. FOUR PREMIUM KPI CARDS (Uncluttered, High Breathing Room)
+          2. EXACTLY FOUR PRIMARY KPI CARDS (Restrained, Equal Height, Clear Baselines)
           ==================================================================== */}
       <div style={{
         display: 'grid',
@@ -467,31 +519,31 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           title="Click to view all applications in register"
           style={{
             background: '#FFFFFF',
-            border: '1px solid #E6EBF2',
-            borderRadius: 12,
+            border: '1px solid #E2E8F0',
+            borderRadius: 10,
             padding: '18px 20px',
             cursor: 'pointer',
-            boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
             height: 116,
-            transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s'
+            boxSizing: 'border-box'
           }}
           className="kpi-card-hover"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#69788C' }}>Total Applications</span>
-            <div style={{ width: 34, height: 34, borderRadius: 8, background: '#EAF1FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <FileText size={17} color="#2864E8" />
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#64748B' }}>Total Applications</span>
+            <div style={{ width: 34, height: 34, borderRadius: 8, background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <FileText size={17} color="#2563EB" />
             </div>
           </div>
-          <div style={{ fontSize: 32, fontWeight: 700, color: '#172B4D', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+          <div style={{ fontSize: 30, fontWeight: 700, color: '#172B4D', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
             {totalAppsCount}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, color: '#69788C' }}>
-            <span>Registered dossiers</span>
-            <span style={{ color: '#2864E8', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: '#64748B' }}>
+            <span>All registered dossiers</span>
+            <span style={{ color: '#2563EB', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
               View register <ChevronRight size={12} />
             </span>
           </div>
@@ -503,31 +555,31 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           title="Click to filter applications in Scrutiny or Re-scrutiny"
           style={{
             background: '#FFFFFF',
-            border: '1px solid #E6EBF2',
-            borderRadius: 12,
+            border: '1px solid #E2E8F0',
+            borderRadius: 10,
             padding: '18px 20px',
             cursor: 'pointer',
-            boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
             height: 116,
-            transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s'
+            boxSizing: 'border-box'
           }}
           className="kpi-card-hover"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#69788C' }}>Pending Scrutiny</span>
-            <div style={{ width: 34, height: 34, borderRadius: 8, background: '#EEF2F6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Search size={17} color="#16324F" />
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#64748B' }}>Pending Scrutiny</span>
+            <div style={{ width: 34, height: 34, borderRadius: 8, background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Search size={17} color="#172B4D" />
             </div>
           </div>
-          <div style={{ fontSize: 32, fontWeight: 700, color: '#172B4D', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+          <div style={{ fontSize: 30, fontWeight: 700, color: '#172B4D', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
             {pendingScrutinyCount}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, color: '#69788C' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: '#64748B' }}>
             <span>{stageCounts['SCRUTINY'] || 0} primary · {stageCounts['RE_SCRUTINY'] || 0} re-scrutiny</span>
-            <span style={{ color: '#16324F', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+            <span style={{ color: '#172B4D', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
               Scrutiny queue <ChevronRight size={12} />
             </span>
           </div>
@@ -539,27 +591,27 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           title="Click to filter cases awaiting institutional clarification"
           style={{
             background: '#FFFFFF',
-            border: '1px solid #E6EBF2',
-            borderRadius: 12,
+            border: '1px solid #E2E8F0',
+            borderRadius: 10,
             padding: '18px 20px',
             cursor: 'pointer',
-            boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
             height: 116,
-            transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s'
+            boxSizing: 'border-box'
           }}
           className="kpi-card-hover"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#69788C' }}>Awaiting Corrections</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#64748B' }}>Awaiting Corrections</span>
             <div style={{ width: 34, height: 34, borderRadius: 8, background: '#FEF7EC', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <RotateCcw size={17} color="#D98B16" />
             </div>
           </div>
           <div style={{
-            fontSize: 32,
+            fontSize: 30,
             fontWeight: 700,
             color: awaitingCorrectionsCount > 0 ? '#D98B16' : '#172B4D',
             fontVariantNumeric: 'tabular-nums',
@@ -567,7 +619,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           }}>
             {awaitingCorrectionsCount}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, color: '#69788C' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: '#64748B' }}>
             <span>Deficiency notices issued</span>
             <span style={{ color: '#D98B16', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
               Review list <ChevronRight size={12} />
@@ -581,31 +633,31 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           title="Click to filter applications ready for compliance verification and approval"
           style={{
             background: '#FFFFFF',
-            border: '1px solid #E6EBF2',
-            borderRadius: 12,
+            border: '1px solid #E2E8F0',
+            borderRadius: 10,
             padding: '18px 20px',
             cursor: 'pointer',
-            boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
             height: 116,
-            transition: 'border-color 0.15s, box-shadow 0.15s, transform 0.15s'
+            boxSizing: 'border-box'
           }}
           className="kpi-card-hover"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#69788C' }}>Pending Decisions</span>
-            <div style={{ width: 34, height: 34, borderRadius: 8, background: '#E6F7F5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <CheckSquare size={17} color="#0F9D91" />
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#64748B' }}>Pending Decisions</span>
+            <div style={{ width: 34, height: 34, borderRadius: 8, background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CheckSquare size={17} color="#16845B" />
             </div>
           </div>
-          <div style={{ fontSize: 32, fontWeight: 700, color: '#172B4D', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+          <div style={{ fontSize: 30, fontWeight: 700, color: '#172B4D', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
             {pendingDecisionsCount}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, color: '#69788C' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: '#64748B' }}>
             <span>Compliance & final orders</span>
-            <span style={{ color: '#0F9D91', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+            <span style={{ color: '#16845B', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
               Decisions <ChevronRight size={12} />
             </span>
           </div>
@@ -613,20 +665,20 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       </div>
 
       {/* ====================================================================
-          3. WORKFLOW PROGRESSION & NEEDS ATTENTION (~65% / 35% Horizontal Split)
+          3. WORKFLOW PROGRESSION & NEEDS ATTENTION (~62% / 38% Horizontal Split)
           ==================================================================== */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1.8fr) minmax(0, 1fr)',
+        gridTemplateColumns: 'minmax(0, 1.65fr) minmax(0, 1fr)',
         gap: 20
       }} className="main-operational-split">
-        {/* Left: Compact Visual Workflow Overview */}
+        {/* Left: Application Workflow (Accurate 7-Step Progression) */}
         <div style={{
           background: '#FFFFFF',
-          border: '1px solid #E6EBF2',
-          borderRadius: 12,
+          border: '1px solid #E2E8F0',
+          borderRadius: 10,
           padding: '20px 24px',
-          boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between'
@@ -634,10 +686,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
               <div>
-                <h2 style={{ fontSize: 15, fontWeight: 600, color: '#172B4D', margin: 0 }}>
+                <h2 style={{ fontSize: 16, fontWeight: 600, color: '#172B4D', margin: 0 }}>
                   Application Workflow
                 </h2>
-                <span style={{ fontSize: 12, color: '#69788C' }}>
+                <span style={{ fontSize: 12.5, color: '#64748B' }}>
                   Statutory progression track from submission to final order
                 </span>
               </div>
@@ -646,104 +698,110 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 fontWeight: 600,
                 padding: '3px 9px',
                 borderRadius: 6,
-                background: '#F7F9FC',
-                color: '#69788C',
-                border: '1px solid #E6EBF2'
+                background: '#F8FAFC',
+                color: '#64748B',
+                border: '1px solid #E2E8F0'
               }}>
-                {totalAppsCount} dossiers active
+                {totalAppsCount} active dossiers
               </span>
             </div>
 
-            {/* Horizontal Step Progression Track */}
+            {/* Horizontal Stepper */}
             <div style={{
-              position: 'relative',
-              display: 'flex',
-              alignItems: 'flex-start',
-              justifyContent: 'space-between',
-              padding: '10px 0 16px'
+              overflowX: 'auto',
+              paddingBottom: 4
             }}>
-              {/* Subtle Horizontal Connector Bar behind step nodes */}
               <div style={{
-                position: 'absolute',
-                top: 25,
-                left: 20,
-                right: 20,
-                height: 2,
-                background: '#E6EBF2',
-                zIndex: 1
-              }} />
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                padding: '10px 0 16px',
+                minWidth: 460
+              }}>
+                {/* Horizontal Connector Line behind nodes */}
+                <div style={{
+                  position: 'absolute',
+                  top: 25,
+                  left: 20,
+                  right: 20,
+                  height: 2,
+                  background: '#E2E8F0',
+                  zIndex: 1
+                }} />
 
-              {WORKFLOW_STEPS.map((step) => {
-                const isActive = step.count > 0;
-                return (
-                  <div
-                    key={step.id}
-                    onClick={() => handleFilterNav('Applications', step.stageFilter, 'ALL')}
-                    title={`Filter: ${step.label} (${step.count} dossiers)`}
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: 6,
-                      position: 'relative',
-                      zIndex: 2,
-                      cursor: 'pointer',
-                      flex: 1
-                    }}
-                  >
-                    {/* Circle Node */}
-                    <div style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: '50%',
-                      background: isActive ? step.color : '#FFFFFF',
-                      border: `2px solid ${isActive ? step.color : '#CBD5E1'}`,
-                      color: isActive ? '#FFFFFF' : '#69788C',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: 12,
-                      fontWeight: 700,
-                      boxShadow: isActive ? '0 2px 6px rgba(40, 100, 232, 0.2)' : 'none',
-                      transition: 'all 0.15s ease'
-                    }}>
-                      {step.stepNum}
+                {WORKFLOW_STEPS.map((step) => {
+                  const isActive = step.count > 0;
+                  return (
+                    <div
+                      key={step.id}
+                      onClick={() => handleFilterNav('Applications', step.stageFilter, 'ALL')}
+                      title={`Filter: ${step.label} (${step.count} dossiers)`}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 6,
+                        position: 'relative',
+                        zIndex: 2,
+                        cursor: 'pointer',
+                        flex: 1
+                      }}
+                    >
+                      {/* Step Circle Node */}
+                      <div style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: '50%',
+                        background: isActive ? step.color : '#FFFFFF',
+                        border: `2px solid ${isActive ? step.color : '#CBD5E1'}`,
+                        color: isActive ? '#FFFFFF' : '#64748B',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        boxShadow: isActive ? '0 2px 4px rgba(37, 99, 235, 0.2)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}>
+                        {step.stepNum}
+                      </div>
+
+                      {/* Step Label */}
+                      <span style={{
+                        fontSize: 11.5,
+                        fontWeight: isActive ? 600 : 500,
+                        color: isActive ? '#172B4D' : '#64748B',
+                        textAlign: 'center',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {step.label}
+                      </span>
+
+                      {/* Count Pill */}
+                      <span style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        padding: '1px 7px',
+                        borderRadius: 10,
+                        background: isActive ? '#EFF6FF' : '#F8FAFC',
+                        color: isActive ? step.color : '#94A3B8',
+                        border: `1px solid ${isActive ? '#DBEAFE' : '#E2E8F0'}`,
+                        fontVariantNumeric: 'tabular-nums'
+                      }}>
+                        {step.count}
+                      </span>
                     </div>
-
-                    {/* Step Label */}
-                    <span style={{
-                      fontSize: 11.5,
-                      fontWeight: isActive ? 600 : 500,
-                      color: isActive ? '#172B4D' : '#69788C',
-                      textAlign: 'center',
-                      whiteSpace: 'nowrap'
-                    }}>
-                      {step.label}
-                    </span>
-
-                    {/* Count Pill */}
-                    <span style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      padding: '1px 7px',
-                      borderRadius: 10,
-                      background: isActive ? '#EAF1FF' : '#F7F9FC',
-                      color: isActive ? step.color : '#94A3B8',
-                      border: `1px solid ${isActive ? '#D6E4FF' : '#E6EBF2'}`,
-                      fontVariantNumeric: 'tabular-nums'
-                    }}>
-                      {step.count}
-                    </span>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          {/* Proportional Segmented Track Bar */}
+          {/* Proportional Progress Track */}
           <div style={{ marginTop: 12, paddingTop: 14, borderTop: '1px solid #F1F5F9' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, fontSize: 11.5 }}>
-              <span style={{ color: '#69788C' }}>Active distribution by phase</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, fontSize: 12 }}>
+              <span style={{ color: '#64748B' }}>Active distribution by phase</span>
               <span style={{ fontWeight: 600, color: '#172B4D' }}>
                 {Math.round(((stageCounts['COMPLETED'] || 0) / Math.max(1, totalAppsCount)) * 100)}% completed
               </span>
@@ -768,33 +826,33 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </div>
         </div>
 
-        {/* Right: Needs Attention (Compact, Maximum 3 Categories) */}
+        {/* Right: Needs Attention (Actionable, Restrained Alert Rows) */}
         <div style={{
           background: '#FFFFFF',
-          border: '1px solid #E6EBF2',
-          borderRadius: 12,
+          border: '1px solid #E2E8F0',
+          borderRadius: 10,
           padding: '20px 22px',
-          boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between'
         }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <h2 style={{ fontSize: 15, fontWeight: 600, color: '#172B4D', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <AlertTriangle size={15} color="#D98B16" />
+              <h2 style={{ fontSize: 16, fontWeight: 600, color: '#172B4D', margin: 0, display: 'flex', alignItems: 'center', gap: 7 }}>
+                <AlertTriangle size={16} color="#D98B16" />
                 Needs Attention
               </h2>
               <span style={{
                 fontSize: 11,
                 fontWeight: 700,
-                padding: '2px 7px',
+                padding: '2px 8px',
                 borderRadius: 4,
                 background: totalNeedsAttention > 0 ? '#FDF2F2' : '#F0FDF4',
                 color: totalNeedsAttention > 0 ? '#D64545' : '#16845B',
                 border: `1px solid ${totalNeedsAttention > 0 ? '#FDE2E2' : '#DCFCE7'}`
               }}>
-                {totalNeedsAttention} urgent
+                {totalNeedsAttention} actionable
               </span>
             </div>
 
@@ -811,7 +869,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 <b style={{ display: 'block', fontSize: 13, color: '#16845B' }}>
                   All applications within SLA
                 </b>
-                <span style={{ fontSize: 11.5, color: '#69788C' }}>
+                <span style={{ fontSize: 12, color: '#64748B' }}>
                   No overdue or high-priority escalations pending.
                 </span>
               </div>
@@ -823,43 +881,44 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                     onClick={cat.onClick}
                     title={`Click to view ${cat.label}`}
                     style={{
-                      padding: '11px 13px',
-                      borderRadius: 8,
-                      border: '1px solid #E6EBF2',
+                      padding: '10px 12px',
+                      borderRadius: 6,
+                      border: '1px solid #E2E8F0',
                       background: '#FFFFFF',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       cursor: 'pointer',
-                      transition: 'border-color 0.15s, background 0.15s'
+                      transition: 'border-color 0.15s, background-color 0.15s'
                     }}
                     className="attention-row-hover"
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                       <span style={{
                         width: 7,
                         height: 7,
                         borderRadius: '50%',
-                        background: cat.count > 0 ? cat.color : '#CBD5E1'
+                        background: cat.count > 0 ? cat.color : '#CBD5E1',
+                        flexShrink: 0
                       }} />
-                      <span style={{ fontSize: 12.5, fontWeight: 600, color: '#172B4D' }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 500, color: '#172B4D', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {cat.label}
                       </span>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                       <span style={{
                         fontSize: 12,
                         fontWeight: 700,
                         padding: '1px 8px',
                         borderRadius: 4,
-                        background: cat.count > 0 ? cat.badgeBg : '#F7F9FC',
+                        background: cat.count > 0 ? cat.badgeBg : '#F8FAFC',
                         color: cat.count > 0 ? cat.badgeText : '#94A3B8',
                         fontVariantNumeric: 'tabular-nums'
                       }}>
                         {cat.count}
                       </span>
-                      <ChevronRight size={14} color="#94A3B8" />
+                      <ChevronRight size={13} color="#94A3B8" />
                     </div>
                   </div>
                 ))}
@@ -876,8 +935,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 padding: '6px 0',
                 background: 'transparent',
                 border: 0,
-                color: '#2864E8',
-                fontSize: 12,
+                color: '#2563EB',
+                fontSize: 12.5,
                 fontWeight: 600,
                 display: 'flex',
                 alignItems: 'center',
@@ -887,21 +946,21 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               }}
             >
               <span>View full operational queue</span>
-              <ArrowRight size={12} />
+              <ArrowRight size={13} />
             </button>
           </div>
         </div>
       </div>
 
       {/* ====================================================================
-          4. PRIORITY ACTIONS TABLE (The Visual Centerpiece of the Dashboard)
+          4. PRIORITY APPLICATIONS TABLE (Clean, Readable, 6-Column Format)
           ==================================================================== */}
       <div style={{
         background: '#FFFFFF',
-        border: '1px solid #E6EBF2',
-        borderRadius: 12,
+        border: '1px solid #E2E8F0',
+        borderRadius: 10,
         padding: '20px 24px',
-        boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)'
+        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)'
       }}>
         {/* Table Card Header */}
         <div style={{
@@ -916,10 +975,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         }}>
           <div>
             <h2 style={{ fontSize: 16, fontWeight: 600, color: '#172B4D', margin: 0 }}>
-              Priority Actions
+              Priority Applications
             </h2>
-            <span style={{ fontSize: 12.5, color: '#69788C' }}>
-              Applications requiring immediate regulatory review
+            <span style={{ fontSize: 12.5, color: '#64748B' }}>
+              Applications requiring attention
             </span>
           </div>
 
@@ -931,7 +990,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               gap: 4,
               fontSize: 12.5,
               fontWeight: 600,
-              color: '#2864E8',
+              color: '#2563EB',
               background: 'transparent',
               border: 0,
               cursor: 'pointer',
@@ -943,29 +1002,32 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </button>
         </div>
 
-        {/* Clean, 5-Column Table */}
+        {/* 6-Column Responsive Table */}
         {priorityQueue.length === 0 ? (
-          <div style={{ padding: '32px 16px', textAlign: 'center', color: '#69788C', fontSize: 13 }}>
+          <div style={{ padding: '32px 16px', textAlign: 'center', color: '#64748B', fontSize: 13 }}>
             No priority applications pending action in current scope.
           </div>
         ) : (
-          <div className="table-responsive">
+          <div className="table-responsive" style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
-                <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E6EBF2' }}>
-                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#69788C', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#64748B', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     Application ID
                   </th>
-                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#69788C', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#64748B', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     Institution
                   </th>
-                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#69788C', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                    Stage
+                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#64748B', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Application Type
                   </th>
-                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#69788C', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#64748B', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Current Stage
+                  </th>
+                  <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#64748B', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     Due Date
                   </th>
-                  <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: '#69788C', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                  <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: '#64748B', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     Action
                   </th>
                 </tr>
@@ -981,7 +1043,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                   if (isOverdue) urgencyDotColor = '#D64545';
                   else if (isDueSoon || isReturned) urgencyDotColor = '#D98B16';
 
-                  // Contextual action button label
+                  // Contextual action button label based on role and stage
                   let actionLabel = 'View Dossier';
                   if (app.current_stage === 'SCRUTINY') actionLabel = 'Review Scrutiny';
                   else if (app.current_stage === 'RE_SCRUTINY') actionLabel = 'Review Resubmission';
@@ -998,10 +1060,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                       className="priority-row-hover"
                     >
                       {/* 1. Application ID */}
-                      <td style={{ padding: '13px 14px' }}>
+                      <td style={{ padding: '12px 14px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                           <span
-                            title={isOverdue ? 'Overdue case' : isDueSoon ? 'Due soon' : 'Normal priority'}
+                            title={isOverdue ? 'Overdue case' : isDueSoon ? 'Due soon' : 'Standard priority'}
                             style={{ width: 6, height: 6, borderRadius: '50%', background: urgencyDotColor, flexShrink: 0 }}
                           />
                           <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12.5, fontWeight: 600, color: '#172B4D' }}>
@@ -1014,36 +1076,43 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                       </td>
 
                       {/* 2. Institution */}
-                      <td style={{ padding: '13px 14px' }}>
+                      <td style={{ padding: '12px 14px' }}>
                         <b style={{ display: 'block', fontWeight: 600, color: '#172B4D', fontSize: 13 }}>
                           {app.institution_name}
                         </b>
-                        <small style={{ fontSize: 11.5, color: '#69788C', display: 'block', marginTop: 1 }}>
-                          {app.application_type} · {app.region} Region
+                        <small style={{ fontSize: 11.5, color: '#64748B', display: 'block', marginTop: 1 }}>
+                          {app.region} Region
                         </small>
                       </td>
 
-                      {/* 3. Stage */}
-                      <td style={{ padding: '13px 14px' }}>
+                      {/* 3. Application Type (Dedicated Column) */}
+                      <td style={{ padding: '12px 14px', fontSize: 12.5, color: '#475569' }}>
+                        {app.application_type}
+                      </td>
+
+                      {/* 4. Current Stage */}
+                      <td style={{ padding: '12px 14px' }}>
                         <span style={{
                           fontSize: 11.5,
                           fontWeight: 600,
-                          padding: '3px 9px',
+                          padding: '3px 8px',
                           borderRadius: 6,
                           background: isReturned ? '#FEF7EC' : isOverdue ? '#FDF2F2' : '#F1F5F9',
-                          color: isReturned ? '#D98B16' : isOverdue ? '#D64545' : '#16324F',
-                          border: `1px solid ${isReturned ? '#FCE6CA' : isOverdue ? '#FDE2E2' : '#E6EBF2'}`
+                          color: isReturned ? '#D98B16' : isOverdue ? '#D64545' : '#172B4D',
+                          border: `1px solid ${isReturned ? '#FCE6CA' : isOverdue ? '#FDE2E2' : '#E2E8F0'}`,
+                          whiteSpace: 'nowrap'
                         }}>
                           {app.current_stage.replace(/_/g, ' ')}
                         </span>
                       </td>
 
-                      {/* 4. Due Date */}
-                      <td style={{ padding: '13px 14px', fontVariantNumeric: 'tabular-nums' }}>
+                      {/* 5. Due Date */}
+                      <td style={{ padding: '12px 14px', fontVariantNumeric: 'tabular-nums' }}>
                         {app.due_date ? (
                           <span style={{
                             color: isOverdue ? '#D64545' : isDueSoon ? '#D98B16' : '#475569',
-                            fontWeight: isOverdue || isDueSoon ? 700 : 500
+                            fontWeight: isOverdue || isDueSoon ? 700 : 500,
+                            fontSize: 12.5
                           }}>
                             {new Date(app.due_date).toLocaleDateString('en-IN', {
                               day: '2-digit',
@@ -1052,12 +1121,12 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                             })}
                           </span>
                         ) : (
-                          <span style={{ color: '#94A3B8' }}>—</span>
+                          <span style={{ color: '#94A3B8', fontSize: 12.5 }}>—</span>
                         )}
                       </td>
 
-                      {/* 5. Action */}
-                      <td style={{ padding: '13px 14px', textAlign: 'right' }}>
+                      {/* 6. Action */}
+                      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
                         <button
                           onClick={() => onSelectApplication && onSelectApplication(app)}
                           style={{
@@ -1066,8 +1135,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                             fontWeight: 600,
                             borderRadius: 6,
                             background: '#FFFFFF',
-                            border: '1px solid #2864E8',
-                            color: '#2864E8',
+                            border: '1px solid #2563EB',
+                            color: '#2563EB',
                             cursor: 'pointer',
                             display: 'inline-flex',
                             alignItems: 'center',
@@ -1076,7 +1145,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                           }}
                           className="btn-action-hover"
                         >
-                          <Eye size={13} color="#2864E8" />
+                          <Eye size={13} color="#2563EB" />
                           <span>{actionLabel}</span>
                         </button>
                       </td>
@@ -1090,20 +1159,20 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       </div>
 
       {/* ====================================================================
-          5 & 6. SECONDARY SECTION: Recent Activity + Workload Distribution
+          5 & 6. RECENT ACTIVITY & WORKLOAD BY CATEGORY (~55% / 45% Split)
           ==================================================================== */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)',
+        gridTemplateColumns: 'minmax(0, 1.35fr) minmax(0, 1fr)',
         gap: 20
       }} className="main-operational-split">
-        {/* Recent Activity (Compact Timeline) */}
+        {/* Left: Recent Activity (Compact 4-5 Events) */}
         <div style={{
           background: '#FFFFFF',
-          border: '1px solid #E6EBF2',
-          borderRadius: 12,
+          border: '1px solid #E2E8F0',
+          borderRadius: 10,
           padding: '20px 24px',
-          boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)'
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)'
         }}>
           <div style={{
             display: 'flex',
@@ -1114,43 +1183,46 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             borderBottom: '1px solid #F1F5F9'
           }}>
             <div>
-              <h2 style={{ fontSize: 15, fontWeight: 600, color: '#172B4D', margin: 0 }}>
+              <h2 style={{ fontSize: 16, fontWeight: 600, color: '#172B4D', margin: 0 }}>
                 Recent Activity
               </h2>
-              <span style={{ fontSize: 12, color: '#69788C' }}>
+              <span style={{ fontSize: 12.5, color: '#64748B' }}>
                 Latest audited workflow events and notifications
               </span>
             </div>
             <button
               onClick={() => onNavigate('Alerts')}
               style={{
-                fontSize: 12,
+                fontSize: 12.5,
                 fontWeight: 600,
-                color: '#2864E8',
+                color: '#2563EB',
                 background: 'transparent',
                 border: 0,
                 cursor: 'pointer'
               }}
             >
-              View log →
+              View audit log →
             </button>
           </div>
 
-          {/* Activity items */}
+          {/* Activity items list */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {recentAudits.length > 0 ? (
-              recentAudits.slice(0, 4).map((aud) => {
+              recentAudits.slice(0, 5).map((aud) => {
                 const appObj = applications.find((a) => a.id === aud.application_id);
                 const ref = aud.application_reference || appObj?.reference || `App #${aud.application_id}`;
 
-                let iconColor = '#2864E8';
-                let iconBg = '#EAF1FF';
-                if (aud.action.includes('DECISION') || aud.action.includes('COMPLIANCE')) {
+                let iconColor = '#2563EB';
+                let iconBg = '#EFF6FF';
+                if (aud.action.includes('DECISION') || aud.action.includes('COMPLIANCE') || aud.action.includes('APPROVED')) {
                   iconColor = '#16845B';
-                  iconBg = '#DCFCE7';
-                } else if (aud.action.includes('RETURN') || aud.action.includes('DEFICIENCY')) {
+                  iconBg = '#F0FDF4';
+                } else if (aud.action.includes('RETURN') || aud.action.includes('DEFICIENCY') || aud.action.includes('CLARIFICATION')) {
                   iconColor = '#D98B16';
                   iconBg = '#FEF7EC';
+                } else if (aud.action.includes('REJECT') || aud.action.includes('OVERDUE')) {
+                  iconColor = '#D64545';
+                  iconBg = '#FDF2F2';
                 }
 
                 return (
@@ -1190,21 +1262,21 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                               style={{
                                 fontSize: 11,
                                 fontWeight: 600,
-                                color: '#2864E8',
-                                background: '#EAF1FF',
-                                border: '1px solid #D6E4FF',
+                                color: '#2563EB',
+                                background: '#EFF6FF',
+                                border: '1px solid #DBEAFE',
                                 borderRadius: 4,
-                                padding: '1px 5px',
+                                padding: '1px 6px',
                                 cursor: 'pointer'
                               }}
                             >
                               {ref}
                             </button>
                           ) : (
-                            <span style={{ fontSize: 11, color: '#69788C' }}>({ref})</span>
+                            <span style={{ fontSize: 11, color: '#64748B' }}>({ref})</span>
                           )}
                         </div>
-                        <small style={{ fontSize: 11, color: '#94A3B8' }}>
+                        <small style={{ fontSize: 11, color: '#94A3B8', whiteSpace: 'nowrap' }}>
                           {new Date(aud.created_at).toLocaleDateString('en-IN', {
                             day: '2-digit',
                             month: 'short',
@@ -1213,7 +1285,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                           })}
                         </small>
                       </div>
-                      <p style={{ margin: '2px 0 0', fontSize: 12, color: '#69788C', lineHeight: 1.35, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748B', lineHeight: 1.35, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {aud.details || 'Workflow transition recorded in tamper-evident audit ledger.'}
                       </p>
                     </div>
@@ -1221,20 +1293,20 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 );
               })
             ) : alerts.length > 0 ? (
-              alerts.slice(0, 3).map((al) => (
+              alerts.slice(0, 4).map((al) => (
                 <div key={al.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0' }}>
                   <div style={{
                     width: 28,
                     height: 28,
                     borderRadius: 6,
-                    background: al.severity === 'CRITICAL' ? '#FDF2F2' : '#EAF1FF',
+                    background: al.severity === 'CRITICAL' ? '#FDF2F2' : '#EFF6FF',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     marginTop: 2,
                     flexShrink: 0
                   }}>
-                    <AlertTriangle size={14} color={al.severity === 'CRITICAL' ? '#D64545' : '#2864E8'} />
+                    <AlertTriangle size={14} color={al.severity === 'CRITICAL' ? '#D64545' : '#2563EB'} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1243,7 +1315,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         {new Date(al.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </small>
                     </div>
-                    <p style={{ margin: '2px 0 0', fontSize: 12, color: '#69788C', lineHeight: 1.35 }}>
+                    <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748B', lineHeight: 1.35 }}>
                       {al.message}
                     </p>
                   </div>
@@ -1257,13 +1329,13 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </div>
         </div>
 
-        {/* Workload Distribution / Shortcuts */}
+        {/* Right: Workload by Category & Shortcuts */}
         <div style={{
           background: '#FFFFFF',
-          border: '1px solid #E6EBF2',
-          borderRadius: 12,
+          border: '1px solid #E2E8F0',
+          borderRadius: 10,
           padding: '20px 24px',
-          boxShadow: '0 1px 3px rgba(22, 50, 79, 0.03)',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between'
@@ -1278,29 +1350,29 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               borderBottom: '1px solid #F1F5F9'
             }}>
               <div>
-                <h2 style={{ fontSize: 15, fontWeight: 600, color: '#172B4D', margin: 0 }}>
+                <h2 style={{ fontSize: 16, fontWeight: 600, color: '#172B4D', margin: 0 }}>
                   Workload by Category
                 </h2>
-                <span style={{ fontSize: 12, color: '#69788C' }}>
+                <span style={{ fontSize: 12.5, color: '#64748B' }}>
                   Distribution of applications in scope
                 </span>
               </div>
             </div>
 
-            {/* Clean Horizontal Bars */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {/* Horizontal Progress Bars */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {Object.entries(typeBreakdown).map(([typeName, cnt]) => {
                 const pct = totalAppsCount > 0 ? Math.round((cnt / totalAppsCount) * 100) : 0;
                 return (
-                  <div key={typeName} style={{ fontSize: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <div key={typeName} style={{ fontSize: 12.5 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
                       <span style={{ fontWeight: 600, color: '#172B4D' }}>{typeName}</span>
-                      <span style={{ color: '#69788C', fontVariantNumeric: 'tabular-nums' }}>
+                      <span style={{ color: '#64748B', fontVariantNumeric: 'tabular-nums' }}>
                         <b>{cnt}</b> ({pct}%)
                       </span>
                     </div>
-                    <div style={{ width: '100%', height: 5, background: '#F1F5F9', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: '#2864E8', borderRadius: 3 }} />
+                    <div style={{ width: '100%', height: 6, background: '#F1F5F9', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: '#2563EB', borderRadius: 3, transition: 'width 0.3s ease' }} />
                     </div>
                   </div>
                 );
@@ -1309,7 +1381,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </div>
 
           {/* Quick Module Shortcuts */}
-          <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #F1F5F9', display: 'flex', gap: 8 }}>
+          <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid #F1F5F9', display: 'flex', gap: 8 }}>
             <button
               onClick={() => onNavigate('Compliance')}
               style={{
@@ -1318,8 +1390,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 fontSize: 12,
                 fontWeight: 600,
                 borderRadius: 6,
-                background: '#F7F9FC',
-                border: '1px solid #E6EBF2',
+                background: '#F8FAFC',
+                border: '1px solid #E2E8F0',
                 color: '#172B4D',
                 cursor: 'pointer',
                 display: 'inline-flex',
@@ -1339,8 +1411,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 fontSize: 12,
                 fontWeight: 600,
                 borderRadius: 6,
-                background: '#F7F9FC',
-                border: '1px solid #E6EBF2',
+                background: '#F8FAFC',
+                border: '1px solid #E2E8F0',
                 color: '#172B4D',
                 cursor: 'pointer',
                 display: 'inline-flex',
@@ -1349,7 +1421,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 gap: 6
               }}
             >
-              <Calendar size={14} color="#2864E8" />
+              <Calendar size={14} color="#2563EB" />
               <span>EVC Inspections</span>
             </button>
           </div>
