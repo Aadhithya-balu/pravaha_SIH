@@ -773,7 +773,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
                 margin: 0,
                 fontSize: 22,
                 fontWeight: 600,
-                color: '#172B4D',
+                color: '#1E293B',
                 letterSpacing: '-0.01em'
               }}>
                 AI Document Scrutiny
@@ -834,7 +834,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
                   borderRadius: 6,
                   border: '1px solid #CBD5E1',
                   background: '#FFFFFF',
-                  color: '#172B4D',
+                  color: '#1E293B',
                   fontWeight: 500,
                   maxWidth: 260
                 }}
@@ -887,7 +887,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
           gap: 10
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748B' }}>
-            <span style={{ fontWeight: 600, color: '#172B4D' }}>Sample Documents:</span>
+            <span style={{ fontWeight: 600, color: '#1E293B' }}>Sample Documents:</span>
             <span>Load pre-verified test cases:</span>
           </div>
 
@@ -956,7 +956,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#16845B' }} />
-              <span style={{ fontWeight: 600, color: '#172B4D' }}>Engine:</span>
+              <span style={{ fontWeight: 600, color: '#1E293B' }}>Engine:</span>
               <span style={{ color: '#475569' }}>
                 {analysisResult?.execution_mode === 'real_llm' ? 'Live LLM Scrutiny' : 'Deterministic Rule Engine'}
               </span>
@@ -966,7 +966,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <ShieldCheck size={14} color="#2563EB" />
-              <span style={{ fontWeight: 600, color: '#172B4D' }}>Ruleset:</span>
+              <span style={{ fontWeight: 600, color: '#1E293B' }}>Ruleset:</span>
               <span style={{ color: '#475569' }}>AICTE APH 2024–2027</span>
             </div>
 
@@ -974,7 +974,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Database size={14} color="#64748B" />
-              <span style={{ fontWeight: 600, color: '#172B4D' }}>Provider:</span>
+              <span style={{ fontWeight: 600, color: '#1E293B' }}>Provider:</span>
               <span style={{ color: '#475569' }}>
                 {analysisResult?.provider || 'Deterministic / Offline'}
               </span>
@@ -1102,7 +1102,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
               borderBottom: '1px solid #F1F5F9'
             }}>
               <div>
-                <h2 style={{ fontSize: 16, fontWeight: 600, color: '#172B4D', margin: 0 }}>
+                <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1E293B', margin: 0 }}>
                   Document Workspace
                 </h2>
                 <span style={{ fontSize: 12, color: '#64748B' }}>
@@ -1147,7 +1147,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <b style={{
                     fontSize: 13,
-                    color: '#172B4D',
+                    color: '#1E293B',
                     display: 'block',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
@@ -1185,7 +1185,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
                     borderRadius: 6,
                     border: '1px solid #CBD5E1',
                     fontSize: 13,
-                    color: '#172B4D',
+                    color: '#1E293B',
                     background: '#FFFFFF'
                   }}
                 >
@@ -1271,7 +1271,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <FileText size={15} color="#2457C5" />
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: '#172B4D' }}>
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: '#1E293B' }}>
                   Extracted Document Text
                 </span>
                 <span style={{ fontSize: 11.5, color: '#64748B' }}>
@@ -1340,7 +1340,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
                   {previewSearchQuery ? (
                     docText.split(new RegExp(`(${previewSearchQuery})`, 'gi')).map((part, i) =>
                       part.toLowerCase() === previewSearchQuery.toLowerCase() ? (
-                        <mark key={i} style={{ background: '#FEF08A', color: '#172B4D', padding: '1px 2px', borderRadius: 2 }}>
+                        <mark key={i} style={{ background: '#FEF08A', color: '#1E293B', padding: '1px 2px', borderRadius: 2 }}>
                           {part}
                         </mark>
                       ) : (
@@ -1404,7 +1404,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
               gap: 12
             }}>
               <div>
-                <h2 style={{ fontSize: 16, fontWeight: 600, color: '#172B4D', margin: 0 }}>
+                <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1E293B', margin: 0 }}>
                   Review Workspace
                 </h2>
                 <span style={{ fontSize: 12, color: '#64748B' }}>
@@ -1515,7 +1515,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                     <ShieldCheck size={16} color="#2563EB" />
-                    <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 600, color: '#172B4D' }}>
+                    <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 600, color: '#1E293B' }}>
                       Scrutiny Findings
                     </h3>
                   </div>
@@ -1612,7 +1612,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
                     title="Click to filter items needing review"
                   >
                     <span style={{ fontSize: 11.5, fontWeight: 600, color: '#64748B' }}>Needs Review</span>
-                    <b style={{ fontSize: 18, color: '#172B4D', lineHeight: 1 }}>{reviewCount}</b>
+                    <b style={{ fontSize: 18, color: '#1E293B', lineHeight: 1 }}>{reviewCount}</b>
                   </div>
                 </div>
 
@@ -1764,7 +1764,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
 
                               <b style={{
                                 fontSize: 13,
-                                color: '#172B4D',
+                                color: '#1E293B',
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
                                 whiteSpace: 'nowrap'
@@ -1810,7 +1810,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
                                 <span style={{ fontSize: 11.5, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 2 }}>
                                   Regulatory Evaluation:
                                 </span>
-                                <p style={{ margin: 0, fontSize: 13, color: '#172B4D', lineHeight: 1.45 }}>
+                                <p style={{ margin: 0, fontSize: 13, color: '#1E293B', lineHeight: 1.45 }}>
                                   {check.plain_explanation}
                                 </p>
                               </div>
@@ -1847,7 +1847,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
                               {/* Recommended Action */}
                               {check.recommended_action && (
                                 <div style={{ fontSize: 12, color: '#475569' }}>
-                                  <span style={{ fontWeight: 600, color: '#172B4D' }}>Recommended Action: </span>
+                                  <span style={{ fontWeight: 600, color: '#1E293B' }}>Recommended Action: </span>
                                   <span>{check.recommended_action}</span>
                                 </div>
                               )}
@@ -1981,7 +1981,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                       <Database size={16} color="#2563EB" />
-                      <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 600, color: '#172B4D' }}>
+                      <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 600, color: '#1E293B' }}>
                         Extracted Fields
                       </h3>
                       <span style={{ fontSize: 12, color: '#64748B', fontWeight: 500 }}>
@@ -2131,7 +2131,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
                         }}>
                           {/* Left: Field Name & Current Value */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-                            <span style={{ fontSize: 13, fontWeight: 600, color: '#172B4D', minWidth: 170 }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: '#1E293B', minWidth: 170 }}>
                               {field.field_label || field.field_key}
                             </span>
 
@@ -2342,7 +2342,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
             </div>
 
             <div className="modal-body" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ fontSize: 12.5, color: '#172B4D' }}>
+              <div style={{ fontSize: 12.5, color: '#1E293B' }}>
                 Waiving rule: <b>{selectedCheckForWaive.rule_id} — {selectedCheckForWaive.rule_title}</b>
               </div>
 
@@ -2410,7 +2410,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
             </div>
 
             <div className="modal-body" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ fontSize: 12.5, color: '#172B4D' }}>
+              <div style={{ fontSize: 12.5, color: '#1E293B' }}>
                 Drafting clarification demand for: <b>{selectedCheckForCorrection.rule_id} — {selectedCheckForCorrection.rule_title}</b>
               </div>
 

@@ -214,9 +214,9 @@ export default function App() {
           </div>
 
           <div className="login-title-block">
-            <h1>Pravaha Regulatory Hub</h1>
+            <h1>AICTE FlowGuard</h1>
             <p>
-              AICTE Approval Workflow Automation, Compliance Monitoring, and AI Scrutiny System
+              Intelligent Approval Workflow & Compliance Monitoring Platform
             </p>
           </div>
 
@@ -224,7 +224,7 @@ export default function App() {
           <div className="sih-demo-banner">
             <div className="sih-demo-pill">
               <span className="sih-pulse-dot" />
-              <span>PRAVAHA | SIH26262 DEMO MODE</span>
+              <span>FLOWGUARD | SIH26262 DEMO MODE</span>
             </div>
             <p className="sih-demo-notice">
               Demonstration environment. Uses synthetic institutional data. Not connected to official AICTE production systems.

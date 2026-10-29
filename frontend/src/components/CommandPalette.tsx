@@ -517,7 +517,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             <span>Navigate: <kbd style={{ background: '#FFFFFF', border: '1px solid #CBD5E1', padding: '1px 4px', borderRadius: 3 }}>↑</kbd> <kbd style={{ background: '#FFFFFF', border: '1px solid #CBD5E1', padding: '1px 4px', borderRadius: 3 }}>↓</kbd></span>
             <span>Select: <kbd style={{ background: '#FFFFFF', border: '1px solid #CBD5E1', padding: '1px 4px', borderRadius: 3 }}>↵ Enter</kbd></span>
           </div>
-          <span>PRAVAHA Quick Jump</span>
+          <span>AICTE FlowGuard Quick Jump</span>
         </div>
       </div>
     </div>
