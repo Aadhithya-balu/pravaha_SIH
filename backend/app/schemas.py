@@ -3,6 +3,20 @@ from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel, Field
 
 
+
+class RegisterRequest(BaseModel):
+    institution_name: str = Field(min_length=3, max_length=200)
+    contact_name: str = Field(min_length=2, max_length=120)
+    email: str = Field(min_length=5, max_length=255)
+    phone: str = Field(min_length=8, max_length=20)
+    region: str = Field(default="Northern")
+    state: str = Field(default="Delhi")
+    city: str = Field(default="New Delhi")
+    institution_type: str = Field(default="Engineering and Technology")
+    institution_code: Optional[str] = None
+    address: Optional[str] = "Campus Address"
+    password: str = Field(min_length=8)
+
 class LoginRequest(BaseModel):
     email: str = Field(min_length=3)
     password: str = Field(min_length=6)
@@ -344,3 +358,27 @@ class DocumentReviewOut(BaseModel):
     ai_analysis: Optional[Dict[str, Any]] = None
     findings: List[ScrutinyFindingOut] = []
     created_at: datetime
+
+
+class StageRemarkCreate(BaseModel):
+    stage: str = "SCRUTINY"
+    comment_text: Optional[str] = None
+    remark: Optional[str] = None
+    visibility: Optional[str] = "APPLICANT_VISIBLE"
+    document_reference: Optional[str] = None
+
+
+class StageRemarkOut(BaseModel):
+    id: int
+    application_id: int
+    stage: str
+    author_name: str
+    author_email: str
+    author_role: str
+    comment_text: str
+    visibility: str
+    document_reference: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

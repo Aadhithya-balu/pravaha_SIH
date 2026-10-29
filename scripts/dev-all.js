@@ -26,7 +26,7 @@ function getPythonExec() {
 const pythonExec = getPythonExec();
 
 console.log('====================================================');
-console.log('  PS4 AICTE Platform: Full-Stack Dev Mode');
+console.log('  PRAVAHA — AICTE Regulatory Operations Platform');
 console.log('  Backend:  http://127.0.0.1:8000');
 console.log('  Frontend: http://localhost:5173');
 console.log(`  Python:   ${pythonExec}`);

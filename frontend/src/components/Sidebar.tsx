@@ -117,14 +117,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <ShieldCheck size={20} />
             </div>
             <div className="brand-text">
-              <h1>AICTE FLOWGUARD</h1>
+              <h1>AICTE PRAVAHA</h1>
               <span>Regulatory Platform</span>
             </div>
           </div>
         )}
 
         {isCollapsed && (
-          <div className="brand-icon" title="AICTE FlowGuard – Regulatory Platform" style={{ margin: '0 auto' }}>
+          <div className="brand-icon" title="PRAVAHA – Regulatory Platform" style={{ margin: '0 auto' }}>
             <ShieldCheck size={20} />
           </div>
         )}
@@ -206,7 +206,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               border: '1px solid #BFDBFE',
               cursor: 'pointer'
             }}
-            title="Open AICTE FlowGuard Platform Guide and User Instructions"
+            title="Open PRAVAHA Platform Guide and User Instructions"
           >
             <Compass size={16} color="#2563EB" style={{ flexShrink: 0 }} />
             {!isCollapsed && <span>How to Use Guide</span>}

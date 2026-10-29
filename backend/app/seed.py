@@ -2,7 +2,7 @@ from datetime import date, timedelta, datetime
 import hashlib
 import secrets
 from sqlalchemy.orm import Session
-from .models import User, Institution, Application, AuditEvent, Document, EVCVisit, ComplianceItem, Alert
+from .models import User, Institution, Application, AuditEvent, Document, EVCVisit, ComplianceItem, Alert, RegulatoryCategory
 
 
 def password_hash(password: str) -> str:
@@ -556,6 +556,88 @@ def seed_database(db: Session, force: bool = False):
             )
         ]
         db.add_all(alerts)
+
+
+    # 8. Seed Standard AICTE Regulatory Categories
+    if not db.query(RegulatoryCategory).first():
+        import json
+        categories = [
+            RegulatoryCategory(
+                category_code="EOA",
+                title="Extension of Approval (EoA)",
+                institution_type="Engineering & Technology, Management, Pharmacy",
+                description="Annual extension of approval for running institutions under AICTE Approval Process Handbook (APH 2024-2027) Chapter II.",
+                required_documents_json=json.dumps([
+                    {"type": "EOA_SELF_DISCLOSURE", "name": "Annual Self-Disclosure / Undertaking", "rule": "APH-2024-CH2-S2.1", "mandatory": True},
+                    {"type": "PREVIOUS_APPROVAL", "name": "AICTE EoA Letter of Preceding Academic Year", "rule": "APH-2024-CH2-S2.2", "mandatory": True},
+                    {"type": "BUILDING_SAFETY_FIRE_NOC", "name": "Fire & Life Safety Certificate / NOC", "rule": "APH-2024-CH2-FIRE", "mandatory": True},
+                    {"type": "FACULTY_LIST", "name": "Faculty Cadre & Salary Compliance Roster", "rule": "APH-2024-CH2-FACULTY", "mandatory": True},
+                    {"type": "ANTI_RAGGING_AFFIDAVIT", "name": "Mandatory Anti-Ragging Undertaking", "rule": "APH-2024-ANNEX-RAGGING", "mandatory": True}
+                ]),
+                workflow_sequence_json=json.dumps(["DRAFT", "SUBMITTED", "SCRUTINY", "SAC_SHC_REVIEW", "COMPLETED"]),
+                sla_days=15,
+                is_active=True
+            ),
+            RegulatoryCategory(
+                category_code="NEW_PROGRAMME",
+                title="Introduction of New Programme / Level",
+                institution_type="Degree Engineering, MCA, Post-Graduate",
+                description="Statutory approval for starting a new degree program, emerging technology specialization, or shift.",
+                required_documents_json=json.dumps([
+                    {"type": "LAND_OWNERSHIP_DEED", "name": "Land Title Deed / Registered Lease (>= 30 Years)", "rule": "APH-2024-CH2-LAND", "mandatory": True},
+                    {"type": "BUILDING_PLAN_OCCUPANCY", "name": "Approved Building Plan & Occupancy Certificate", "rule": "APH-2024-CH2-BUILDING", "mandatory": True},
+                    {"type": "STATE_GOVT_NOC", "name": "No Objection Certificate from State Government", "rule": "APH-2024-CH2-STATE-NOC", "mandatory": True},
+                    {"type": "AFFILIATING_UNIVERSITY_NOC", "name": "Consent of Affiliation from University", "rule": "APH-2024-CH2-AFFILIATION", "mandatory": True},
+                    {"type": "EQUIPMENT_LAB_LIST", "name": "Laboratory Equipment Invoices & Physical Readiness", "rule": "APH-2024-CH2-LABS", "mandatory": True},
+                    {"type": "FACULTY_APPOINTMENT_PLAN", "name": "Core Faculty Recruitment & Appointment Plan", "rule": "APH-2024-CH2-FACULTY-PLAN", "mandatory": True}
+                ]),
+                workflow_sequence_json=json.dumps(["DRAFT", "SUBMITTED", "SCRUTINY", "EVC_PENDING", "EVC_SCHEDULED", "EVC_COMPLETED", "SAC_SHC_REVIEW", "COMPLETED"]),
+                sla_days=30,
+                is_active=True
+            ),
+            RegulatoryCategory(
+                category_code="INTAKE_VARIATION",
+                title="Increase in Intake / Additional Division",
+                institution_type="Approved Technical Institutions",
+                description="Expansion of approved intake seats in existing accredited departments.",
+                required_documents_json=json.dumps([
+                    {"type": "PREVIOUS_APPROVAL", "name": "Current EoA Sanction Order", "rule": "APH-2024-INTAKE-1", "mandatory": True},
+                    {"type": "BUILDING_PLAN_OCCUPANCY", "name": "Instructional Carpet Area Verification", "rule": "APH-2024-INTAKE-AREA", "mandatory": True},
+                    {"type": "FACULTY_LIST", "name": "Qualified Cadre Ratio Compliance Roster", "rule": "APH-2024-INTAKE-FACULTY", "mandatory": True}
+                ]),
+                workflow_sequence_json=json.dumps(["DRAFT", "SUBMITTED", "SCRUTINY", "SAC_SHC_REVIEW", "COMPLETED"]),
+                sla_days=21,
+                is_active=True
+            ),
+            RegulatoryCategory(
+                category_code="CHANGE_SITE",
+                title="Change of Site / Permanent Campus Relocation",
+                institution_type="Technical & Polytechnic Institutions",
+                description="Transfer of operation from temporary transit accommodation to permanent self-owned campus.",
+                required_documents_json=json.dumps([
+                    {"type": "LAND_OWNERSHIP_DEED", "name": "New Campus Land Title Deed (>= 30 Years)", "rule": "APH-2024-SITE-LAND", "mandatory": True},
+                    {"type": "BUILDING_PLAN_OCCUPANCY", "name": "Municipal Approved Building Blueprints & Fire NOC", "rule": "APH-2024-SITE-FIRE", "mandatory": True},
+                    {"type": "STATE_GOVT_NOC", "name": "State Government Re-siting Authorization", "rule": "APH-2024-SITE-NOC", "mandatory": True}
+                ]),
+                workflow_sequence_json=json.dumps(["DRAFT", "SUBMITTED", "SCRUTINY", "EVC_PENDING", "EVC_SCHEDULED", "EVC_COMPLETED", "SAC_SHC_REVIEW", "COMPLETED"]),
+                sla_days=30,
+                is_active=True
+            ),
+            RegulatoryCategory(
+                category_code="CLOSURE",
+                title="Closure of Programme / Institution",
+                institution_type="All AICTE Institutions",
+                description="Progressive phase-out or formal closure of educational programme with student safeguards.",
+                required_documents_json=json.dumps([
+                    {"type": "EOA_SELF_DISCLOSURE", "name": "Governing Body Resolution for Closure", "rule": "APH-2024-CLOSURE-RES", "mandatory": True},
+                    {"type": "AFFILIATING_UNIVERSITY_NOC", "name": "No-Objection Certificate from Affiliating University", "rule": "APH-2024-CLOSURE-NOC", "mandatory": True}
+                ]),
+                workflow_sequence_json=json.dumps(["DRAFT", "SUBMITTED", "SCRUTINY", "SAC_SHC_REVIEW", "COMPLETED"]),
+                sla_days=15,
+                is_active=True
+            )
+        ]
+        db.add_all(categories)
 
     db.commit()
     print("Database seeding completed successfully: all demo personas and lifecycle cases are ready.")

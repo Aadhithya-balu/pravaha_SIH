@@ -172,43 +172,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           onNavigateTab('Role Matrix');
         }
       },
-      // Personas
-      {
-        id: 'role-applicant',
-        category: 'Personas',
-        title: 'Switch to Institution Applicant',
-        subtitle: 'college@demo.local — Prof. Anand Deshmukh',
-        icon: Building2,
-        action: () => {
-          onClose();
-          onSwitchRole('college@demo.local');
-        },
-        badge: 'Applicant'
-      },
-      {
-        id: 'role-officer',
-        category: 'Personas',
-        title: 'Switch to Regional Officer / Admin',
-        subtitle: 'officer@demo.local — Dr. Rajesh Verma',
-        icon: Scale,
-        action: () => {
-          onClose();
-          onSwitchRole('officer@demo.local');
-        },
-        badge: 'RO / Admin'
-      },
-      {
-        id: 'role-evc',
-        category: 'Personas',
-        title: 'Switch to EVC Expert Inspector',
-        subtitle: 'evc@demo.local — Prof. S. Ramanujan',
-        icon: Calendar,
-        action: () => {
-          onClose();
-          onSwitchRole('evc@demo.local');
-        },
-        badge: 'Inspector'
-      }
     ];
 
     if (onRunEscalation) {
@@ -517,7 +480,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             <span>Navigate: <kbd style={{ background: '#FFFFFF', border: '1px solid #CBD5E1', padding: '1px 4px', borderRadius: 3 }}>↑</kbd> <kbd style={{ background: '#FFFFFF', border: '1px solid #CBD5E1', padding: '1px 4px', borderRadius: 3 }}>↓</kbd></span>
             <span>Select: <kbd style={{ background: '#FFFFFF', border: '1px solid #CBD5E1', padding: '1px 4px', borderRadius: 3 }}>↵ Enter</kbd></span>
           </div>
-          <span>AICTE FlowGuard Quick Jump</span>
+          <span>PRAVAHA Quick Jump</span>
         </div>
       </div>
     </div>

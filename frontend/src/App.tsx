@@ -14,7 +14,7 @@ import {
   X,
   Compass
 } from 'lucide-react';
-import { api, token, fetchApplications, fetchNotifications, showToast, ToastItem } from './api';
+import { api, token, fetchApplications, fetchNotifications, showToast, ToastItem, registerInstitution } from './api';
 import { User, Application, AlertItem, DashboardMetrics } from './types';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -77,6 +77,65 @@ export default function App() {
   const [loginEmail, setLoginEmail] = useState('officer@demo.local');
   const [loginPassword, setLoginPassword] = useState('DemoPass123!');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Authentication Mode: Login vs Official Institutional Registration
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+
+  // Registration Fields
+  const [regInstName, setRegInstName] = useState('');
+  const [regContactName, setRegContactName] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regRegion, setRegRegion] = useState('Northern');
+  const [regState, setRegState] = useState('Delhi');
+  const [regCity, setRegCity] = useState('New Delhi');
+  const [regInstType, setRegInstType] = useState('Engineering & Technology');
+  const [regInstCode, setRegInstCode] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const [regTerms, setRegTerms] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
+
+  async function handleRegister(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorMsg('');
+    if (!regTerms) {
+      setErrorMsg('You must attest to the official AICTE statutory declaration before proceeding.');
+      return;
+    }
+    if (regPassword !== regConfirmPassword) {
+      setErrorMsg('Passwords do not match. Please re-enter identical passwords.');
+      return;
+    }
+    if (regPassword.length < 8) {
+      setErrorMsg('Password must be at least 8 characters in length.');
+      return;
+    }
+    setIsRegistering(true);
+    try {
+      const data = await registerInstitution({
+        institution_name: regInstName,
+        contact_name: regContactName,
+        email: regEmail,
+        phone: regPhone,
+        region: regRegion,
+        state: regState,
+        city: regCity,
+        institution_type: regInstType,
+        institution_code: regInstCode || undefined,
+        password: regPassword
+      });
+      localStorage.setItem('ps4_token', data.access_token);
+      setAuthToken(data.access_token);
+      showToast('Registration successful! Welcome to the PRAVAHA Institutional Portal.', 'success');
+      await loadData();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Registration failed. Please review your entries.');
+      showToast(err.message || 'Registration failed.', 'error');
+    } finally {
+      setIsRegistering(false);
+    }
+  }
 
   async function loadData() {
     try {
@@ -214,104 +273,292 @@ export default function App() {
           </div>
 
           <div className="login-title-block">
-            <h1>AICTE FlowGuard</h1>
+            <h1>PRAVAHA</h1>
             <p>
-              Intelligent Approval Workflow & Compliance Monitoring Platform
-            </p>
-          </div>
-
-          {/* Phase 4: Prominent Demo Mode Indicator */}
-          <div className="sih-demo-banner">
-            <div className="sih-demo-pill">
-              <span className="sih-pulse-dot" />
-              <span>FLOWGUARD | SIH26262 DEMO MODE</span>
-            </div>
-            <p className="sih-demo-notice">
-              Demonstration environment. Uses synthetic institutional data. Not connected to official AICTE production systems.
+              AICTE Approval Workflow Automation, Compliance Monitoring, and AI Scrutiny System
             </p>
           </div>
 
           {errorMsg && <div className="alert-banner danger">{errorMsg}</div>}
 
-          <form onSubmit={(e) => handleLogin(e)}>
-            <div className="form-group" style={{ marginBottom: 12 }}>
-              <label>Official Institutional / Officer Email *</label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  type="email"
-                  required
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="e.g. officer@demo.local"
-                  autoComplete="email"
-                />
+          {authMode === 'login' ? (
+            <>
+              <form onSubmit={(e) => handleLogin(e)}>
+                <div className="form-group" style={{ marginBottom: 12 }}>
+                  <label>Official Institutional / Officer Email *</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="email"
+                      required
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      placeholder="e.g. officer@demo.local"
+                      autoComplete="email"
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 16 }}>
+                  <label>Security Password *</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="password"
+                      required
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="Enter your security password"
+                      autoComplete="current-password"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  style={{ width: '100%', justifyContent: 'center', padding: '12px 14px', minHeight: 44 }}
+                  disabled={isLoggingIn}
+                >
+                  <span>{isLoggingIn ? 'Authenticating with Secure Session...' : 'Sign in to Regulatory Portal'}</span>
+                  <ArrowRight size={14} />
+                </button>
+              </form>
+
+              {/* Link to Registration */}
+              <div style={{ textAlign: 'center', marginTop: 14, paddingTop: 12, borderTop: '1px solid #E2E8F0' }}>
+                <span style={{ fontSize: 12.5, color: '#64748B' }}>New Technical Institution? </span>
+                <button
+                  type="button"
+                  onClick={() => { setAuthMode('register'); setErrorMsg(''); }}
+                  style={{ background: 'transparent', border: 'none', color: '#2563EB', fontWeight: 600, fontSize: 12.5, cursor: 'pointer', textDecoration: 'underline' }}
+                >
+                  Register Institutional Account →
+                </button>
               </div>
-            </div>
 
-            <div className="form-group" style={{ marginBottom: 16 }}>
-              <label>Security Password *</label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  type="password"
-                  required
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="Enter your security password"
-                  autoComplete="current-password"
-                />
+              {/* Evaluation Quick-Fill for Reviewers */}
+              <div className="demo-account-box" style={{ marginTop: 16 }}>
+                <b>Evaluation Quick-Fill (Password: DemoPass123!)</b>
+                <div className="demo-account-buttons-3col">
+                  <button
+                    type="button"
+                    className="btn-demo-pill-clean"
+                    onClick={() => {
+                      setLoginEmail('college@demo.local');
+                      handleLogin(undefined, 'college@demo.local', 'DemoPass123!');
+                    }}
+                  >
+                    <div className="demo-pill-title">🏢 1. Applicant</div>
+                    <div className="demo-pill-desc">college@demo.local</div>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-demo-pill-clean"
+                    onClick={() => {
+                      setLoginEmail('officer@demo.local');
+                      handleLogin(undefined, 'officer@demo.local', 'DemoPass123!');
+                    }}
+                  >
+                    <div className="demo-pill-title">⚖️ 2. Scrutiny Officer</div>
+                    <div className="demo-pill-desc">officer@demo.local</div>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-demo-pill-clean"
+                    onClick={() => {
+                      setLoginEmail('evc@demo.local');
+                      handleLogin(undefined, 'evc@demo.local', 'DemoPass123!');
+                    }}
+                  >
+                    <div className="demo-pill-title">🔍 3. EVC Inspector</div>
+                    <div className="demo-pill-desc">evc@demo.local</div>
+                  </button>
+                </div>
               </div>
-            </div>
+            </>
+          ) : (
+            /* Institutional Registration Form */
+            <form onSubmit={handleRegister}>
+              <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 6, padding: '8px 12px', marginBottom: 14, fontSize: 12, color: '#1E40AF' }}>
+                <b>Official Institutional Registration</b>: Register your technical college or polytechnic to submit Extension of Approval (EoA) or New Programme dossiers.
+              </div>
 
-            <button
-              type="submit"
-              className="btn-primary"
-              style={{ width: '100%', justifyContent: 'center', padding: '12px 14px', minHeight: 44 }}
-              disabled={isLoggingIn}
-            >
-              <span>{isLoggingIn ? 'Authenticating with Secure Session...' : 'Sign in to Regulatory Portal'}</span>
-              <ArrowRight size={14} />
-            </button>
-          </form>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10, marginBottom: 10 }}>
+                <div className="form-group">
+                  <label style={{ fontSize: 11.5 }}>Institution Full Legal Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={regInstName}
+                    onChange={(e) => setRegInstName(e.target.value)}
+                    placeholder="e.g. Sunrise Institute of Technology"
+                    style={{ fontSize: 12.5 }}
+                  />
+                </div>
+                <div className="form-group">
+                  <label style={{ fontSize: 11.5 }}>Institution Discipline / Type *</label>
+                  <select
+                    value={regInstType}
+                    onChange={(e) => setRegInstType(e.target.value)}
+                    style={{ fontSize: 12.5 }}
+                  >
+                    <option value="Engineering & Technology">Engineering & Technology</option>
+                    <option value="Management (MBA/PGDM)">Management (MBA/PGDM)</option>
+                    <option value="Pharmacy">Pharmacy</option>
+                    <option value="MCA / Computer Applications">MCA / Computer Applications</option>
+                    <option value="Polytechnic Diploma">Polytechnic Diploma</option>
+                  </select>
+                </div>
+              </div>
 
-          {/* Phase 4: 3 Canonical Demo Account Choices */}
-          <div className="demo-account-box">
-            <b>Evaluation Personas (Common Password: DemoPass123!)</b>
-            <div className="demo-account-buttons-3col">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 10 }}>
+                <div className="form-group">
+                  <label style={{ fontSize: 11.5 }}>AICTE Region *</label>
+                  <select
+                    value={regRegion}
+                    onChange={(e) => setRegRegion(e.target.value)}
+                    style={{ fontSize: 12.5 }}
+                  >
+                    <option value="Northern">Northern</option>
+                    <option value="Western">Western</option>
+                    <option value="Southern">Southern</option>
+                    <option value="Eastern">Eastern</option>
+                    <option value="Central">Central</option>
+                    <option value="South-Western">South-Western</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label style={{ fontSize: 11.5 }}>State / UT *</label>
+                  <input
+                    type="text"
+                    required
+                    value={regState}
+                    onChange={(e) => setRegState(e.target.value)}
+                    placeholder="e.g. Maharashtra"
+                    style={{ fontSize: 12.5 }}
+                  />
+                </div>
+                <div className="form-group">
+                  <label style={{ fontSize: 11.5 }}>City / District *</label>
+                  <input
+                    type="text"
+                    required
+                    value={regCity}
+                    onChange={(e) => setRegCity(e.target.value)}
+                    placeholder="e.g. Pune"
+                    style={{ fontSize: 12.5 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10, marginBottom: 10 }}>
+                <div className="form-group">
+                  <label style={{ fontSize: 11.5 }}>Authorized Signatory Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={regContactName}
+                    onChange={(e) => setRegContactName(e.target.value)}
+                    placeholder="e.g. Prof. Anand Deshmukh"
+                    style={{ fontSize: 12.5 }}
+                  />
+                </div>
+                <div className="form-group">
+                  <label style={{ fontSize: 11.5 }}>Official Institution Email *</label>
+                  <input
+                    type="email"
+                    required
+                    value={regEmail}
+                    onChange={(e) => setRegEmail(e.target.value)}
+                    placeholder="e.g. principal@sunrise.edu"
+                    style={{ fontSize: 12.5 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10, marginBottom: 10 }}>
+                <div className="form-group">
+                  <label style={{ fontSize: 11.5 }}>Mobile Contact Number *</label>
+                  <input
+                    type="tel"
+                    required
+                    value={regPhone}
+                    onChange={(e) => setRegPhone(e.target.value)}
+                    placeholder="+91-9876543210"
+                    style={{ fontSize: 12.5 }}
+                  />
+                </div>
+                <div className="form-group">
+                  <label style={{ fontSize: 11.5 }}>AICTE Permanent Institute ID</label>
+                  <input
+                    type="text"
+                    value={regInstCode}
+                    onChange={(e) => setRegInstCode(e.target.value)}
+                    placeholder="e.g. 1-8401920 (optional if new)"
+                    style={{ fontSize: 12.5 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10, marginBottom: 12 }}>
+                <div className="form-group">
+                  <label style={{ fontSize: 11.5 }}>Portal Security Password *</label>
+                  <input
+                    type="password"
+                    required
+                    value={regPassword}
+                    onChange={(e) => setRegPassword(e.target.value)}
+                    placeholder="Minimum 8 characters"
+                    style={{ fontSize: 12.5 }}
+                  />
+                </div>
+                <div className="form-group">
+                  <label style={{ fontSize: 11.5 }}>Confirm Password *</label>
+                  <input
+                    type="password"
+                    required
+                    value={regConfirmPassword}
+                    onChange={(e) => setRegConfirmPassword(e.target.value)}
+                    placeholder="Re-enter password"
+                    style={{ fontSize: 12.5 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 16 }}>
+                <input
+                  type="checkbox"
+                  id="regTerms"
+                  checked={regTerms}
+                  onChange={(e) => setRegTerms(e.target.checked)}
+                  style={{ marginTop: 3 }}
+                  required
+                />
+                <label htmlFor="regTerms" style={{ fontSize: 11.5, color: '#475569', lineHeight: 1.4 }}>
+                  I solemnly declare that I am the authorized representative of the institution and that all details provided comply with AICTE Approval Process Handbook statutory norms.
+                </label>
+              </div>
+
               <button
-                type="button"
-                className="btn-demo-pill-clean"
-                onClick={() => {
-                  setLoginEmail('college@demo.local');
-                  handleLogin(undefined, 'college@demo.local', 'DemoPass123!');
-                }}
+                type="submit"
+                className="btn-primary"
+                style={{ width: '100%', justifyContent: 'center', padding: '11px 14px' }}
+                disabled={isRegistering}
               >
-                <div className="demo-pill-title">🏢 1. Institution Applicant</div>
-                <div className="demo-pill-desc">Prof. Anand Deshmukh · ABC College</div>
+                <span>{isRegistering ? 'Registering Institution...' : 'Complete Registration & Access Portal'}</span>
+                <ArrowRight size={14} />
               </button>
-              <button
-                type="button"
-                className="btn-demo-pill-clean"
-                onClick={() => {
-                  setLoginEmail('officer@demo.local');
-                  handleLogin(undefined, 'officer@demo.local', 'DemoPass123!');
-                }}
-              >
-                <div className="demo-pill-title">⚖️ 2. Regional Officer / Admin</div>
-                <div className="demo-pill-desc">Dr. Rajesh Verma · Combined Scrutiny & Governance</div>
-              </button>
-              <button
-                type="button"
-                className="btn-demo-pill-clean"
-                onClick={() => {
-                  setLoginEmail('evc@demo.local');
-                  handleLogin(undefined, 'evc@demo.local', 'DemoPass123!');
-                }}
-              >
-                <div className="demo-pill-title">🔍 3. EVC Expert</div>
-                <div className="demo-pill-desc">Prof. S. Ramanujan · Inspection Chair</div>
-              </button>
-            </div>
-          </div>
+
+              <div style={{ textAlign: 'center', marginTop: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => { setAuthMode('login'); setErrorMsg(''); }}
+                  style={{ background: 'transparent', border: 'none', color: '#2563EB', fontWeight: 600, fontSize: 12.5, cursor: 'pointer', textDecoration: 'underline' }}
+                >
+                  ← Already registered? Return to Official Login
+                </button>
+              </div>
+            </form>
+          )}
         </div>
       </main>
     );

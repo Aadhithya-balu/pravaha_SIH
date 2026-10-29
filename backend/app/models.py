@@ -84,6 +84,10 @@ class Document(Base):
     file_size: Mapped[int] = mapped_column(Integer, default=0)
     mime_type: Mapped[str] = mapped_column(String(100), default="application/pdf")
     uploaded_by: Mapped[str] = mapped_column(String(255))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    is_latest: Mapped[bool] = mapped_column(Boolean, default=True)
+    file_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    processing_status: Mapped[str] = mapped_column(String(40), default="COMPLETED")
     extracted_text: Mapped[str] = mapped_column(Text, default="")
     ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     ai_findings: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
@@ -197,4 +201,47 @@ class Alert(Base):
     recipient_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     trigger_type: Mapped[str] = mapped_column(String(40), default="DEADLINE")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class StageRemark(Base):
+    __tablename__ = "stage_remarks"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    application_id: Mapped[int] = mapped_column(ForeignKey("applications.id"), index=True)
+    stage: Mapped[str] = mapped_column(String(60), index=True)
+    author_name: Mapped[str] = mapped_column(String(255))
+    author_email: Mapped[str] = mapped_column(String(255))
+    author_role: Mapped[str] = mapped_column(String(40))
+    comment_text: Mapped[str] = mapped_column(Text)
+    visibility: Mapped[str] = mapped_column(String(30), default="APPLICANT_VISIBLE")
+    document_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class InspectionEvidence(Base):
+    __tablename__ = "inspection_evidences"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    visit_id: Mapped[int] = mapped_column(ForeignKey("evc_visits.id"), index=True)
+    application_id: Mapped[int] = mapped_column(ForeignKey("applications.id"), index=True)
+    evidence_type: Mapped[str] = mapped_column(String(50), default="GEOTAGGED_PHOTO")
+    file_name: Mapped[str] = mapped_column(String(255))
+    file_path: Mapped[str] = mapped_column(String(500))
+    file_hash: Mapped[str] = mapped_column(String(64))
+    file_size: Mapped[int] = mapped_column(Integer, default=0)
+    uploaded_by: Mapped[str] = mapped_column(String(255))
+    remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class RegulatoryCategory(Base):
+    __tablename__ = "regulatory_categories"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    category_code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    title: Mapped[str] = mapped_column(String(200), index=True)
+    institution_type: Mapped[str] = mapped_column(String(100), default="Technical / Engineering")
+    description: Mapped[str] = mapped_column(Text)
+    required_documents_json: Mapped[str] = mapped_column(Text)
+    workflow_sequence_json: Mapped[str] = mapped_column(Text)
+    sla_days: Mapped[int] = mapped_column(Integer, default=21)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

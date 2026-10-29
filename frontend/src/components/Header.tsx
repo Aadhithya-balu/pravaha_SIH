@@ -87,7 +87,7 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={() => onNavigateTab && onNavigateTab('Overview')}
                 title="Navigate to Command Centre"
               >
-                AICTE FLOWGUARD
+                AICTE PRAVAHA
               </button>
               <span>/</span>
               <span>{currentCategory}</span>
@@ -193,24 +193,60 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        {/* Quick Demo Role Switcher for SIH Evaluators (Phase 4) */}
-        <div className="quick-role-bar" title="Switch persona to evaluate role-based permissions">
-          <span className="quick-role-label">Persona:</span>
-          {demoAccounts.map((acc) => {
-            const isCurrent = user?.role === acc.role;
-            return (
-              <button
-                key={acc.email}
-                type="button"
-                className={`role-pill ${isCurrent ? 'active' : ''}`}
-                onClick={() => onSwitchRole(acc.email)}
-                title={acc.title}
-              >
-                {acc.label}
-              </button>
-            );
-          })}
-        </div>
+        {/* Verified User Identity Chip (Strict Server-enforced Role) */}
+        {user && (
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '4px 10px',
+              borderRadius: 6,
+              background: '#F8FAFC',
+              border: '1px solid #E2E8F0',
+              fontSize: 12
+            }}
+            title={`${user.name} (${user.email}) — ${user.designation || user.role}`}
+          >
+            <div
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                background:
+                  user.role === 'admin'
+                    ? '#7C3AED'
+                    : user.role === 'officer'
+                    ? '#2563EB'
+                    : user.role === 'evc_expert'
+                    ? '#059669'
+                    : '#D97706'
+              }}
+            />
+            <span style={{ fontWeight: 600, color: '#1E293B', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {user.name}
+            </span>
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                padding: '1px 6px',
+                borderRadius: 4,
+                background: '#E2E8F0',
+                color: '#475569'
+              }}
+            >
+              {user.role === 'institution'
+                ? 'Applicant'
+                : user.role === 'officer'
+                ? 'Scrutiny Officer'
+                : user.role === 'evc_expert'
+                ? 'EVC Inspector'
+                : user.role}
+            </span>
+          </div>
+        )}
 
         {/* Manual Deadline Scan Trigger (Officer / Bureau / Admin) */}
         {user?.role !== 'institution' && (

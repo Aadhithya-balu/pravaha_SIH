@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import { DashboardMetrics, User, Application, AlertItem, BottleneckAnalytics, AuditEvent } from '../types';
 import { fetchBottleneckAnalytics, fetchRecentAuditEvents } from '../api';
+import { RegulatoryCategoriesSearch } from './RegulatoryCategoriesSearch';
+import { Building2, Plus, Download, Check, AlertCircle } from 'lucide-react';
 
 interface OverviewTabProps {
   metrics: DashboardMetrics | null;
@@ -354,6 +356,503 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     );
   }
 
+
+  // ====================================================================
+  // ROLE-SPECIFIC VIEW 1: COLLEGE / INSTITUTION APPLICANT DASHBOARD
+  // ====================================================================
+  if (user?.role === 'institution') {
+    const instApps = filteredApps.filter(
+      (a) => a.institution_name === user.institution_name || user.institution_name === 'ABC Engineering College' || !user.institution_name
+    );
+    const instTotal = instApps.length;
+    const instInScrutiny = instApps.filter((a) => a.current_stage === 'SCRUTINY' || a.current_stage === 'RE_SCRUTINY').length;
+    const instClarifications = instApps.filter((a) => a.current_stage === 'RETURNED_FOR_CLARIFICATION' || a.deficiency_count > 0).length;
+    const instApproved = instApps.filter((a) => a.status === 'COMPLETED' || a.current_stage === 'COMPLETED').length;
+
+    return (
+      <div className="page-container" style={{ gap: 20, maxWidth: 1440, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+        {/* Applicant Header */}
+        <div style={{
+          background: '#FFFFFF',
+          border: '1px solid #E2E8F0',
+          borderRadius: 10,
+          padding: '16px 22px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 14,
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)'
+        }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748B', marginBottom: 2 }}>
+              <span>Institutional Portal</span>
+              <span style={{ color: '#CBD5E1' }}>/</span>
+              <span style={{ color: '#163A63', fontWeight: 600 }}>Command Centre</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+              <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: '#1E293B' }}>
+                Institutional Approval Portal
+              </h1>
+              <span style={{ fontSize: 13, color: '#64748B' }}>
+                {user.institution_name || 'Registered Technical Institution'} • AY 2026-2027
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => onNavigate('Applications')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 14px',
+                background: '#163A63',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: 6,
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              <Plus size={14} />
+              <span>Submit New Application / Renewal</span>
+            </button>
+            <button
+              onClick={handleManualRefresh}
+              disabled={isRefreshing}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '7px 12px',
+                borderRadius: 6,
+                background: '#FFFFFF',
+                border: '1px solid #E2E8F0',
+                color: '#172B4D',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                height: 34
+              }}
+            >
+              <RefreshCw size={13} className={isRefreshing ? 'spin' : ''} />
+              <span>Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Institution Profile Banner */}
+        <div style={{
+          background: 'linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%)',
+          color: '#FFFFFF',
+          borderRadius: 10,
+          padding: '16px 20px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 14
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(255, 255, 255, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Building2 size={24} color="#FFFFFF" />
+            </div>
+            <div>
+              <b style={{ fontSize: 16, display: 'block' }}>{user.institution_name || 'Accredited Technical College'}</b>
+              <span style={{ fontSize: 12, color: '#DBEAFE' }}>
+                Authorized Signatory: {user.name} ({user.email}) • Region: {user.region} • AICTE Affiliation Active
+              </span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <span style={{ background: 'rgba(255, 255, 255, 0.2)', padding: '4px 10px', borderRadius: 4, fontSize: 11.5, fontWeight: 600 }}>
+              Permanent Institute ID: AICTE-1-8401
+            </span>
+          </div>
+        </div>
+
+        {/* 4 Summary Metrics for Applicant */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+          <div
+            onClick={() => onNavigate('Applications')}
+            style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 10, padding: '16px', cursor: 'pointer' }}
+            className="kpi-card-hover"
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#64748B' }}>My Active Applications</span>
+              <FileText size={18} color="#2563EB" />
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#1E293B' }}>{instTotal}</div>
+            <span style={{ fontSize: 11.5, color: '#2563EB', fontWeight: 600 }}>View application register →</span>
+          </div>
+
+          <div
+            onClick={() => onNavigate('Applications')}
+            style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 10, padding: '16px', cursor: 'pointer' }}
+            className="kpi-card-hover"
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#64748B' }}>Under AI Scrutiny</span>
+              <Sparkles size={18} color="#2563EB" />
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#1E293B' }}>{instInScrutiny}</div>
+            <span style={{ fontSize: 11.5, color: '#64748B' }}>Awaiting desk review</span>
+          </div>
+
+          <div
+            onClick={() => onNavigate('Applications')}
+            style={{ background: '#FFFFFF', border: '1px solid #FEF3C7', borderRadius: 10, padding: '16px', cursor: 'pointer' }}
+            className="kpi-card-hover"
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#B45309' }}>Clarifications Required</span>
+              <AlertTriangle size={18} color="#D97706" />
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#B45309' }}>{instClarifications}</div>
+            <span style={{ fontSize: 11.5, color: '#D97706', fontWeight: 600 }}>Action required on deficiencies →</span>
+          </div>
+
+          <div
+            onClick={() => onNavigate('Applications')}
+            style={{ background: '#FFFFFF', border: '1px solid #DCFCE7', borderRadius: 10, padding: '16px', cursor: 'pointer' }}
+            className="kpi-card-hover"
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#16845B' }}>Approval Orders Issued</span>
+              <CheckCircle2 size={18} color="#16845B" />
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#16845B' }}>{instApproved}</div>
+            <span style={{ fontSize: 11.5, color: '#16845B', fontWeight: 600 }}>Download statutory letters</span>
+          </div>
+        </div>
+
+        {/* My Applications Table */}
+        <div style={{
+          background: '#FFFFFF',
+          border: '1px solid #E2E8F0',
+          borderRadius: 10,
+          padding: '18px 20px',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <div>
+              <b style={{ fontSize: 15, color: '#0F172A' }}>My Institutional Approval Dossiers</b>
+              <span style={{ fontSize: 12, color: '#64748B', display: 'block' }}>
+                Track live status, officer remarks, and document verification stages
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate('Applications')}
+              style={{
+                background: 'transparent',
+                border: '1px solid #CBD5E1',
+                borderRadius: 6,
+                padding: '5px 10px',
+                fontSize: 12,
+                color: '#2563EB',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              Open Full Register
+            </button>
+          </div>
+
+          {instApps.length === 0 ? (
+            <div style={{ padding: '30px', textAlign: 'center', color: '#64748B', background: '#F8FAFC', borderRadius: 8 }}>
+              <FileText size={28} color="#94A3B8" style={{ margin: '0 auto 8px auto', display: 'block' }} />
+              <b style={{ fontSize: 14, color: '#1E293B', display: 'block' }}>No applications registered for this academic year</b>
+              <span style={{ fontSize: 12 }}>Click "Submit New Application" to begin an Extension of Approval or New Programme request.</span>
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', color: '#64748B', fontSize: 11.5, textTransform: 'uppercase' }}>
+                    <th style={{ padding: '10px 12px' }}>Application Ref</th>
+                    <th style={{ padding: '10px 12px' }}>Regulatory Category</th>
+                    <th style={{ padding: '10px 12px' }}>Academic Year</th>
+                    <th style={{ padding: '10px 12px' }}>Current Stage</th>
+                    <th style={{ padding: '10px 12px' }}>Workflow Status</th>
+                    <th style={{ padding: '10px 12px' }}>Deficiencies</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'right' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {instApps.map((a) => (
+                    <tr key={a.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                      <td style={{ padding: '10px 12px', fontWeight: 600, color: '#163A63' }}>{a.reference}</td>
+                      <td style={{ padding: '10px 12px' }}>{a.application_type}</td>
+                      <td style={{ padding: '10px 12px', color: '#64748B' }}>{a.academic_year}</td>
+                      <td style={{ padding: '10px 12px' }}>
+                        <span style={{
+                          padding: '2px 8px',
+                          borderRadius: 4,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          background: a.current_stage === 'COMPLETED' ? '#F0FDF4' : a.current_stage === 'RETURNED_FOR_CLARIFICATION' ? '#FEF3C7' : '#EFF6FF',
+                          color: a.current_stage === 'COMPLETED' ? '#16845B' : a.current_stage === 'RETURNED_FOR_CLARIFICATION' ? '#B45309' : '#1D4ED8'
+                        }}>
+                          {a.current_stage}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 12px' }}>
+                        <span style={{
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                          color: a.status === 'COMPLETED' ? '#16845B' : a.status === 'REJECTED' ? '#DC2626' : a.status === 'RETURNED' ? '#D97706' : '#2563EB'
+                        }}>
+                          ● {a.status === 'COMPLETED' ? 'Completed' : a.status === 'RETURNED' ? 'Action Required' : a.status === 'REJECTED' ? 'Rejected' : 'In Progress'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 12px' }}>
+                        {a.deficiency_count > 0 ? (
+                          <span style={{ color: '#D97706', fontWeight: 700 }}>{a.deficiency_count} item(s)</span>
+                        ) : (
+                          <span style={{ color: '#16845B' }}>Zero Deficiencies</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          onClick={() => onSelectApplication && onSelectApplication(a)}
+                          style={{
+                            background: '#EFF6FF',
+                            border: '1px solid #BFDBFE',
+                            color: '#2563EB',
+                            borderRadius: 4,
+                            padding: '4px 8px',
+                            fontSize: 11.5,
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          View Details
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Searchable Regulatory Options Browser */}
+        <RegulatoryCategoriesSearch
+          onSelectCategory={(cat) => onNavigate('Applications')}
+          currentUserRole="institution"
+        />
+      </div>
+    );
+  }
+
+  // ====================================================================
+  // ROLE-SPECIFIC VIEW 2: EVC / INSPECTION OFFICER DASHBOARD
+  // ====================================================================
+  if (user?.role === 'evc_expert') {
+    return (
+      <div className="page-container" style={{ gap: 20, maxWidth: 1440, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+        {/* EVC Header */}
+        <div style={{
+          background: '#FFFFFF',
+          border: '1px solid #E2E8F0',
+          borderRadius: 10,
+          padding: '16px 22px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 14,
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)'
+        }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748B', marginBottom: 2 }}>
+              <span>Inspection Management</span>
+              <span style={{ color: '#CBD5E1' }}>/</span>
+              <span style={{ color: '#163A63', fontWeight: 600 }}>EVC Operations</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+              <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: '#1E293B' }}>
+                Expert Visit Committee (EVC) Workspace
+              </h1>
+              <span style={{ fontSize: 13, color: '#64748B' }}>
+                Physical & Virtual Campus Inspection Verification
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => onNavigate('EVC Inspections')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 14px',
+                background: '#16845B',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: 6,
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              <Calendar size={14} />
+              <span>Open Inspection Calendar</span>
+            </button>
+            <button
+              onClick={handleManualRefresh}
+              disabled={isRefreshing}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '7px 12px',
+                borderRadius: 6,
+                background: '#FFFFFF',
+                border: '1px solid #E2E8F0',
+                color: '#172B4D',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                height: 34
+              }}
+            >
+              <RefreshCw size={13} className={isRefreshing ? 'spin' : ''} />
+              <span>Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Inspector Profile Banner */}
+        <div style={{
+          background: 'linear-gradient(135deg, #065F46 0%, #059669 100%)',
+          color: '#FFFFFF',
+          borderRadius: 10,
+          padding: '16px 20px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 14
+        }}>
+          <div>
+            <b style={{ fontSize: 16, display: 'block' }}>{user.name} — Senior EVC Committee Inspector</b>
+            <span style={{ fontSize: 12, color: '#D1FAE5' }}>
+              Appointed under AICTE Statutory Regulations • Region: {user.region} • Panel Assignment Active
+            </span>
+          </div>
+          <span style={{ background: 'rgba(255, 255, 255, 0.2)', padding: '4px 10px', borderRadius: 4, fontSize: 11.5, fontWeight: 600 }}>
+            Jurisdiction: Assigned Technical Inspections
+          </span>
+        </div>
+
+        {/* 4 EVC KPI Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+          <div
+            onClick={() => onNavigate('EVC Inspections')}
+            style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 10, padding: '16px', cursor: 'pointer' }}
+            className="kpi-card-hover"
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#64748B' }}>Assigned Inspections</span>
+              <Calendar size={18} color="#2563EB" />
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#1E293B' }}>2</div>
+            <span style={{ fontSize: 11.5, color: '#2563EB', fontWeight: 600 }}>View assigned committee cases →</span>
+          </div>
+
+          <div
+            onClick={() => onNavigate('EVC Inspections')}
+            style={{ background: '#FFFFFF', border: '1px solid #DCFCE7', borderRadius: 10, padding: '16px', cursor: 'pointer' }}
+            className="kpi-card-hover"
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#16845B' }}>Completed Visits</span>
+              <CheckCircle2 size={18} color="#16845B" />
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#16845B' }}>1</div>
+            <span style={{ fontSize: 11.5, color: '#16845B' }}>Statutory report filed</span>
+          </div>
+
+          <div
+            onClick={() => onNavigate('EVC Inspections')}
+            style={{ background: '#FFFFFF', border: '1px solid #FEF3C7', borderRadius: 10, padding: '16px', cursor: 'pointer' }}
+            className="kpi-card-hover"
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#B45309' }}>Reports Pending</span>
+              <Clock size={18} color="#D97706" />
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#B45309' }}>1</div>
+            <span style={{ fontSize: 11.5, color: '#D97706', fontWeight: 600 }}>Awaiting findings submission →</span>
+          </div>
+
+          <div
+            onClick={() => onNavigate('EVC Inspections')}
+            style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 10, padding: '16px', cursor: 'pointer' }}
+            className="kpi-card-hover"
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#64748B' }}>Visit Evidence Uploaded</span>
+              <FileCheck2 size={18} color="#059669" />
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#1E293B' }}>Verified</div>
+            <span style={{ fontSize: 11.5, color: '#059669', fontWeight: 600 }}>SHA-256 Geotagged proofs</span>
+          </div>
+        </div>
+
+        {/* Quick Jump Action Card */}
+        <div style={{
+          background: '#FFFFFF',
+          border: '1px solid #E2E8F0',
+          borderRadius: 10,
+          padding: '18px 20px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 14
+        }}>
+          <div>
+            <b style={{ fontSize: 15, color: '#0F172A' }}>Inspection Schedule & On-site Verification Workspace</b>
+            <span style={{ fontSize: 12, color: '#64748B', display: 'block' }}>
+              Conduct physical / virtual inspections, review infrastructure checklist, upload visit evidence and file committee recommendations.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigate('EVC Inspections')}
+            style={{
+              padding: '8px 16px',
+              borderRadius: 6,
+              background: '#059669',
+              color: '#FFFFFF',
+              border: 'none',
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6
+            }}
+          >
+            <span>Go to EVC Inspections Page</span>
+            <ArrowRight size={14} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="page-container" style={{ gap: 20, maxWidth: 1440, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       {/* ====================================================================
@@ -544,7 +1043,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               </div>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <b style={{ fontSize: 14.5, color: '#1E3A8A' }}>How to Use AICTE FlowGuard — Quick Evaluation Guide</b>
+                  <b style={{ fontSize: 14.5, color: '#1E3A8A' }}>How to Use PRAVAHA — Quick Evaluation Guide</b>
                   <span style={{
                     fontSize: 11,
                     fontWeight: 700,

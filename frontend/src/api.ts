@@ -332,3 +332,56 @@ export function showToast(message: string, type: ToastType = 'success') {
     );
   }
 }
+
+export async function registerInstitution(data: {
+  institution_name: string;
+  contact_name: string;
+  email: string;
+  phone: string;
+  region: string;
+  state: string;
+  city: string;
+  institution_type: string;
+  institution_code?: string;
+  password: string;
+}): Promise<any> {
+  return api('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
+
+export async function fetchRegulatoryCategories(search?: string, type?: string): Promise<any[]> {
+  const query = new URLSearchParams();
+  if (search) query.append('search', search);
+  if (type && type !== 'ALL') query.append('institution_type', type);
+  const qStr = query.toString() ? `?${query.toString()}` : '';
+  return api(`/regulatory-categories${qStr}`);
+}
+
+export async function fetchStageRemarks(aid: number): Promise<any[]> {
+  return api(`/applications/${aid}/remarks`);
+}
+
+export async function addStageRemark(aid: number, data: {
+  stage: string;
+  comment_text: string;
+  visibility?: 'APPLICANT_VISIBLE' | 'INTERNAL_OFFICER_ONLY';
+  document_reference?: string;
+}): Promise<any> {
+  return api(`/applications/${aid}/remarks`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function uploadEvcEvidence(visitId: number, file: File, evidenceType: string, remarks?: string): Promise<any> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('evidence_type', evidenceType);
+  if (remarks) form.append('remarks', remarks);
+  return apiUpload(`/evc/${visitId}/evidence`, form);
+}
+
+export async function replaceApplicationDocument(appId: number, docId: number, file: File): Promise<any> {
+  const form = new FormData();
+  form.append('file', file);
+  return apiUpload(`/applications/${appId}/documents/${docId}/replace`, form);
+}

@@ -75,6 +75,18 @@ def run_schema_migrations(eng):
                 if "source_reference" not in cols:
                     conn.execute(text("ALTER TABLE scrutiny_findings ADD COLUMN source_reference VARCHAR(255);"))
 
+
+            if "documents" in tables:
+                cols = get_cols("documents")
+                if "version" not in cols:
+                    conn.execute(text("ALTER TABLE documents ADD COLUMN version INTEGER DEFAULT 1;"))
+                if "is_latest" not in cols:
+                    conn.execute(text("ALTER TABLE documents ADD COLUMN is_latest BOOLEAN DEFAULT 1;"))
+                if "file_hash" not in cols:
+                    conn.execute(text("ALTER TABLE documents ADD COLUMN file_hash VARCHAR(64);"))
+                if "processing_status" not in cols:
+                    conn.execute(text("ALTER TABLE documents ADD COLUMN processing_status VARCHAR(40) DEFAULT 'COMPLETED';"))
+
             conn.commit()
 
 

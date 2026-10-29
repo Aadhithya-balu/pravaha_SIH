@@ -17,9 +17,12 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from .db import Base, engine, get_db, run_schema_migrations
 from .models import (
     User, Institution, Application, AuditEvent, Document, EVCVisit,
-    ComplianceItem, Alert, ScrutinyRun, ScrutinyFinding, CorrectionRequest
+    ComplianceItem, Alert, ScrutinyRun, ScrutinyFinding, CorrectionRequest,
+    StageRemark, InspectionEvidence, RegulatoryCategory
 )
 from .schemas import (
+    StageRemarkCreate, StageRemarkOut,
+    RegisterRequest,
     LoginRequest, UserOut, ApplicationCreate, ApplicationPatch, ApplicationTransition,
     ApplicationUpdate, ApplicationResubmit, ApplicationOut, AuditEventOut, ComplianceCreate,
     ComplianceEvidenceSubmit, ComplianceVerify, ComplianceOut, EVCVisitCreate,
@@ -163,6 +166,79 @@ def health():
         "routes_supported": ["Extension of Approval (EoA)", "New Programme / Level"]
     }
 
+
+@app.post("/api/auth/register", status_code=201)
+@app.post("/api/v1/auth/register", status_code=201)
+def register(req: RegisterRequest, db: Session = Depends(get_db)):
+    clean_email = req.email.lower().strip()
+    existing_user = db.query(User).filter(User.email == clean_email).first()
+    if existing_user:
+        raise HTTPException(status_code=409, detail=f"User with email '{clean_email}' is already registered.")
+
+    clean_inst_name = req.institution_name.strip()
+    inst = db.query(Institution).filter(Institution.name == clean_inst_name).first()
+    if not inst:
+        inst_code = req.institution_code or f"AICTE-1-{uuid4().hex[:7].upper()}"
+        inst = Institution(
+            code=inst_code,
+            name=clean_inst_name,
+            region=req.region,
+            state=req.state,
+            address=f"{req.city}, {req.state}",
+            contact_email=clean_email,
+            contact_phone=req.phone,
+            institution_type=req.institution_type
+        )
+        db.add(inst)
+        db.flush()
+
+    new_user = User(
+        email=clean_email,
+        name=req.contact_name.strip(),
+        password_hash=password_hash(req.password),
+        role="institution",
+        institution_name=clean_inst_name,
+        region=req.region,
+        designation="Authorized Institutional Representative",
+        is_active=True
+    )
+    db.add(new_user)
+    db.flush()
+
+    alert = Alert(
+        title="Welcome to PRAVAHA Institutional Portal",
+        message=f"Registration successful for {clean_inst_name}. You may now prepare and submit regulatory approval dossiers.",
+        severity="INFO",
+        target_role="institution",
+        institution_name=clean_inst_name,
+        recipient_user_id=new_user.id,
+        trigger_type="SYSTEM"
+    )
+    db.add(alert)
+    db.commit()
+    db.refresh(new_user)
+
+    token_data = {
+        "sub": str(new_user.id),
+        "email": new_user.email,
+        "role": new_user.role,
+        "name": new_user.name,
+        "institution_name": new_user.institution_name,
+        "exp": datetime.now(timezone.utc) + timedelta(hours=12)
+    }
+    access_token = jwt.encode(token_data, SECRET, algorithm=ALGORITHM)
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "role": new_user.role,
+        "name": new_user.name,
+        "email": new_user.email,
+        "institution_name": new_user.institution_name,
+        "region": new_user.region,
+        "designation": new_user.designation,
+        "message": "Institution registered successfully."
+    }
 
 @app.post("/api/auth/login")
 @app.post("/api/v1/auth/login")
@@ -2504,3 +2580,261 @@ def v1_get_recent_audit_events(limit: int = 10, db: Session = Depends(get_db), u
 
 
 app.include_router(v1_router)
+
+# --- Regulatory Categories (Search-based Options) ---
+
+@app.get("/api/regulatory-categories")
+@app.get("/api/v1/regulatory-categories")
+def get_regulatory_categories(
+    search: Optional[str] = Query(None),
+    institution_type: Optional[str] = Query(None),
+    db: Session = Depends(get_db)
+):
+    q = db.query(RegulatoryCategory).filter(RegulatoryCategory.is_active == True)
+    if search:
+        s = f"%{search.strip()}%"
+        q = q.filter(or_(
+            RegulatoryCategory.title.ilike(s),
+            RegulatoryCategory.description.ilike(s),
+            RegulatoryCategory.category_code.ilike(s),
+            RegulatoryCategory.institution_type.ilike(s)
+        ))
+    if institution_type and institution_type != "ALL":
+        q = q.filter(RegulatoryCategory.institution_type.ilike(f"%{institution_type}%"))
+    
+    cats = q.order_by(RegulatoryCategory.id).all()
+    results = []
+    for c in cats:
+        import json
+        req_docs = json.loads(c.required_documents_json) if c.required_documents_json else []
+        seq = json.loads(c.workflow_sequence_json) if c.workflow_sequence_json else []
+        results.append({
+            "id": c.id,
+            "category_code": c.category_code,
+            "title": c.title,
+            "institution_type": c.institution_type,
+            "description": c.description,
+            "required_documents": req_docs,
+            "workflow_sequence": seq,
+            "sla_days": c.sla_days
+        })
+    return results
+
+
+# --- Stage Remarks & Chronological Comments ---
+
+@app.get("/api/applications/{aid}/remarks")
+@app.get("/api/v1/applications/{aid}/remarks")
+def get_stage_remarks(
+    aid: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    app_rec = db.get(Application, aid)
+    if not app_rec:
+        raise HTTPException(status_code=404, detail="Application not found.")
+    
+    if user.role == "institution" and app_rec.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden. Cannot view remarks for another institution.")
+    
+    q = db.query(StageRemark).filter(StageRemark.application_id == aid)
+    if user.role == "institution":
+        q = q.filter(StageRemark.visibility == "APPLICANT_VISIBLE")
+    
+    remarks = q.order_by(StageRemark.created_at.asc()).all()
+    return remarks
+
+
+@app.post("/api/applications/{aid}/remarks", status_code=201, response_model=StageRemarkOut)
+@app.post("/api/v1/applications/{aid}/remarks", status_code=201, response_model=StageRemarkOut)
+def add_stage_remark(
+    aid: int,
+    req: StageRemarkCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    stage = req.stage or "SCRUTINY"
+    comment_text = (req.comment_text or req.remark or "").strip()
+    if not comment_text:
+        raise HTTPException(status_code=422, detail="Remark / comment text is required.")
+    visibility = req.visibility or "APPLICANT_VISIBLE"
+    document_reference = req.document_reference
+    app_rec = db.get(Application, aid)
+    if not app_rec:
+        raise HTTPException(status_code=404, detail="Application not found.")
+    
+    if user.role == "institution":
+        if app_rec.institution_name != user.institution_name:
+            raise HTTPException(status_code=403, detail="Forbidden.")
+        visibility = "APPLICANT_VISIBLE"
+
+    if visibility not in ["APPLICANT_VISIBLE", "INTERNAL_OFFICER_ONLY"]:
+        visibility = "APPLICANT_VISIBLE"
+
+    rem = StageRemark(
+        application_id=aid,
+        stage=stage,
+        author_name=user.name,
+        author_email=user.email,
+        author_role=user.role,
+        comment_text=comment_text.strip(),
+        visibility=visibility,
+        document_reference=document_reference
+    )
+    db.add(rem)
+    
+    record_audit_event(
+        db=db,
+        application_id=aid,
+        actor=user.email,
+        actor_role=user.role,
+        action="STAGE_REMARK_ADDED",
+        from_stage=app_rec.current_stage,
+        to_stage=app_rec.current_stage,
+        details=f"[{visibility}] Remark by {user.name} ({user.role}) on stage '{stage}': {comment_text[:80]}..."
+    )
+    
+    db.commit()
+    db.refresh(rem)
+    return rem
+
+
+# --- EVC Visit Evidence Upload ---
+
+@app.post("/api/evc/{vid}/evidence", status_code=201)
+@app.post("/api/v1/evc/{vid}/evidence", status_code=201)
+async def upload_inspection_evidence(
+    vid: int,
+    file: UploadFile = File(...),
+    evidence_type: str = Form("GEOTAGGED_PHOTO"),
+    remarks: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(evc_or_officer)
+):
+    visit = db.get(EVCVisit, vid)
+    if not visit:
+        raise HTTPException(status_code=404, detail="EVC visit not found.")
+    
+    upload_res = await process_and_store_upload(file)
+    
+    import hashlib
+    with open(upload_res["stored_filepath"], "rb") as f:
+        file_bytes = f.read()
+        f_hash = hashlib.sha256(file_bytes).hexdigest()
+    
+    evidence = InspectionEvidence(
+        visit_id=vid,
+        application_id=visit.application_id,
+        evidence_type=evidence_type,
+        file_name=upload_res["original_filename"],
+        file_path=upload_res["stored_filepath"],
+        file_hash=f_hash,
+        file_size=upload_res["file_size"],
+        uploaded_by=user.email,
+        remarks=remarks
+    )
+    db.add(evidence)
+    
+    record_audit_event(
+        db=db,
+        application_id=visit.application_id,
+        actor=user.email,
+        actor_role=user.role,
+        action="EVC_EVIDENCE_UPLOADED",
+        from_stage="EVC_SCHEDULED",
+        to_stage="EVC_IN_PROGRESS",
+        details=f"Uploaded inspection proof '{upload_res['original_filename']}' ({evidence_type}) SHA-256: {f_hash[:16]}..."
+    )
+    
+    db.commit()
+    db.refresh(evidence)
+    return evidence
+
+
+# --- Document Replacement & Version Control ---
+
+@app.post("/api/applications/{aid}/documents/{did}/replace")
+@app.post("/api/v1/applications/{aid}/documents/{did}/replace")
+async def replace_application_document(
+    aid: int,
+    did: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    old_doc = db.get(Document, did)
+    if not old_doc or old_doc.application_id != aid:
+        raise HTTPException(status_code=404, detail="Target document not found for this application.")
+    
+    app_rec = db.get(Application, aid)
+    if not app_rec:
+        raise HTTPException(status_code=404, detail="Application not found.")
+    
+    if user.role == "institution" and app_rec.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden.")
+    
+    if app_rec.status in ["COMPLETED", "REJECTED"]:
+        raise HTTPException(status_code=400, detail="Cannot replace documents on finalized applications.")
+    
+    upload_res = await process_and_store_upload(file)
+    
+    import hashlib
+    with open(upload_res["stored_filepath"], "rb") as f:
+        file_bytes = f.read()
+        f_hash = hashlib.sha256(file_bytes).hexdigest()
+    
+    # Mark old version as not latest
+    old_doc.is_latest = False
+    new_version = old_doc.version + 1
+    
+    # Run AI screening on replaced document
+    ai_result = await review_document(
+        document_name=upload_res["original_filename"],
+        document_type=old_doc.document_type,
+        text=upload_res["extracted_text"]
+    )
+    
+    new_doc = Document(
+        application_id=aid,
+        institution_name=app_rec.institution_name,
+        document_name=upload_res["original_filename"],
+        document_type=old_doc.document_type,
+        file_path=upload_res["stored_filepath"],
+        file_size=upload_res["file_size"],
+        mime_type=upload_res["mime_type"],
+        uploaded_by=user.email,
+        version=new_version,
+        is_latest=True,
+        file_hash=f_hash,
+        processing_status="COMPLETED",
+        extracted_text=upload_res["extracted_text"][:10000],
+        ai_summary=ai_result.get("summary"),
+        ai_findings=json.dumps(ai_result),
+        ai_confidence=float(ai_result.get("confidence_score", 0.9)),
+        review_status="PENDING"
+    )
+    db.add(new_doc)
+    
+    record_audit_event(
+        db=db,
+        application_id=aid,
+        actor=user.email,
+        actor_role=user.role,
+        action="DOC_REPLACED",
+        from_stage=app_rec.current_stage,
+        to_stage=app_rec.current_stage,
+        details=f"Replaced '{old_doc.document_name}' v{old_doc.version} with '{upload_res['original_filename']}' v{new_version} (SHA-256: {f_hash[:16]}...)"
+    )
+    
+    db.commit()
+    db.refresh(new_doc)
+    return new_doc
+
+@app.post("/api/applications/{aid}/decision", response_model=ApplicationOut)
+def application_decision_alias(
+    aid: int,
+    req: OfficerDecisionRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(officer_or_admin)
+):
+    return officer_record_decision(aid=aid, req=req, db=db, user=user)
