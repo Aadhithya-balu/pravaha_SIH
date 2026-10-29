@@ -20,6 +20,7 @@ import {
   Layers,
   Database,
   CheckSquare,
+  MessageSquare,
   Square,
   Download,
   AlertCircle,
@@ -44,7 +45,8 @@ import {
   NextBestAction,
   ScrutinyFinding,
   ScrutinyRun,
-  ComplianceItem
+  ComplianceItem,
+  StageRemark
 } from '../types';
 import {
   fetchApplicationDetail,
@@ -62,6 +64,10 @@ import {
   submitComplianceEvidence,
   verifyComplianceEvidence,
   patchApplication,
+  fetchStageRemarks,
+  addStageRemark,
+  fetchApprovedDocuments,
+  retryDocumentProcessing,
   token,
   api
 } from '../api';
@@ -81,7 +87,8 @@ type WorkspaceTab =
   | 'evc'
   | 'compliance'
   | 'fields'
-  | 'audit';
+  | 'audit'
+  | 'remarks';
 
 export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
   application,
@@ -98,6 +105,18 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
   const [scrutinyRuns, setScrutinyRuns] = useState<ScrutinyRun[]>([]);
   const [scrutinyFindings, setScrutinyFindings] = useState<ScrutinyFinding[]>([]);
   const [complianceItems, setComplianceItems] = useState<ComplianceItem[]>([]);
+
+  // Stage Remarks & Decision Trail
+  const [stageRemarks, setStageRemarks] = useState<StageRemark[]>([]);
+  const [newRemarkText, setNewRemarkText] = useState('');
+  const [newRemarkActionType, setNewRemarkActionType] = useState('OBSERVATION');
+  const [newRemarkVisibility, setNewRemarkVisibility] = useState<'APPLICANT_VISIBLE' | 'INTERNAL_OFFICER_ONLY'>('APPLICANT_VISIBLE');
+  const [replyingToRemarkId, setReplyingToRemarkId] = useState<number | null>(null);
+  const [isPostingRemark, setIsPostingRemark] = useState(false);
+
+  // Approved Documents & Document Category
+  const [approvedDocuments, setApprovedDocuments] = useState<any[]>([]);
+  const [uploadDocCategory, setUploadDocCategory] = useState('Institutional Records');
 
   // Tab navigation
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('overview');
@@ -215,6 +234,22 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
         );
         setComplianceItems(filteredComp);
       } catch (cErr) {
+        // Soft fail
+      }
+
+      // Fetch persistent multi-party stage remarks
+      try {
+        const rData = await fetchStageRemarks(application.id);
+        setStageRemarks(rData || []);
+      } catch (rErr) {
+        // Soft fail
+      }
+
+      // Fetch approved documents
+      try {
+        const aData = await fetchApprovedDocuments(application.id);
+        setApprovedDocuments(aData || []);
+      } catch (aErr) {
         // Soft fail
       }
 
@@ -349,7 +384,8 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
         details.id,
         uploadFile,
         uploadDocType,
-        uploadDocName || uploadFile.name
+        uploadDocName || uploadFile.name,
+        uploadDocCategory
       );
       setSuccessMsg(`Document '${uploadFile.name}' attached and scrutinized.`);
       setUploadFile(null);
@@ -401,6 +437,50 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
       onRefresh();
     } catch (err: any) {
       setErrorMsg(err.message || 'Scrutiny pipeline execution failed.');
+    } finally {
+      setIsActionLoading(false);
+    }
+  }
+
+  // Remarks & Comments: Post stage remark / reply
+  async function handlePostRemark(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newRemarkText.trim()) return;
+    setIsPostingRemark(true);
+    setErrorMsg('');
+    try {
+      await addStageRemark(details.id, {
+        stage: details.current_stage,
+        comment_text: newRemarkText.trim(),
+        action_type: newRemarkActionType,
+        visibility: newRemarkVisibility,
+        parent_remark_id: replyingToRemarkId
+      });
+      setNewRemarkText('');
+      setReplyingToRemarkId(null);
+      setSuccessMsg('Remark successfully recorded in application audit trail.');
+      const rData = await fetchStageRemarks(details.id);
+      setStageRemarks(rData || []);
+      await loadDetails();
+      onRefresh();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to post remark.');
+    } finally {
+      setIsPostingRemark(false);
+    }
+  }
+
+  // Document Processing: Retry OCR / PDF text extraction
+  async function handleRetryProcessing(docId: number) {
+    setIsActionLoading(true);
+    setErrorMsg('');
+    try {
+      const res = await retryDocumentProcessing(docId);
+      setSuccessMsg(`Document re-processing complete (${res.character_count || 0} characters extracted via ${res.extractor_used || 'OCR engine'}).`);
+      await loadDetails();
+      onRefresh();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to reprocess document.');
     } finally {
       setIsActionLoading(false);
     }
@@ -1043,6 +1123,26 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                 <ShieldCheck size={13} />
                 <span>Audit Chain ({auditEvents.length})</span>
               </button>
+
+              <button
+                onClick={() => setActiveTab('remarks')}
+                style={{
+                  padding: '10px 12px',
+                  border: 0,
+                  background: 'transparent',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: activeTab === 'remarks' ? 'var(--color-action-blue)' : '#64748B',
+                  borderBottom: activeTab === 'remarks' ? '2px solid var(--color-action-blue)' : '2px solid transparent',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                <MessageSquare size={13} />
+                <span>Remarks & History ({stageRemarks.length})</span>
+              </button>
             </div>
 
             {/* Tab Body Container */}
@@ -1057,8 +1157,73 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
               }}
             >
               {/* TAB 1: OVERVIEW & INSTITUTION DETAILS */}
-              {activeTab === 'overview' && (
+              {activeTab === 'overview' && (() => {
+                let parsedForm: Record<string, any> = {};
+                try {
+                  if (details.form_data) parsedForm = JSON.parse(details.form_data);
+                } catch (e) {}
+
+                return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {/* Mandatory Institutional & Campus Particulars Card */}
+                  <div
+                    style={{
+                      background: '#F0F9FF',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid #BAE6FD',
+                      padding: '16px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Building2 size={16} color="#0369A1" />
+                        <h4 style={{ margin: 0, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#0369A1' }}>
+                          Registered College & Campus Information
+                        </h4>
+                      </div>
+                      <span style={{ fontSize: 11, background: '#E0F2FE', color: '#0369A1', padding: '2px 8px', borderRadius: 12, fontWeight: 600 }}>
+                        Permanent ID: {parsedForm.institution_code || `AICTE-${details.id.toString().padStart(6, '0')}`}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, fontSize: 12 }}>
+                      <div>
+                        <span style={{ fontSize: 10, color: '#0369A1', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
+                          College / Institution Name
+                        </span>
+                        <b style={{ color: '#0C4A6E', fontSize: 13 }}>{parsedForm.college_name || details.institution_name}</b>
+                      </div>
+
+                      <div>
+                        <span style={{ fontSize: 10, color: '#0369A1', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
+                          Institution Category / Type
+                        </span>
+                        <span style={{ color: '#0C4A6E' }}>{parsedForm.institution_type || 'Engineering & Technology'}</span>
+                      </div>
+
+                      <div>
+                        <span style={{ fontSize: 10, color: '#0369A1', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
+                          Campus Address
+                        </span>
+                        <span style={{ color: '#0C4A6E' }}>{parsedForm.campus_address || `${details.region} Region Institutional Campus`}</span>
+                      </div>
+
+                      <div>
+                        <span style={{ fontSize: 10, color: '#0369A1', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
+                          District & State
+                        </span>
+                        <span style={{ color: '#0C4A6E' }}>{parsedForm.district ? `${parsedForm.district}, ` : ''}{parsedForm.state || details.region}</span>
+                      </div>
+
+                      <div>
+                        <span style={{ fontSize: 10, color: '#0369A1', textTransform: 'uppercase', fontWeight: 700, display: 'block' }}>
+                          Authorized Contact
+                        </span>
+                        <span style={{ color: '#0C4A6E' }}>{parsedForm.contact_person || 'Registrar / Principal'} ({parsedForm.contact_email || 'registrar@institute.edu.in'})</span>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Institutional & Application Particulars */}
                   <div
                     style={{
@@ -1214,7 +1379,8 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                     </div>
                   )}
                 </div>
-              )}
+                );
+              })()}
 
               {/* TAB 2: REGULATORY DOCUMENTS */}
               {activeTab === 'documents' && (
@@ -1260,7 +1426,22 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                         >
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                             <div>
-                              <b style={{ fontSize: 13, display: 'block', color: 'var(--text-primary)' }}>{doc.document_name}</b>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                <b style={{ fontSize: 13, color: 'var(--text-primary)' }}>{doc.document_name}</b>
+                                {doc.document_category && (
+                                  <span style={{
+                                    fontSize: 10,
+                                    fontWeight: 600,
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    background: '#EFF6FF',
+                                    color: '#1D4ED8',
+                                    border: '1px solid #BFDBFE'
+                                  }}>
+                                    Category: {doc.document_category}
+                                  </span>
+                                )}
+                              </div>
                               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                                 Type: <b>{doc.document_type}</b> · {(doc.file_size / 1024).toFixed(0)} KB · Uploaded by {doc.uploaded_by} on {new Date(doc.created_at).toLocaleDateString()}
                               </span>
@@ -1280,6 +1461,17 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                                 <Download size={12} />
                                 <span>Download</span>
                               </button>
+
+                              <button
+                                className="btn-secondary"
+                                style={{ fontSize: 11, padding: '4px 8px' }}
+                                onClick={() => handleRetryProcessing(doc.id)}
+                                title="Retry OCR & metadata extraction"
+                                disabled={isActionLoading}
+                              >
+                                <RefreshCw size={12} />
+                                <span>Retry OCR</span>
+                              </button>
                             </div>
                           </div>
 
@@ -1297,6 +1489,28 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                           )}
                         </div>
                       ))}
+                    </div>
+                  )}
+
+                  {/* Approved Documents Section */}
+                  {approvedDocuments.length > 0 && (
+                    <div style={{ marginTop: 14, background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 'var(--radius-sm)', padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                        <CheckCircle2 size={16} color="#16A34A" />
+                        <b style={{ fontSize: 13, color: '#166534' }}>
+                          Verified Statutory Approved Documents ({approvedDocuments.length})
+                        </b>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {approvedDocuments.map((ad: any) => (
+                          <div key={ad.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, padding: '6px 10px', background: '#FFFFFF', borderRadius: 4, border: '1px solid #DCFCE7' }}>
+                            <div>
+                              <b>{ad.document_name}</b> <span style={{ color: '#64748B' }}>({ad.document_category || ad.document_type})</span>
+                            </div>
+                            <span style={{ fontSize: 11, color: '#16A34A', fontWeight: 600 }}>● APPROVED</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1930,6 +2144,169 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* TAB 9: STAGE REMARKS, COMMENTS & DECISION HISTORY */}
+              {activeTab === 'remarks' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-navy)' }}>
+                        Stage Remarks, Comments & Multi-Party Discussions ({stageRemarks.length})
+                      </h4>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        Persistent chronological notes with reply threading and role-based visibility.
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Add Remark Form */}
+                  <form onSubmit={handlePostRemark} style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, padding: 14 }}>
+                    {replyingToRemarkId && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#EFF6FF', border: '1px solid #BFDBFE', padding: '6px 10px', borderRadius: 6, marginBottom: 10, fontSize: 12 }}>
+                        <span>Replying to Remark <b>#{replyingToRemarkId}</b></span>
+                        <button type="button" onClick={() => setReplyingToRemarkId(null)} style={{ background: 'none', border: 'none', color: '#1D4ED8', cursor: 'pointer', fontWeight: 600 }}>Cancel Reply</button>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'grid', gridTemplateColumns: isOfficerOrAdmin ? '1fr 1fr' : '1fr', gap: 12, marginBottom: 10 }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#475569', marginBottom: 3, textTransform: 'uppercase' }}>
+                          Remark Type
+                        </label>
+                        <select
+                          value={newRemarkActionType}
+                          onChange={(e) => setNewRemarkActionType(e.target.value)}
+                          style={{ width: '100%', padding: '6px 8px', borderRadius: 4, border: '1px solid #CBD5E1', fontSize: 12, background: '#FFFFFF' }}
+                        >
+                          <option value="OBSERVATION">Officer Observation</option>
+                          <option value="QUERY">Clarification Query to Applicant</option>
+                          <option value="CORRECTION_NOTE">Correction Guidance</option>
+                          <option value="APPROVAL_NOTE">Approval Endorsement</option>
+                          <option value="GENERAL">General Regulatory Note</option>
+                        </select>
+                      </div>
+
+                      {isOfficerOrAdmin && (
+                        <div>
+                          <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#475569', marginBottom: 3, textTransform: 'uppercase' }}>
+                            Visibility Level
+                          </label>
+                          <select
+                            value={newRemarkVisibility}
+                            onChange={(e) => setNewRemarkVisibility(e.target.value as 'APPLICANT_VISIBLE' | 'INTERNAL_OFFICER_ONLY')}
+                            style={{ width: '100%', padding: '6px 8px', borderRadius: 4, border: '1px solid #CBD5E1', fontSize: 12, background: '#FFFFFF' }}
+                          >
+                            <option value="APPLICANT_VISIBLE">Visible to Institution & Officers</option>
+                            <option value="INTERNAL_OFFICER_ONLY">Internal Officer Only (Confidential)</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ marginBottom: 10 }}>
+                      <textarea
+                        required
+                        rows={3}
+                        placeholder="Enter stage observation, clarification request, or regulatory finding remarks..."
+                        value={newRemarkText}
+                        onChange={(e) => setNewRemarkText(e.target.value)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 12.5, boxSizing: 'border-box' }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button
+                        type="submit"
+                        className="btn-primary"
+                        disabled={isPostingRemark || !newRemarkText.trim()}
+                        style={{ fontSize: 12, padding: '6px 14px' }}
+                      >
+                        {isPostingRemark ? 'Saving Remark...' : (replyingToRemarkId ? 'Post Reply' : 'Add Remark')}
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Remarks Chronological List */}
+                  {stageRemarks.length === 0 ? (
+                    <div style={{ padding: 24, textAlign: 'center', background: '#F8FAFC', borderRadius: 6, border: '1px dashed #CBD5E1', color: '#64748B', fontSize: 13 }}>
+                      No remarks recorded yet for this application lifecycle.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {stageRemarks.filter(r => !r.parent_remark_id).map((r) => {
+                        const replies = stageRemarks.filter(child => child.parent_remark_id === r.id);
+                        return (
+                          <div key={r.id} style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, padding: '12px 16px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <b style={{ fontSize: 13, color: '#1E293B' }}>{r.author_name}</b>
+                                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: '#F1F5F9', color: '#475569' }}>
+                                  {r.author_role.toUpperCase()}
+                                </span>
+                                <span style={{ fontSize: 10.5, color: '#64748B' }}>
+                                  Stage: <b>{r.stage}</b>
+                                </span>
+                              </div>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {r.visibility === 'INTERNAL_OFFICER_ONLY' && (
+                                  <span style={{ fontSize: 9.5, padding: '2px 6px', borderRadius: 4, background: '#FEF3C7', color: '#92400E', fontWeight: 700 }}>
+                                    INTERNAL ONLY
+                                  </span>
+                                )}
+                                <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#EFF6FF', color: '#1D4ED8', fontWeight: 600 }}>
+                                  {r.action_type || 'OBSERVATION'}
+                                </span>
+                                <span style={{ fontSize: 11, color: '#94A3B8' }}>
+                                  {new Date(r.created_at).toLocaleString()}
+                                </span>
+                              </div>
+                            </div>
+
+                            <p style={{ margin: '6px 0 10px', fontSize: 12.5, color: '#334155', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
+                              {r.comment_text}
+                            </p>
+
+                            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                              <button
+                                type="button"
+                                onClick={() => setReplyingToRemarkId(r.id)}
+                                style={{ background: 'none', border: 'none', color: '#2563EB', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+                              >
+                                Reply →
+                              </button>
+                            </div>
+
+                            {/* Nested Replies */}
+                            {replies.length > 0 && (
+                              <div style={{ marginTop: 10, paddingLeft: 16, borderLeft: '2px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                {replies.map((reply) => (
+                                  <div key={reply.id} style={{ background: '#F8FAFC', borderRadius: 6, padding: '8px 12px', border: '1px solid #E2E8F0' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <b style={{ fontSize: 12, color: '#1E293B' }}>{reply.author_name}</b>
+                                        <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 5px', borderRadius: 4, background: '#E2E8F0', color: '#475569' }}>
+                                          {reply.author_role.toUpperCase()}
+                                        </span>
+                                      </div>
+                                      <span style={{ fontSize: 10.5, color: '#94A3B8' }}>
+                                        {new Date(reply.created_at).toLocaleString()}
+                                      </span>
+                                    </div>
+                                    <p style={{ margin: 0, fontSize: 12, color: '#334155', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>
+                                      {reply.comment_text}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -2464,6 +2841,23 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
             </div>
             <form onSubmit={handleUploadDocument}>
               <div className="modal-body" style={{ gap: 14 }}>
+                <div className="form-group">
+                  <label>Regulatory Document Category *</label>
+                  <select
+                    value={uploadDocCategory}
+                    onChange={(e) => setUploadDocCategory(e.target.value)}
+                  >
+                    <option value="Institutional Records">Institutional Records</option>
+                    <option value="Approval Documents">Approval Documents</option>
+                    <option value="Faculty-Related Records">Faculty-Related Records</option>
+                    <option value="Infrastructure Records">Infrastructure Records</option>
+                    <option value="Lease Documents">Lease Documents</option>
+                    <option value="Undertakings">Statutory Undertakings & Affidavits</option>
+                    <option value="Inspection Evidence">Inspection Evidence & Geotagged Proofs</option>
+                    <option value="Other">Other Regulatory Disclosures</option>
+                  </select>
+                </div>
+
                 <div className="form-group">
                   <label>Document Type *</label>
                   <select

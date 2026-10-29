@@ -75,7 +75,6 @@ def run_schema_migrations(eng):
                 if "source_reference" not in cols:
                     conn.execute(text("ALTER TABLE scrutiny_findings ADD COLUMN source_reference VARCHAR(255);"))
 
-
             if "documents" in tables:
                 cols = get_cols("documents")
                 if "version" not in cols:
@@ -86,6 +85,45 @@ def run_schema_migrations(eng):
                     conn.execute(text("ALTER TABLE documents ADD COLUMN file_hash VARCHAR(64);"))
                 if "processing_status" not in cols:
                     conn.execute(text("ALTER TABLE documents ADD COLUMN processing_status VARCHAR(40) DEFAULT 'COMPLETED';"))
+                if "document_category" not in cols:
+                    conn.execute(text("ALTER TABLE documents ADD COLUMN document_category VARCHAR(100) DEFAULT 'INSTITUTIONAL_RECORDS';"))
+
+            if "evc_visits" in tables:
+                cols = get_cols("evc_visits")
+                if "actual_date" not in cols:
+                    conn.execute(text("ALTER TABLE evc_visits ADD COLUMN actual_date DATE;"))
+                if "visit_occurred" not in cols:
+                    conn.execute(text("ALTER TABLE evc_visits ADD COLUMN visit_occurred VARCHAR(30) DEFAULT 'UNCONFIRMED';"))
+                if "missed_reason" not in cols:
+                    conn.execute(text("ALTER TABLE evc_visits ADD COLUMN missed_reason TEXT;"))
+                if "evidence_verification_status" not in cols:
+                    conn.execute(text("ALTER TABLE evc_visits ADD COLUMN evidence_verification_status VARCHAR(30) DEFAULT 'PENDING';"))
+                if "location_details" not in cols:
+                    conn.execute(text("ALTER TABLE evc_visits ADD COLUMN location_details TEXT;"))
+                if "structured_checklist" not in cols:
+                    conn.execute(text("ALTER TABLE evc_visits ADD COLUMN structured_checklist TEXT;"))
+                if "inspection_outcome" not in cols:
+                    conn.execute(text("ALTER TABLE evc_visits ADD COLUMN inspection_outcome VARCHAR(40);"))
+
+            if "inspection_evidences" in tables:
+                cols = get_cols("inspection_evidences")
+                if "verification_status" not in cols:
+                    conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN verification_status VARCHAR(30) DEFAULT 'PENDING';"))
+                if "verified_by" not in cols:
+                    conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN verified_by VARCHAR(255);"))
+                if "verified_at" not in cols:
+                    conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN verified_at DATETIME;"))
+
+            if "stage_remarks" in tables:
+                cols = get_cols("stage_remarks")
+                if "action_type" not in cols:
+                    conn.execute(text("ALTER TABLE stage_remarks ADD COLUMN action_type VARCHAR(60) DEFAULT 'REVIEW_COMMENT';"))
+                if "parent_remark_id" not in cols:
+                    conn.execute(text("ALTER TABLE stage_remarks ADD COLUMN parent_remark_id INTEGER;"))
+                if "is_resolved" not in cols:
+                    conn.execute(text("ALTER TABLE stage_remarks ADD COLUMN is_resolved BOOLEAN DEFAULT 0;"))
+                if "resolution_notes" not in cols:
+                    conn.execute(text("ALTER TABLE stage_remarks ADD COLUMN resolution_notes TEXT;"))
 
             conn.commit()
 
