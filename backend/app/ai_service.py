@@ -71,6 +71,9 @@ def get_ai_config() -> Dict[str, str]:
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     generic_key = os.getenv("AI_API_KEY", "").strip()
 
+    if provider == "none":
+        return {"provider": "none", "api_key": "", "model": "none", "base_url": ""}
+
     # Priority 1: Groq AI configuration (official supported provider for SIH26262)
     if provider == "groq" or (not provider and groq_key):
         provider = "groq"
@@ -861,12 +864,18 @@ Document Type: {document_type}
                             "source_reference": "AICTE APH 2024-2027 Guidelines"
                         })
 
-                    # Combine deterministic regex candidate fields with LLM extractions
+                    # Baseline deterministic regulatory compliance evaluation
+                    det = analyze_document_deterministic(document_name, document_type, clean_text)
+
+                    # Merge extracted fields and candidate fields
                     det_candidates = extract_candidate_fields(document_name, document_type, clean_text)
                     merged_candidates = list(det_candidates)
-                    extracted_fields = parsed.get("extracted_fields", {})
-                    if isinstance(extracted_fields, dict):
-                        for k, v in extracted_fields.items():
+                    llm_extracted = parsed.get("extracted_fields", {})
+                    merged_extracted = dict(det.get("extracted_fields", {}))
+                    if isinstance(llm_extracted, dict):
+                        for k, v in llm_extracted.items():
+                            if k not in merged_extracted or not merged_extracted[k]:
+                                merged_extracted[k] = v
                             if v and str(v).strip() and not any(c.get("field_label", "").lower() == k.lower() for c in det_candidates):
                                 merged_candidates.append({
                                     "field_key": re.sub(r'[^a-zA-Z0-9_]', '_', k.lower()),
@@ -879,6 +888,24 @@ Document Type: {document_type}
                                     "target_form_field": re.sub(r'[^a-zA-Z0-9_]', '_', k.lower())
                                 })
 
+                    # Standardize Lease Tenure title casing
+                    if "Lease Tenure" in merged_extracted:
+                        t_m = re.search(r"(\d+)", str(merged_extracted["Lease Tenure"]))
+                        if t_m:
+                            merged_extracted["Lease Tenure"] = f"{t_m.group(1)} Years"
+
+                    # Merge potential inconsistencies
+                    merged_inconsistencies = list(det.get("potential_inconsistencies", []))
+                    for inc in parsed.get("potential_inconsistencies", []):
+                        if not any(inc.lower() in ex.lower() or ex.lower() in inc.lower() for ex in merged_inconsistencies):
+                            merged_inconsistencies.append(inc)
+
+                    # Merge structured findings (statutory rule findings prioritized + enriched LLM findings)
+                    merged_findings = list(det.get("structured_findings", []))
+                    for lf in llm_findings:
+                        if not any(lf["description"][:25].lower() in f["description"].lower() for f in merged_findings):
+                            merged_findings.append(lf)
+
                     return {
                         "mode": "real_llm",
                         "provider": provider,
@@ -887,12 +914,12 @@ Document Type: {document_type}
                         "document_name": document_name,
                         "document_type": document_type,
                         "summary": parsed.get("summary", "Summary unavailable"),
-                        "extracted_fields": extracted_fields,
+                        "extracted_fields": merged_extracted,
                         "candidate_fields": merged_candidates,
-                        "missing_information": parsed.get("missing_information", []),
-                        "potential_inconsistencies": parsed.get("potential_inconsistencies", []),
-                        "verification_questions": parsed.get("verification_questions", []),
-                        "structured_findings": llm_findings,
+                        "missing_information": parsed.get("missing_information", []) or det.get("missing_information", []),
+                        "potential_inconsistencies": merged_inconsistencies,
+                        "verification_questions": parsed.get("verification_questions", []) or det.get("verification_questions", []),
+                        "structured_findings": merged_findings,
                         "confidence_score": float(parsed.get("confidence_score", 0.92)),
                         "disclaimer": DISCLAIMER
                     }

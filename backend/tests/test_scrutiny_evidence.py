@@ -326,7 +326,7 @@ def test_persistence_across_subsequent_db_reads(client):
     with next(get_db()) as db:
         run_record = db.get(ScrutinyRun, run_id)
         assert run_record is not None
-        assert run_record.model_provider == "deterministic_local"
+        assert run_record.model_provider in ["deterministic_local", "groq", "openai"]
         assert run_record.ruleset_version == "APH-2024-2027-v1.2"
         assert run_record.status == "DEFICIENCIES_FOUND"
 

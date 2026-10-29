@@ -43,6 +43,7 @@ from .doc_extractor import process_and_store_upload, UPLOAD_DIR
 from .scrutiny import execute_scrutiny_pipeline, normalize_application_route, ROUTE_EOA, ROUTE_NEW_PROGRAMME
 from .escalation import run_escalation_engine
 from .seed import seed_database, password_hash
+from .email_service import send_workflow_email, get_email_status
 
 
 SECRET = os.getenv("SECRET_KEY", "aicte-sih-prototype-secure-token-secret-2026")
@@ -120,12 +121,24 @@ admin_only = require_roles(["admin"])
 
 
 def check_officer_jurisdiction(user: User, application: Application):
-    """Regional officers may only act on applications in their assigned region."""
-    if user.role == "officer" and user.region and user.region != "HQ":
-        if application.region != user.region and application.assigned_to != user.name:
+    """
+    Regional officers may act on applications in their assigned region,
+    unassigned regional queue cases, or cases assigned to them.
+    HQ/National/Admin officers have nationwide jurisdiction.
+    """
+    if user.role in ["admin", "bureau"]:
+        return
+    if user.role == "officer":
+        if not user.region or user.region in ["HQ", "National"]:
+            return
+        if application.assigned_to in [None, "Regional Officer", user.name]:
+            return
+        if application.region and application.region == user.region:
+            return
+        if application.assigned_to and application.assigned_to not in [user.name, "Regional Officer"]:
             raise HTTPException(
                 status_code=403,
-                detail=f"Access denied. Application region '{application.region}' is outside your authorized regional jurisdiction '{user.region}'."
+                detail=f"Access denied outside regional jurisdiction. Application is assigned to {application.assigned_to} in region '{application.region}'."
             )
 
 
@@ -158,11 +171,29 @@ def startup():
 
 @app.get("/api/health")
 @app.get("/api/v1/health")
-def health():
+def health(db: Session = Depends(get_db)):
+    db_ok = True
+    provider = "sqlite"
+    try:
+        from sqlalchemy import text as sa_text
+        db.execute(sa_text("SELECT 1"))
+        db_url = os.getenv("DATABASE_URL", "")
+        if "postgresql" in db_url or "supabase" in db_url:
+            provider = "postgresql/supabase"
+        else:
+            provider = "sqlite"
+    except Exception as e:
+        db_ok = False
+        provider = f"error: {e}"
+
     return {
-        "status": "ok",
+        "status": "ok" if db_ok else "degraded",
         "service": "Pravaha AICTE Regulatory Workflow & Scrutiny Engine",
         "timestamp": datetime.utcnow().isoformat(),
+        "database_ready": db_ok,
+        "database_provider": provider,
+        "environment": os.getenv("APP_ENV", "development"),
+        "storage_provider": "supabase_storage",
         "routes_supported": ["Extension of Approval (EoA)", "New Programme / Level"]
     }
 
@@ -288,7 +319,12 @@ def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_us
         q = q.filter(Application.institution_name == user.institution_name)
         cq = cq.filter(ComplianceItem.institution_name == user.institution_name)
     elif user.role == "officer" and user.region and user.region != "HQ":
-        q = q.filter(or_(Application.region == user.region, Application.assigned_to == user.name))
+        q = q.filter(or_(
+            Application.region == user.region,
+            Application.assigned_to == user.name,
+            Application.assigned_to == "Regional Officer",
+            Application.region.is_(None)
+        ))
         cq = cq.filter(ComplianceItem.institution_name.in_(db.query(Institution.name).filter(Institution.region == user.region)))
     elif user.role == "evc_expert":
         assigned_app_ids = db.query(EVCVisit.application_id).filter(
@@ -373,7 +409,12 @@ def list_applications(
     if user.role == "institution":
         q = q.filter(Application.institution_name == user.institution_name)
     elif user.role == "officer" and user.region and user.region != "HQ":
-        q = q.filter(or_(Application.region == user.region, Application.assigned_to == user.name))
+        q = q.filter(or_(
+            Application.region == user.region,
+            Application.assigned_to == user.name,
+            Application.assigned_to == "Regional Officer",
+            Application.region.is_(None)
+        ))
     elif user.role == "evc_expert":
         assigned_app_ids = db.query(EVCVisit.application_id).filter(
             or_(
@@ -533,6 +574,12 @@ def get_application_details(aid: int, db: Session = Depends(get_db), user: User 
     next_action = compute_next_best_action(a, db, user)
     a.next_action = next_action
 
+    # Fetch Stage Remarks
+    q_rem = db.query(StageRemark).filter(StageRemark.application_id == aid)
+    if user.role == "institution":
+        q_rem = q_rem.filter(StageRemark.visibility == "APPLICANT_VISIBLE")
+    remarks = q_rem.order_by(StageRemark.created_at.asc()).all()
+
     return {
         "application": a,
         "next_action": next_action,
@@ -542,7 +589,8 @@ def get_application_details(aid: int, db: Session = Depends(get_db), user: User 
         "evc_visit": evc,
         "scrutiny_runs": scrutiny_runs,
         "scrutiny_findings": scrutiny_findings,
-        "correction_requests": correction_requests
+        "correction_requests": correction_requests,
+        "remarks": remarks
     }
 
 
@@ -667,7 +715,7 @@ async def upload_application_document(
 
 
 @app.post("/api/applications/{aid}/submit", response_model=ApplicationOut)
-def submit_application(
+async def submit_application(
     aid: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
@@ -689,6 +737,8 @@ def submit_application(
     prev_stage = a.current_stage
     a.current_stage = "SCRUTINY"
     a.status = "IN_PROGRESS"
+    a.assigned_to = "Regional Officer"
+    a.assigned_role = "officer"
     a.submission_date = date.today()
 
     record_audit_event(
@@ -714,11 +764,15 @@ def submit_application(
 
     db.commit()
     db.refresh(a)
+    try:
+        await execute_scrutiny_pipeline(aid, db, user.email, "INITIAL")
+    except Exception as e:
+        logger.warning(f"Initial scrutiny pipeline failed on submission: {e}")
     return a
 
 
 @app.post("/api/applications/{aid}/resubmit", response_model=ApplicationOut)
-def resubmit_application(
+async def resubmit_application(
     aid: int,
     req: ApplicationResubmit,
     db: Session = Depends(get_db),
@@ -782,6 +836,10 @@ def resubmit_application(
 
     db.commit()
     db.refresh(a)
+    try:
+        await execute_scrutiny_pipeline(aid, db, user.email, "RE_SCRUTINY")
+    except Exception as e:
+        logger.warning(f"Re-scrutiny pipeline failed on resubmission: {e}")
     return a
 
 
@@ -1013,18 +1071,63 @@ def transition_application(
         details=details
     )
 
-    # If returned, notify institution
-    if new_status == "RETURNED":
+    # If EVC is scheduled, ensure an EVCVisit record exists for the panel
+    if new_stage == "EVC_SCHEDULED" or req.action.upper() == "SCHEDULE_EVC":
+        existing_visit = db.query(EVCVisit).filter(EVCVisit.application_id == aid).first()
+        if not existing_visit:
+            new_visit = EVCVisit(
+                application_id=aid,
+                institution_name=a.institution_name,
+                committee_members=req.reason.strip() if req.reason else "Dr. EVC Expert (evc@demo.local), Prof. K. Sharma",
+                scheduled_date=date.today() + timedelta(days=7),
+                visit_mode="PHYSICAL",
+                status="SCHEDULED",
+                assigned_by=user.email
+            )
+            db.add(new_visit)
+            db.flush()
+
+    # If returned, persist CorrectionRequest and notify institution
+    if new_status == "RETURNED" or req.action.upper() == "RETURN":
         a.deficiency_count += 1
+        cr = CorrectionRequest(
+            application_id=aid,
+            requested_by=user.email,
+            reason=req.reason.strip(),
+            deficiencies_json=json.dumps([]),
+            status="PENDING",
+            created_at=datetime.utcnow()
+        )
+        db.add(cr)
         db.add(Alert(
-            title=f"Application Returned: {a.reference}",
-            message=f"Case returned by {user.name}: {req.reason.strip()}",
+            title=f"Action Required: Clarifications Demanded for {a.reference}",
+            message=f"Regional Officer {user.name} returned your application for rectification: {req.reason.strip()}",
             severity="WARNING",
             target_role="institution",
             institution_name=a.institution_name,
             application_id=aid,
-            trigger_type="STAGE_CHANGE"
+            trigger_type="CORRECTION_REQUESTED"
         ))
+        send_workflow_email(
+            recipient=user.email,
+            subject=f"Action Required: Deficiency Memo Issued for {a.reference}",
+            template_type="CORRECTION_REQUESTED",
+            context={
+                "reference": a.reference,
+                "institution_name": a.institution_name,
+                "stage": "RETURNED_FOR_CLARIFICATION",
+                "details": req.reason.strip()
+            }
+        )
+    elif req.action.upper() in ["SCRUTINY_PASS", "RESCRUTINY_CLEARED", "SEND_EVC"]:
+        pending_crs = db.query(CorrectionRequest).filter(
+            CorrectionRequest.application_id == aid,
+            CorrectionRequest.status.in_(["PENDING", "RESUBMITTED"])
+        ).all()
+        for cr in pending_crs:
+            cr.status = "RESOLVED"
+            cr.resolved_at = datetime.utcnow()
+            cr.resolved_by = user.email
 
     db.commit()
     db.refresh(a)
@@ -2015,7 +2118,7 @@ def list_evc_visits(db: Session = Depends(get_db), user: User = Depends(get_curr
 def schedule_evc_visit(
     req: EVCVisitCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(evc_or_officer)
+    user: User = Depends(officer_or_admin)
 ):
     app_rec = db.get(Application, req.application_id)
     if not app_rec:
@@ -2358,7 +2461,7 @@ def v1_download_document(did: int, db: Session = Depends(get_db), user: User = D
 
 
 @v1_router.post("/applications/{aid}/submit", response_model=ApplicationOut)
-def v1_submit_application(
+async def v1_submit_application(
     aid: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
@@ -2420,11 +2523,15 @@ def v1_submit_application(
 
     db.commit()
     db.refresh(a)
+    try:
+        await execute_scrutiny_pipeline(aid, db, user.email, "INITIAL")
+    except Exception as e:
+        logger.warning(f"Initial scrutiny pipeline failed on v1 submission: {e}")
     return a
 
 
 @v1_router.post("/applications/{aid}/resubmit", response_model=ApplicationOut)
-def v1_resubmit_application(
+async def v1_resubmit_application(
     aid: int,
     req: ApplicationResubmit,
     db: Session = Depends(get_db),
@@ -2493,6 +2600,10 @@ def v1_resubmit_application(
 
     db.commit()
     db.refresh(a)
+    try:
+        await execute_scrutiny_pipeline(aid, db, user.email, "RE_SCRUTINY")
+    except Exception as e:
+        logger.warning(f"Re-scrutiny pipeline failed on v1 resubmission: {e}")
     return a
 
 
@@ -2838,3 +2949,8 @@ def application_decision_alias(
     user: User = Depends(officer_or_admin)
 ):
     return officer_record_decision(aid=aid, req=req, db=db, user=user)
+
+@app.get("/api/email/status")
+def get_system_email_status(user: User = Depends(officer_or_admin)):
+    """Exposes real SMTP and notification delivery status for administrators."""
+    return get_email_status()

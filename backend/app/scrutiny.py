@@ -76,14 +76,14 @@ MANDATORY_DOCUMENTS_BY_ROUTE: Dict[str, List[Dict[str, Any]]] = {
             "type": "AFFILIATING_UNIVERSITY_NOC",
             "name": "NOC / Affiliation Consent from University",
             "rule": "APH-2024-CH2-AFFILIATION",
-            "aliases": ["AFFILIATING_UNIVERSITY_NOC", "UNIVERSITY_NOC", "AFFILIATION_NOC"],
+            "aliases": ["AFFILIATING_UNIVERSITY_NOC", "UNIVERSITY_NOC", "AFFILIATION_NOC", "AFFILIATION_LETTER"],
             "source_reference": "AICTE APH 2024-2027 Ch. II Sec 2.3"
         },
         {
             "type": "EQUIPMENT_LAB_LIST",
             "name": "Curriculum-aligned Laboratory Equipment Invoices",
             "rule": "APH-2024-CH2-LABS",
-            "aliases": ["EQUIPMENT_LAB_LIST", "LAB_EQUIPMENT", "LAB_INVOICES"],
+            "aliases": ["EQUIPMENT_LAB_LIST", "LAB_EQUIPMENT", "LAB_INVOICES", "LAB_READINESS"],
             "source_reference": "AICTE APH 2024-2027 Ch. II Laboratory Norms"
         },
         {
@@ -141,7 +141,8 @@ async def execute_scrutiny_pipeline(
     model_provider = "deterministic_local"
     model_name = "rule-engine-v1.2"
 
-    # --- Step 1. Deterministic check: Missing Mandatory Documents by Route ---
+    # --- Step 1. Deterministic check: Mandatory Documents & Requirements by Route ---
+    requirements_checklist: List[Dict[str, Any]] = []
     for req in req_docs:
         aliases = [a.upper() for a in req.get("aliases", [req["type"]])]
         matching: List[Document] = []
@@ -156,12 +157,24 @@ async def execute_scrutiny_pipeline(
                 d_name_lower = d.document_name.lower()
                 if ("fire" in req_name_lower and "fire" in d_name_lower) or \
                    ("lease" in req_name_lower and ("lease" in d_name_lower or "land" in d_name_lower or "deed" in d_name_lower)) or \
-                   ("ragging" in req_name_lower and ("ragging" in d_name_lower or "affidavit" in d_name_lower)):
+                   ("ragging" in req_name_lower and ("ragging" in d_name_lower or "affidavit" in d_name_lower)) or \
+                   ("project" in req_name_lower and ("project" in d_name_lower or "dpr" in d_name_lower)) or \
+                   ("affiliation" in req_name_lower and ("affiliation" in d_name_lower or "university" in d_name_lower)) or \
+                   ("equipment" in req_name_lower and ("equipment" in d_name_lower or "lab" in d_name_lower)):
                     matching.append(d)
                     break
 
         if not matching:
             missing_docs.append(req["name"])
+            requirements_checklist.append({
+                "rule_id": req["rule"],
+                "name": req["name"],
+                "type": req["type"],
+                "status": "MISSING",
+                "evidence_document": None,
+                "source_reference": req["source_reference"],
+                "notes": f"Mandatory document '{req['name']}' is not yet uploaded."
+            })
             findings.append({
                 "rule_id": req["rule"],
                 "document_type": req["type"],
@@ -178,6 +191,17 @@ async def execute_scrutiny_pipeline(
                 "is_provisional": False,
                 "source_reference": req["source_reference"]
             })
+        else:
+            doc_matched = matching[0]
+            requirements_checklist.append({
+                "rule_id": req["rule"],
+                "name": req["name"],
+                "type": req["type"],
+                "status": "PASS",
+                "evidence_document": doc_matched.document_name,
+                "source_reference": req["source_reference"],
+                "notes": f"Attached verified filing: '{doc_matched.document_name}'."
+            })
 
     # --- Step 2. Scrutiny of Uploaded Documents (Readability, Dates, Extraction) ---
     for doc in uploaded_docs:
@@ -185,7 +209,7 @@ async def execute_scrutiny_pipeline(
         doc_type_upper = (doc.document_type or "OTHER").upper()
 
         # Check for unreadable / scanned binary
-        if not text.strip() or "[notice:" in text.lower():
+        if not text.strip() or "pypdf library is not available" in text.lower():
             findings.append({
                 "rule_id": f"APH-DOC-{doc_type_upper[:10]}-UNREADABLE",
                 "document_type": doc.document_type,
@@ -352,7 +376,16 @@ async def execute_scrutiny_pipeline(
         status=status,
         summary=summary_text,
         missing_docs=json.dumps(missing_docs),
-        rule_results=json.dumps({"total_findings": len(findings), "deficiencies": final_deficiency_count}),
+        rule_results=json.dumps({
+            "total_findings": len(findings),
+            "deficiencies": final_deficiency_count,
+            "warnings": sum(1 for f in findings if f["severity"] == "WARNING"),
+            "missing_count": len(missing_docs),
+            "total_mandatory": len(req_docs),
+            "requirements_checklist": requirements_checklist,
+            "uploaded_docs_count": len(uploaded_docs),
+            "route": route
+        }),
         ai_assisted=ai_assisted,
         model_provider=model_provider,
         model_name=model_name,
@@ -361,6 +394,12 @@ async def execute_scrutiny_pipeline(
     )
     db.add(run)
     db.flush()
+
+    # --- Step 5b. Clean up older PENDING findings for this application ---
+    db.query(ScrutinyFinding).filter(
+        ScrutinyFinding.application_id == application_id,
+        ScrutinyFinding.officer_disposition == "PENDING"
+    ).delete(synchronize_session=False)
 
     # --- Step 6. Persist ScrutinyFindings ---
     persisted_findings: List[ScrutinyFinding] = []

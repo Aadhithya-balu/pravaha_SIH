@@ -365,8 +365,9 @@ export async function fetchStageRemarks(aid: number): Promise<any[]> {
 
 export async function addStageRemark(aid: number, data: {
   stage: string;
-  comment_text: string;
-  visibility?: 'APPLICANT_VISIBLE' | 'INTERNAL_OFFICER_ONLY';
+  comment_text?: string;
+  remark_text?: string;
+  visibility?: string;
   document_reference?: string;
 }): Promise<any> {
   return api(`/applications/${aid}/remarks`, { method: 'POST', body: JSON.stringify(data) });

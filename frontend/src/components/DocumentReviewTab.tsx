@@ -935,6 +935,110 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
       </div>
 
       {/* ====================================================================
+          1B. 3-PILLAR SCRUTINY VERIFICATION FRAMEWORK
+          Delineates Readability vs Regulatory Compliance vs Authenticity
+          ==================================================================== */}
+      <div style={{
+        background: '#F8FAFC',
+        border: '1px solid #CBD5E1',
+        borderRadius: 8,
+        padding: '12px 16px',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gap: 12
+      }}>
+        <div style={{
+          background: '#FFFFFF',
+          border: '1px solid #E2E8F0',
+          borderRadius: 6,
+          padding: '10px 12px',
+          display: 'flex',
+          gap: 10
+        }}>
+          <div style={{
+            width: 28,
+            height: 28,
+            borderRadius: 6,
+            background: '#F0FDF4',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <FileText size={16} color="#166534" />
+          </div>
+          <div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: '#166534' }}>
+              1. Readability & OCR Extractability
+            </div>
+            <div style={{ fontSize: 11.5, color: '#475569', marginTop: 2, lineHeight: 1.35 }}>
+              Validates digital legibility, page orientation, DPI, and text extractability. Readable documents are processed without false rejection.
+            </div>
+          </div>
+        </div>
+
+        <div style={{
+          background: '#FFFFFF',
+          border: '1px solid #E2E8F0',
+          borderRadius: 6,
+          padding: '10px 12px',
+          display: 'flex',
+          gap: 10
+        }}>
+          <div style={{
+            width: 28,
+            height: 28,
+            borderRadius: 6,
+            background: '#EFF6FF',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <ShieldCheck size={16} color="#1E40AF" />
+          </div>
+          <div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: '#1E40AF' }}>
+              2. Regulatory Compliance (APH Norms)
+            </div>
+            <div style={{ fontSize: 11.5, color: '#475569', marginTop: 2, lineHeight: 1.35 }}>
+              Deterministic AI checks against statutory clauses (e.g. 30+ yr lease tenure, land acreage, Fire NOC validity, cadre ratio 1:15/1:20).
+            </div>
+          </div>
+        </div>
+
+        <div style={{
+          background: '#FFFFFF',
+          border: '1px solid #E2E8F0',
+          borderRadius: 6,
+          padding: '10px 12px',
+          display: 'flex',
+          gap: 10
+        }}>
+          <div style={{
+            width: 28,
+            height: 28,
+            borderRadius: 6,
+            background: '#FFFBEB',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <Lock size={16} color="#92400E" />
+          </div>
+          <div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: '#92400E' }}>
+              3. Document Authenticity & Integrity
+            </div>
+            <div style={{ fontSize: 11.5, color: '#475569', marginTop: 2, lineHeight: 1.35 }}>
+              SHA-256 tamper-evident integrity. <em>Advisory notice:</em> AI scrutiny aids officer review and does not replace statutory authority or physical verification.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ====================================================================
           2. COMPACT SCRUTINY ENGINE STATUS STRIP (With Collapsible Details)
           ==================================================================== */}
       <div style={{
@@ -958,7 +1062,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#16845B' }} />
               <span style={{ fontWeight: 600, color: '#1E293B' }}>Engine:</span>
               <span style={{ color: '#475569' }}>
-                {analysisResult?.execution_mode === 'real_llm' ? 'Live LLM Scrutiny' : 'Deterministic Rule Engine'}
+                {(analysisResult?.mode === 'real_llm' || analysisResult?.execution_mode === 'real_llm') ? 'Live LLM Scrutiny (Active)' : 'Deterministic APH Rule Engine'}
               </span>
             </div>
 
@@ -976,7 +1080,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
               <Database size={14} color="#64748B" />
               <span style={{ fontWeight: 600, color: '#1E293B' }}>Provider:</span>
               <span style={{ color: '#475569' }}>
-                {analysisResult?.provider || 'Deterministic / Offline'}
+                {analysisResult?.provider ? (analysisResult.provider === 'groq' ? 'Groq AI (openai/gpt-oss-120b)' : analysisResult.provider) : 'Deterministic Local Engine'}
               </span>
             </div>
 
