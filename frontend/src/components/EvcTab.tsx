@@ -346,7 +346,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
               margin: 0,
               fontSize: 22,
               fontWeight: 600,
-              color: '#172B4D',
+              color: '#1E293B',
               letterSpacing: '-0.01em'
             }}>
               EVC Inspections
@@ -465,7 +465,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
               <ClipboardList size={16} color="#2563EB" />
             </div>
           </div>
-          <div style={{ fontSize: 26, fontWeight: 700, color: '#172B4D', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+          <div style={{ fontSize: 26, fontWeight: 700, color: '#1E293B', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
             {totalVisitsCount}
           </div>
           <div style={{ fontSize: 11.5, color: '#64748B' }}>
@@ -567,7 +567,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
               <AlertCircle size={16} color="#D98B16" />
             </div>
           </div>
-          <div style={{ fontSize: 26, fontWeight: 700, color: reportsPendingCount > 0 ? '#D98B16' : '#172B4D', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+          <div style={{ fontSize: 26, fontWeight: 700, color: reportsPendingCount > 0 ? '#D98B16' : '#1E293B', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
             {reportsPendingCount}
           </div>
           <div style={{ fontSize: 11.5, color: '#64748B' }}>
@@ -595,7 +595,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             <Clock size={15} color="#2563EB" />
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#172B4D' }}>
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#1E293B' }}>
               Upcoming Schedule:
             </span>
           </div>
@@ -630,7 +630,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                     }}
                     title={`Click to filter: ${v.institution_name}`}
                   >
-                    <b style={{ color: '#172B4D', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <b style={{ color: '#1E293B', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {v.institution_name}
                     </b>
                     <span style={{ color: isOverdue ? '#D64545' : '#64748B' }}>
@@ -756,7 +756,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
               border: '1px solid #CBD5E1',
               fontSize: 12,
               background: '#FFFFFF',
-              color: '#172B4D'
+              color: '#1E293B'
             }}
             aria-label="Filter by Status"
           >
@@ -778,7 +778,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
               border: '1px solid #CBD5E1',
               fontSize: 12,
               background: '#FFFFFF',
-              color: '#172B4D'
+              color: '#1E293B'
             }}
             aria-label="Filter by Visit Mode"
           >
@@ -798,7 +798,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
               border: '1px solid #CBD5E1',
               fontSize: 12,
               background: '#FFFFFF',
-              color: '#172B4D'
+              color: '#1E293B'
             }}
             aria-label="Filter by Date"
           >
@@ -852,7 +852,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <CalendarDays size={18} color="#2563EB" />
-              <h2 style={{ fontSize: 16, fontWeight: 600, color: '#172B4D', margin: 0 }}>
+              <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1E293B', margin: 0 }}>
                 Inspection Schedule Calendar
               </h2>
             </div>
@@ -893,7 +893,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                       </span>
                       {getModeBadge(v.visit_mode)}
                     </div>
-                    <b style={{ fontSize: 13.5, color: '#172B4D', display: 'block', marginBottom: 4 }}>
+                    <b style={{ fontSize: 13.5, color: '#1E293B', display: 'block', marginBottom: 4 }}>
                       {v.institution_name}
                     </b>
                     <span style={{ fontSize: 11.5, color: '#64748B' }}>
@@ -973,7 +973,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
               boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)'
             }}>
               <Calendar size={32} color="#94A3B8" style={{ margin: '0 auto 10px' }} />
-              <h3 style={{ fontSize: 16, fontWeight: 600, color: '#172B4D', margin: '0 0 6px' }}>
+              <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1E293B', margin: '0 0 6px' }}>
                 No EVC Inspections Found
               </h3>
               <p style={{ fontSize: 13, color: '#64748B', margin: '0 auto 16px', maxWidth: 440 }}>
@@ -1057,7 +1057,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                           margin: 0,
                           fontSize: 15.5,
                           fontWeight: 600,
-                          color: '#172B4D'
+                          color: '#1E293B'
                         }}>
                           {v.institution_name}
                         </h3>
@@ -1102,7 +1102,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                           <Calendar size={13} color="#2563EB" />
                           <span>Inspection: </span>
-                          <b style={{ color: isOverdue ? '#D64545' : '#172B4D' }}>
+                          <b style={{ color: isOverdue ? '#D64545' : '#1E293B' }}>
                             {new Date(v.scheduled_date).toLocaleDateString('en-IN', {
                               weekday: 'short',
                               day: '2-digit',
@@ -1202,7 +1202,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                         </button>
                       </div>
 
-                      <div style={{ color: '#172B4D', fontWeight: 500 }}>
+                      <div style={{ color: '#1E293B', fontWeight: 500 }}>
                         {isPanelExpanded ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 4 }}>
                             {panelParts.map((member, idx) => (
@@ -1448,7 +1448,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 {/* Application Selection */}
                 <div>
-                  <label htmlFor="evc-app-select" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#172B4D', marginBottom: 4 }}>
+                  <label htmlFor="evc-app-select" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1E293B', marginBottom: 4 }}>
                     Select Application for Inspection <span style={{ color: '#DC2626' }}>*</span>
                   </label>
                   <select
@@ -1486,7 +1486,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                 {/* Date & Mode Grid */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                   <div>
-                    <label htmlFor="evc-schedule-date" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#172B4D', marginBottom: 4 }}>
+                    <label htmlFor="evc-schedule-date" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1E293B', marginBottom: 4 }}>
                       Inspection Date <span style={{ color: '#DC2626' }}>*</span>
                     </label>
                     <input
@@ -1514,7 +1514,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                   </div>
 
                   <div>
-                    <label htmlFor="evc-visit-mode" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#172B4D', marginBottom: 4 }}>
+                    <label htmlFor="evc-visit-mode" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1E293B', marginBottom: 4 }}>
                       Inspection Mode <span style={{ color: '#DC2626' }}>*</span>
                     </label>
                     <select
@@ -1545,7 +1545,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
 
                 {/* Committee Panel Members */}
                 <div>
-                  <label htmlFor="evc-panel-members" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#172B4D', marginBottom: 4 }}>
+                  <label htmlFor="evc-panel-members" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1E293B', marginBottom: 4 }}>
                     EVC Panel Committee Members <span style={{ color: '#DC2626' }}>*</span>
                   </label>
                   <textarea
@@ -1621,14 +1621,14 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
             <form onSubmit={handleReportSubmit}>
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div style={{ background: '#F8FAFC', padding: '10px 14px', borderRadius: 6, border: '1px solid #E2E8F0' }}>
-                  <b style={{ display: 'block', fontSize: 13, color: '#172B4D' }}>{selectedVisit.institution_name}</b>
+                  <b style={{ display: 'block', fontSize: 13, color: '#1E293B' }}>{selectedVisit.institution_name}</b>
                   <span style={{ fontSize: 11.5, color: '#64748B' }}>
                     Inspection Date: {selectedVisit.scheduled_date} · Mode: {selectedVisit.visit_mode} · Panel: {selectedVisit.committee_members.split(',')[0]}
                   </span>
                 </div>
 
                 <div>
-                  <label htmlFor="evc-report-summary" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#172B4D', marginBottom: 4 }}>
+                  <label htmlFor="evc-report-summary" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1E293B', marginBottom: 4 }}>
                     Infrastructure & Lab Readiness Observations <span style={{ color: '#DC2626' }}>*</span>
                   </label>
                   <textarea
@@ -1658,7 +1658,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                 </div>
 
                 <div>
-                  <label htmlFor="evc-recommendations" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#172B4D', marginBottom: 4 }}>
+                  <label htmlFor="evc-recommendations" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1E293B', marginBottom: 4 }}>
                     Committee Recommendations for Approval Bureau
                   </label>
                   <textarea
@@ -1741,7 +1741,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                 padding: '12px 16px'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <b style={{ fontSize: 14, color: '#172B4D' }}>{selectedVisit.institution_name}</b>
+                  <b style={{ fontSize: 14, color: '#1E293B' }}>{selectedVisit.institution_name}</b>
                   <span style={{
                     fontSize: 11,
                     fontWeight: 700,
@@ -1766,7 +1766,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 4 }}>
                   Appointed Expert Committee
                 </span>
-                <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 6, padding: '10px 12px', fontSize: 12, color: '#172B4D' }}>
+                <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 6, padding: '10px 12px', fontSize: 12, color: '#1E293B' }}>
                   {selectedVisit.committee_members}
                 </div>
               </div>

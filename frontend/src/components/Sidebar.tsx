@@ -117,14 +117,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <ShieldCheck size={20} />
             </div>
             <div className="brand-text">
-              <h1>PRAVAHA</h1>
-              <span>AICTE Regulatory Hub</span>
+              <h1>AICTE FLOWGUARD</h1>
+              <span>Regulatory Platform</span>
             </div>
           </div>
         )}
 
         {isCollapsed && (
-          <div className="brand-icon" title="Pravaha AICTE Regulatory Hub" style={{ margin: '0 auto' }}>
+          <div className="brand-icon" title="AICTE FlowGuard – Regulatory Platform" style={{ margin: '0 auto' }}>
             <ShieldCheck size={20} />
           </div>
         )}
@@ -137,7 +137,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-label="Toggle sidebar collapse"
         >
-          {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+          {isCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
         </button>
 
         {/* Mobile Close Button */}
@@ -197,16 +197,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
               display: 'flex',
               alignItems: 'center',
               gap: 8,
-              padding: '8px 10px',
-              borderRadius: 6,
+              padding: '8px 12px',
+              borderRadius: 8,
               background: '#EFF6FF',
-              color: '#2563EB',
+              color: '#163A63',
               fontWeight: 600,
-              fontSize: 12,
+              fontSize: 12.5,
               border: '1px solid #BFDBFE',
               cursor: 'pointer'
             }}
-            title="Open PRAVAHA Platform Guide and User Instructions"
+            title="Open AICTE FlowGuard Platform Guide and User Instructions"
           >
             <Compass size={16} color="#2563EB" style={{ flexShrink: 0 }} />
             {!isCollapsed && <span>How to Use Guide</span>}
@@ -217,20 +217,57 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* User Footer Profile */}
       <div className="sidebar-user">
         {!isCollapsed && (
-          <div className="user-info">
-            <span className="user-name" title={user?.name}>
-              {user?.name || 'Authorized Official'}
-            </span>
-            <div className="user-meta-row">
-              <span className="user-role-badge">{user?.role}</span>
-              <span style={{ fontSize: 10, color: '#94a3b8' }}>{user?.region}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 34,
+              height: 34,
+              borderRadius: '50%',
+              background: '#EFF6FF',
+              color: '#163A63',
+              border: '1px solid #BFDBFE',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 700,
+              fontSize: 12,
+              flexShrink: 0
+            }}>
+              {user?.name ? user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() : 'AO'}
             </div>
-            {user?.institution_name && (
-              <span className="user-inst" title={user.institution_name}>
-                <Building2 size={11} style={{ display: 'inline', marginRight: 3, verticalAlign: 'middle' }} />
-                {user.institution_name}
+            <div className="user-info" style={{ minWidth: 0, flex: 1 }}>
+              <span className="user-name" title={user?.name}>
+                {user?.name || 'Authorized Official'}
               </span>
-            )}
+              <div className="user-meta-row">
+                <span className="user-role-badge">{user?.role}</span>
+                <span style={{ fontSize: 10, color: '#64748B' }}>{user?.region}</span>
+              </div>
+              {user?.institution_name && (
+                <span className="user-inst" title={user.institution_name}>
+                  <Building2 size={11} style={{ display: 'inline', marginRight: 3, verticalAlign: 'middle' }} />
+                  {user.institution_name}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {isCollapsed && (
+          <div style={{
+            width: 32,
+            height: 32,
+            borderRadius: '50%',
+            background: '#EFF6FF',
+            color: '#163A63',
+            border: '1px solid #BFDBFE',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: 700,
+            fontSize: 11,
+            margin: '0 auto 6px auto'
+          }} title={user?.name || 'Authorized Official'}>
+            {user?.name ? user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() : 'AO'}
           </div>
         )}
 

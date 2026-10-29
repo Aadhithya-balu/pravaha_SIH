@@ -94,10 +94,10 @@ export const PlatformGuideModal: React.FC<PlatformGuideModalProps> = ({
             </div>
             <div>
               <h3 id="guide-modal-title" style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#FFFFFF' }}>
-                PRAVAHA — Platform Guide & User Instructions
+                AICTE FlowGuard — Platform Guide & User Instructions
               </h3>
               <p style={{ margin: '2px 0 0 0', fontSize: 12, color: '#DBEAFE' }}>
-                AICTE Regulatory Scrutiny, EVC Inspections & Approval Automation Portal
+                Intelligent Approval Workflow & Statutory Compliance Monitoring Platform
               </p>
             </div>
           </div>
@@ -201,10 +201,10 @@ export const PlatformGuideModal: React.FC<PlatformGuideModalProps> = ({
                 <Lightbulb size={20} color="#2563EB" style={{ flexShrink: 0, marginTop: 2 }} />
                 <div>
                   <b style={{ color: '#1E40AF', fontSize: 13.5, display: 'block', marginBottom: 2 }}>
-                    Welcome to PRAVAHA (SIH26262)
+                    Welcome to AICTE FlowGuard
                   </b>
                   <p style={{ margin: 0, fontSize: 12.5, color: '#334155' }}>
-                    PRAVAHA eliminates paperwork bottlenecks in AICTE technical education approvals. It automates 
+                    AICTE FlowGuard eliminates paperwork bottlenecks in AICTE technical education approvals. It automates 
                     document scrutiny with AI, coordinates Expert Visiting Committee (EVC) inspections, tracks SLA 
                     compliance, and locks decisions in a tamper-evident cryptographic audit chain.
                   </p>
@@ -405,7 +405,7 @@ export const PlatformGuideModal: React.FC<PlatformGuideModalProps> = ({
           {activeTab === 'roles' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
-                PRAVAHA implements Role-Based Access Control (RBAC). Use the buttons below or the top-right 
+                AICTE FlowGuard implements Role-Based Access Control (RBAC). Use the buttons below or the top-right 
                 <b> Persona Switcher</b> to instantly test how the platform behaves for each stakeholder.
               </p>
 
@@ -664,7 +664,7 @@ export const PlatformGuideModal: React.FC<PlatformGuideModalProps> = ({
           {activeTab === 'glossary' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
-                Key regulatory and technical terms used throughout the PRAVAHA platform:
+                Key regulatory and technical terms used throughout the AICTE FlowGuard platform:
               </p>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
@@ -679,7 +679,7 @@ export const PlatformGuideModal: React.FC<PlatformGuideModalProps> = ({
                   },
                   {
                     term: 'SLA (Service Level Agreement)',
-                    meaning: 'Statutory citizen charter time limits (e.g. 15 days for scrutiny, 21 days for EVC). PRAVAHA automatically monitors these deadlines and escalates overdue cases.'
+                    meaning: 'Statutory citizen charter time limits (e.g. 15 days for scrutiny, 21 days for EVC). AICTE FlowGuard automatically monitors these deadlines and escalates overdue cases.'
                   },
                   {
                     term: 'LoA / LoI',
@@ -715,7 +715,7 @@ export const PlatformGuideModal: React.FC<PlatformGuideModalProps> = ({
           {activeTab === 'shortcuts' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
-                Quick navigation tricks to move around PRAVAHA effortlessly:
+                Quick navigation tricks to move around AICTE FlowGuard effortlessly:
               </p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -723,7 +723,7 @@ export const PlatformGuideModal: React.FC<PlatformGuideModalProps> = ({
                   { key: 'Ctrl + K  /  Cmd + K', desc: 'Open Global Quick Search & Command Palette (jump to any tab, search application, or switch persona)' },
                   { key: 'Esc', desc: 'Close any open modal, dialog, or drawer immediately' },
                   { key: 'Persona Bar', desc: 'Click "Applicant", "RO / Admin", or "EVC Expert" in the top header anytime to switch user perspective' },
-                  { key: 'Breadcrumb Link', desc: 'Click "AICTE PRAVAHA" or the "Back to Dashboard" button in the header to return to the Command Centre' },
+                  { key: 'Breadcrumb Link', desc: 'Click "AICTE FLOWGUARD" or the "Back to Dashboard" button in the header to return to the Command Centre' },
                   { key: 'Scan Deadlines', desc: 'Click the "Scan Deadlines" button in the header (as RO/Admin) to test automatic SLA countdown and escalation alerts' }
                 ].map((sc, i) => (
                   <div

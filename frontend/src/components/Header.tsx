@@ -87,7 +87,7 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={() => onNavigateTab && onNavigateTab('Overview')}
                 title="Navigate to Command Centre"
               >
-                AICTE PRAVAHA
+                AICTE FLOWGUARD
               </button>
               <span>/</span>
               <span>{currentCategory}</span>
@@ -113,11 +113,11 @@ export const Header: React.FC<HeaderProps> = ({
                     borderRadius: 6,
                     background: '#EFF6FF',
                     border: '1px solid #BFDBFE',
-                    color: '#2563EB',
+                    color: '#163A63',
                     fontSize: 12,
                     fontWeight: 600,
                     cursor: 'pointer',
-                    height: 26,
+                    height: 28,
                     transition: 'all 0.15s ease'
                   }}
                   title="Return to Regulatory Operations Dashboard"
@@ -144,24 +144,24 @@ export const Header: React.FC<HeaderProps> = ({
               display: 'inline-flex',
               alignItems: 'center',
               gap: 8,
-              padding: '5px 10px',
-              borderRadius: 6,
-              background: '#F1F5F9',
-              border: '1px solid #CBD5E1',
+              padding: '6px 12px',
+              borderRadius: 8,
+              background: '#F8FAFC',
+              border: '1px solid #E2E8F0',
               color: '#64748B',
-              fontSize: 12,
+              fontSize: 12.5,
               cursor: 'pointer',
-              height: 28,
+              height: 34,
               transition: 'all 0.15s ease'
             }}
           >
-            <Search size={13} color="#2563EB" />
-            <span style={{ fontSize: 11.5, color: '#475569' }}>Quick Search...</span>
+            <Search size={14} color="#2563EB" />
+            <span style={{ fontSize: 12, color: '#475569' }}>Quick Search...</span>
             <kbd style={{
               background: '#FFFFFF',
               border: '1px solid #CBD5E1',
-              borderRadius: 3,
-              padding: '1px 4px',
+              borderRadius: 4,
+              padding: '1px 5px',
               fontSize: 10,
               fontWeight: 700,
               color: '#64748B'
@@ -181,14 +181,14 @@ export const Header: React.FC<HeaderProps> = ({
             style={{
               background: '#EFF6FF',
               borderColor: '#BFDBFE',
-              color: '#2563EB',
+              color: '#163A63',
               fontWeight: 600,
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 5
+              gap: 6
             }}
           >
-            <Compass size={13} color="#2563EB" />
+            <Compass size={14} color="#2563EB" />
             <span>How to Use</span>
           </button>
         )}
