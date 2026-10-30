@@ -31,6 +31,8 @@ import {
 import { EVCVisit, Application, User, InspectionEvidence } from '../types';
 import { api, rescheduleEvcVisit, approveEvcNextStage, fetchVisitEvidences, verifyInspectionEvidence } from '../api';
 import { EvcVisitProofModal } from './EvcVisitProofModal';
+import { EvcStaffAllocationSection } from './EvcStaffAllocationSection';
+import { EvcStaffPortfolioSection } from './EvcStaffPortfolioSection';
 
 interface EvcTabProps {
   user: User | null;
@@ -511,7 +513,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
         </div>
 
         {/* Primary Action Button (Desktop Right) */}
-        {user?.role !== 'institution' && (
+        {(user?.role === 'officer' || user?.role === 'admin') && (
           <button
             type="button"
             onClick={handleOpenSchedule}
@@ -570,6 +572,31 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
           <span>{successMsg}</span>
           <button onClick={() => setSuccessMsg('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16845B', fontWeight: 700 }}>×</button>
         </div>
+      )}
+
+      {/* ====================================================================
+          EVC ALLOCATION & PORTFOLIO ENHANCEMENT SECTIONS
+          ==================================================================== */}
+      {(user?.role === 'officer' || user?.role === 'admin') && (
+        <EvcStaffAllocationSection
+          user={user}
+          applications={applications}
+          onRefresh={() => {
+            loadVisits();
+            onRefresh();
+          }}
+        />
+      )}
+
+      {(user?.role === 'evc' || user?.role === 'evc_expert') && (
+        <EvcStaffPortfolioSection
+          user={user}
+          visits={visits}
+          onRefresh={() => {
+            loadVisits();
+            onRefresh();
+          }}
+        />
       )}
 
       {/* ====================================================================
@@ -1614,7 +1641,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                         </span>
                       </button>
                       {/* Reschedule Button (When visit pending) */}
-                      {!isCompleted && user?.role !== 'institution' && (
+                      {!isCompleted && (user?.role === 'officer' || user?.role === 'admin') && (
                         <button
                           type="button"
                           id={`btn-reschedule-${v.id}`}
@@ -1690,7 +1717,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                       </button>
 
                       {/* Prominent Approve Next Stage Button (for completed inspections) */}
-                      {isCompleted && user?.role !== 'institution' && (
+                      {isCompleted && (user?.role === 'officer' || user?.role === 'admin') && (
                         <button
                           type="button"
                           id={`btn-approve-evc-${v.id}`}
