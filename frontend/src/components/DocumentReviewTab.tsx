@@ -33,7 +33,7 @@ import {
   CheckSquare
 } from 'lucide-react';
 import { AiAnalysisResult, User, CandidateField, Application } from '../types';
-import { api, fetchApplications, applyExtractedFields } from '../api';
+import { api, fetchApplications, applyExtractedFields, fetchApprovedDocuments, retryDocumentProcessing } from '../api';
 
 interface DocumentReviewTabProps {
   user: User | null;
@@ -67,6 +67,8 @@ export const DocumentReviewTab: React.FC<DocumentReviewTabProps> = ({ user, init
   // Active document state
   const [docName, setDocName] = useState('Registered_Lease_Deed_Sample.pdf');
   const [docType, setDocType] = useState('LEASE_DEED');
+  const [docCategory, setDocCategory] = useState('Lease Documents');
+  const [approvedDocs, setApprovedDocs] = useState<any[]>([]);
   const [docText, setDocText] = useState('');
   const [docFileSize, setDocFileSize] = useState<number>(245760); // 240 KB
   const [docMimeType, setDocMimeType] = useState('application/pdf');
@@ -111,6 +113,14 @@ export const DocumentReviewTab: React.FC<DocumentReviewTabProps> = ({ user, init
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [isSavingFields, setIsSavingFields] = useState(false);
+
+  useEffect(() => {
+    if (selectedAppId) {
+      fetchApprovedDocuments(selectedAppId).then(setApprovedDocs).catch(() => setApprovedDocs([]));
+    } else {
+      setApprovedDocs([]);
+    }
+  }, [selectedAppId]);
 
   // Realistic SIH Scrutiny Evaluation Presets
   const samples = [
@@ -525,6 +535,7 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
       const formData = new FormData();
       formData.append('file', file);
       formData.append('document_type', docType);
+      formData.append('document_category', docCategory);
 
       const authTok = localStorage.getItem('ps4_token') || '';
       const base = import.meta.env.VITE_API_URL || '/api';
@@ -1276,30 +1287,60 @@ I, Prof. Anand Deshmukh, Secretary of Shri Krishna Educational Society, do hereb
 
             {/* Category Selector & Upload Action */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
-                  Regulatory Document Category
-                </label>
-                <select
-                  value={docType}
-                  onChange={(e) => setDocType(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 10px',
-                    borderRadius: 6,
-                    border: '1px solid #CBD5E1',
-                    fontSize: 13,
-                    color: '#1E293B',
-                    background: '#FFFFFF'
-                  }}
-                >
-                  <option value="LEASE_DEED">Registered Land Lease Deed / Ownership</option>
-                  <option value="FIRE_NOC">Fire & Life Safety Clearance (NOC)</option>
-                  <option value="BUILDING_PLAN">Approved Building Plan & Structural Stability</option>
-                  <option value="UNDERTAKING">Statutory Affidavit / Undertaking</option>
-                  <option value="FACULTY_LIST">Sanctioned Faculty Cadre List</option>
-                  <option value="OTHER">Other Institutional Disclosure</option>
-                </select>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+                    Document Category
+                  </label>
+                  <select
+                    value={docCategory}
+                    onChange={(e) => setDocCategory(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: 6,
+                      border: '1px solid #CBD5E1',
+                      fontSize: 13,
+                      color: '#1E293B',
+                      background: '#FFFFFF'
+                    }}
+                  >
+                    <option value="Institutional Records">Institutional Records</option>
+                    <option value="Approval Documents">Approval Documents</option>
+                    <option value="Faculty-Related Records">Faculty-Related Records</option>
+                    <option value="Infrastructure Records">Infrastructure Records</option>
+                    <option value="Lease Documents">Lease Documents</option>
+                    <option value="Undertakings">Statutory Undertakings</option>
+                    <option value="Inspection Evidence">Inspection Evidence</option>
+                    <option value="Other">Other Disclosures</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>
+                    Regulatory Document Type
+                  </label>
+                  <select
+                    value={docType}
+                    onChange={(e) => setDocType(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: 6,
+                      border: '1px solid #CBD5E1',
+                      fontSize: 13,
+                      color: '#1E293B',
+                      background: '#FFFFFF'
+                    }}
+                  >
+                    <option value="LEASE_DEED">Registered Land Lease Deed / Ownership</option>
+                    <option value="FIRE_NOC">Fire & Life Safety Clearance (NOC)</option>
+                    <option value="BUILDING_PLAN">Approved Building Plan & Structural Stability</option>
+                    <option value="UNDERTAKING">Statutory Affidavit / Undertaking</option>
+                    <option value="FACULTY_LIST">Sanctioned Faculty Cadre List</option>
+                    <option value="OTHER">Other Institutional Disclosure</option>
+                  </select>
+                </div>
               </div>
 
               <div>

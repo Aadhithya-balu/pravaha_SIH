@@ -81,6 +81,7 @@ class Document(Base):
     document_name: Mapped[str] = mapped_column(String(255))
     stored_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     document_type: Mapped[str] = mapped_column(String(80), default="LEASE_DEED")
+    document_category: Mapped[str] = mapped_column(String(100), default="INSTITUTIONAL_RECORDS")
     file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     file_size: Mapped[int] = mapped_column(Integer, default=0)
     mime_type: Mapped[str] = mapped_column(String(100), default="application/pdf")
@@ -170,8 +171,15 @@ class EVCVisit(Base):
     institution_name: Mapped[str] = mapped_column(String(200), index=True)
     committee_members: Mapped[str] = mapped_column(Text)
     scheduled_date: Mapped[date] = mapped_column(Date)
+    actual_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     visit_mode: Mapped[str] = mapped_column(String(40), default="PHYSICAL")  # PHYSICAL, VIRTUAL, HYBRID
     status: Mapped[str] = mapped_column(String(40), default="SCHEDULED")  # PENDING, SCHEDULED, IN_PROGRESS, COMPLETED, POSTPONED
+    visit_occurred: Mapped[str] = mapped_column(String(30), default="UNCONFIRMED")  # OCCURRED, DID_NOT_OCCUR, UNCONFIRMED
+    missed_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_verification_status: Mapped[str] = mapped_column(String(30), default="PENDING")  # PENDING, VERIFIED, REJECTED
+    location_details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    structured_checklist: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON string
+    inspection_outcome: Mapped[str | None] = mapped_column(String(40), nullable=True)  # RECOMMENDED, NOT_RECOMMENDED, CONDITIONAL
     report_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     recommendations: Mapped[str | None] = mapped_column(Text, nullable=True)
     assigned_by: Mapped[str] = mapped_column(String(255), default="Regional Officer")
@@ -219,8 +227,12 @@ class StageRemark(Base):
     author_email: Mapped[str] = mapped_column(String(255))
     author_role: Mapped[str] = mapped_column(String(40))
     comment_text: Mapped[str] = mapped_column(Text)
+    action_type: Mapped[str] = mapped_column(String(60), default="REVIEW_COMMENT")  # SCRUTINY_FINDING, CLARIFICATION_REQUEST, RESUBMISSION_NOTE, EVC_OBSERVATION, REVIEW_COMMENT, DECISION_REMARK, COMPLIANCE_NOTE
     visibility: Mapped[str] = mapped_column(String(30), default="APPLICANT_VISIBLE")
     document_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    parent_remark_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_resolved: Mapped[bool] = mapped_column(Boolean, default=False)
+    resolution_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -236,6 +248,9 @@ class InspectionEvidence(Base):
     file_size: Mapped[int] = mapped_column(Integer, default=0)
     uploaded_by: Mapped[str] = mapped_column(String(255))
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verification_status: Mapped[str] = mapped_column(String(30), default="PENDING")  # PENDING, VERIFIED, REJECTED
+    verified_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

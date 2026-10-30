@@ -28,7 +28,7 @@ import {
   Clock3
 } from 'lucide-react';
 import { Application, User } from '../types';
-import { createApplication, uploadApplicationDocument } from '../api';
+import { createApplication, uploadApplicationDocument, fetchInstitutionProfile } from '../api';
 
 interface ApplicationsTabProps {
   applications: Application[];
@@ -74,6 +74,36 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
   const [submittingAction, setSubmittingAction] = useState<'draft' | 'submit' | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  // Form Fields - Mandatory Institutional Information
+  const [collegeName, setCollegeName] = useState(user?.institution_name || '');
+  const [institutionCode, setInstitutionCode] = useState('1-10023451');
+  const [campusAddress, setCampusAddress] = useState('Sector 62, Institutional Area, Noida 201309');
+  const [stateName, setStateName] = useState('Uttar Pradesh');
+  const [districtName, setDistrictName] = useState('Gautam Buddha Nagar');
+  const [institutionType, setInstitutionType] = useState('Engineering & Technology');
+  const [contactPerson, setContactPerson] = useState(user?.name || 'Prof. Anand Deshmukh');
+  const [contactPhone, setContactPhone] = useState('+91-120-2400100');
+  const [contactEmail, setContactEmail] = useState(user?.email || 'principal@abccollege.demo.local');
+
+  // Form Fields - Document Category
+  const [attachedDocCategory, setAttachedDocCategory] = useState('LAND_LEASE_DOCUMENTS');
+
+  React.useEffect(() => {
+    if (user?.role === 'institution') {
+      fetchInstitutionProfile().then((profile) => {
+        if (profile) {
+          if (profile.name) setCollegeName(profile.name);
+          if (profile.code) setInstitutionCode(profile.code);
+          if (profile.address) setCampusAddress(profile.address);
+          if (profile.state) setStateName(profile.state);
+          if (profile.contact_phone) setContactPhone(profile.contact_phone);
+          if (profile.contact_email) setContactEmail(profile.contact_email);
+          if (profile.institution_type) setInstitutionType(profile.institution_type);
+        }
+      }).catch(() => {});
+    }
+  }, [user]);
 
   // Form Fields - Common
   const [academicYear, setAcademicYear] = useState('2026-2027');
@@ -379,6 +409,9 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
   function validateStep(step: 1 | 2): boolean {
     const errors: Record<string, string> = {};
     if (step === 1) {
+      if (!collegeName.trim()) {
+        errors.collegeName = 'College / Institution Name is mandatory.';
+      }
       if (!academicYear.trim()) {
         errors.academicYear = 'Academic Year is required (e.g. 2026-2027).';
       } else if (!/^\d{4}-\d{4}$/.test(academicYear.trim())) {
@@ -448,10 +481,28 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
       }
 
       const newApp = await createApplication({
+        institution_name: collegeName.trim(),
         application_type: appType,
         academic_year: academicYear,
         notes: compositeNotes,
         due_date: dueDate || null,
+        form_data: {
+          college_name: collegeName.trim(),
+          institution_code: institutionCode.trim(),
+          campus_address: campusAddress.trim(),
+          state: stateName.trim(),
+          district: districtName.trim(),
+          institution_type: institutionType.trim(),
+          contact_person: contactPerson.trim(),
+          contact_phone: contactPhone.trim(),
+          contact_email: contactEmail.trim(),
+          existing_intake: existingIntake,
+          land_compliance: landCompliance,
+          programme_name: programmeName,
+          programme_level: programmeLevel,
+          proposed_intake: proposedIntake,
+          lab_readiness: labReadiness
+        },
         is_draft: isDraft
       });
 
@@ -460,7 +511,8 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
           newApp.id,
           attachedFile,
           attachedDocType,
-          attachedDocName || attachedFile.name
+          attachedDocName || attachedFile.name,
+          attachedDocCategory
         );
       }
 
@@ -1090,6 +1142,102 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
               {/* STEP 1: PATHWAY & ACADEMIC YEAR */}
               {createStep === 1 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {/* Mandatory College & Institutional Information Card */}
+                  <div style={{
+                    background: '#F8FAFC',
+                    padding: '14px 16px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid #E2E8F0'
+                  }}>
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: '#1E3A8A',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      display: 'block',
+                      marginBottom: 10
+                    }}>
+                      Mandatory College / Institution Information *
+                    </span>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 12, marginBottom: 12 }}>
+                      <div className="form-group">
+                        <label>College / Institution Name *</label>
+                        <input
+                          type="text"
+                          required
+                          value={collegeName}
+                          onChange={(e) => {
+                            setCollegeName(e.target.value);
+                            if (fieldErrors.collegeName) setFieldErrors({ ...fieldErrors, collegeName: '' });
+                          }}
+                          placeholder="Official College / Institution Name"
+                          style={{ borderColor: fieldErrors.collegeName ? '#DC2626' : undefined }}
+                        />
+                        {fieldErrors.collegeName && (
+                          <span style={{ fontSize: 10.5, color: '#DC2626', marginTop: 2 }}>{fieldErrors.collegeName}</span>
+                        )}
+                      </div>
+
+                      <div className="form-group">
+                        <label>AICTE Permanent ID / Code</label>
+                        <input
+                          type="text"
+                          value={institutionCode}
+                          onChange={(e) => setInstitutionCode(e.target.value)}
+                          placeholder="e.g. 1-10023451"
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+                      <div className="form-group">
+                        <label>Institution Type</label>
+                        <select
+                          value={institutionType}
+                          onChange={(e) => setInstitutionType(e.target.value)}
+                        >
+                          <option value="Engineering & Technology">Engineering & Technology</option>
+                          <option value="Management">Management</option>
+                          <option value="Pharmacy">Pharmacy</option>
+                          <option value="MCA / Computer Applications">MCA / Computer Applications</option>
+                          <option value="Applied Arts & Crafts">Applied Arts & Crafts</option>
+                          <option value="Hotel Management">Hotel Management</option>
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label>State</label>
+                        <input
+                          type="text"
+                          value={stateName}
+                          onChange={(e) => setStateName(e.target.value)}
+                          placeholder="e.g. Uttar Pradesh"
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label>District / City</label>
+                        <input
+                          type="text"
+                          value={districtName}
+                          onChange={(e) => setDistrictName(e.target.value)}
+                          placeholder="e.g. Noida / Gautam Buddha Nagar"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>Campus Address</label>
+                      <input
+                        type="text"
+                        value={campusAddress}
+                        onChange={(e) => setCampusAddress(e.target.value)}
+                        placeholder="Complete registered physical campus address"
+                      />
+                    </div>
+                  </div>
                   <div>
                     <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 8 }}>
                       Select Statutory Regulatory Approval Pathway *
@@ -1389,9 +1537,26 @@ export const ApplicationsTab: React.FC<ApplicationsTabProps> = ({
                       </span>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                       <div className="form-group">
-                        <label>Document Category</label>
+                        <label>Regulatory Category *</label>
+                        <select
+                          value={attachedDocCategory}
+                          onChange={(e) => setAttachedDocCategory(e.target.value)}
+                        >
+                          <option value="LAND_LEASE_DOCUMENTS">Land & Lease Documents</option>
+                          <option value="APPROVAL_DOCUMENTS">Approval Documents & Previous EoA</option>
+                          <option value="INFRASTRUCTURE_RECORDS">Infrastructure & Safety Blueprints</option>
+                          <option value="FACULTY_RECORDS">Faculty Cadre Records</option>
+                          <option value="UNDERTAKINGS_AFFIDAVITS">Undertakings & Affidavits</option>
+                          <option value="INSTITUTIONAL_RECORDS">Institutional Governance Records</option>
+                          <option value="FINANCIAL_RECORDS">Financial & Audit Records</option>
+                          <option value="OTHER_CONFIGURED">Other Configured Category</option>
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label>Document Type *</label>
                         <select
                           value={attachedDocType}
                           onChange={(e) => setAttachedDocType(e.target.value)}

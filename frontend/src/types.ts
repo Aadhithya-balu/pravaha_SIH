@@ -10,6 +10,31 @@ export interface User {
   designation: string;
 }
 
+export interface InstitutionProfile {
+  id: number;
+  code: string;
+  name: string;
+  region: string;
+  state: string;
+  address: string;
+  contact_email: string;
+  contact_phone: string;
+  institution_type: string;
+}
+
+export interface NextBestAction {
+  action_code: string;
+  action_label: string;
+  target_role: string;
+  authorized_role?: string;
+  assigned_to: string;
+  reason: string;
+  rationale?: string;
+  urgency: 'NORMAL' | 'APPROACHING_DEADLINE' | 'OVERDUE' | string;
+  sla_urgency?: string;
+  days_remaining?: number | null;
+  is_user_authorized: boolean;
+}
 export interface Application {
   id: number;
   reference: string;
@@ -50,33 +75,6 @@ export interface CandidateField {
   target_form_field: string;
   validation_status?: string;
   user_edited?: boolean;
-}
-
-export interface NextBestAction {
-  action_code: string;
-  action_label: string;
-  target_role: string;
-  authorized_role?: string;
-  assigned_to: string;
-  reason: string;
-  rationale?: string;
-  urgency: 'NORMAL' | 'APPROACHING_DEADLINE' | 'OVERDUE';
-  sla_urgency?: string;
-}
-
-export interface AuditEvent {
-  id: number;
-  application_id: number;
-  application_reference?: string;
-  actor: string;
-  actor_role: string;
-  action: string;
-  from_stage?: string | null;
-  to_stage?: string | null;
-  details: string;
-  prev_hash?: string | null;
-  event_hash?: string | null;
-  created_at: string;
 }
 
 export interface CorrectionRequest {
@@ -133,6 +131,7 @@ export interface ScrutinyRun {
   model_name?: string | null;
   ruleset_version?: string | null;
   created_at: string;
+  findings?: ScrutinyFinding[];
 }
 
 export interface DocumentRecord {
@@ -141,19 +140,20 @@ export interface DocumentRecord {
   institution_name: string;
   document_name: string;
   document_type: string;
+  document_category?: string;
   file_path?: string | null;
   file_size: number;
   mime_type: string;
   uploaded_by: string;
-  version: number;
-  is_latest: boolean;
+  version?: number;
+  is_latest?: boolean;
   file_hash?: string | null;
-  processing_status: string;
+  processing_status?: string;
   extracted_text?: string;
   ai_summary?: string | null;
   ai_findings?: string | null;
   ai_confidence?: number | null;
-  review_status: 'PENDING' | 'ACCEPTED' | 'CORRECTION_REQUIRED';
+  review_status: 'PENDING' | 'ACCEPTED' | 'CORRECTION_REQUIRED' | 'VERIFIED' | string;
   reviewer_notes?: string | null;
   reviewed_by?: string | null;
   reviewed_at?: string | null;
@@ -217,11 +217,53 @@ export interface EVCVisit {
   institution_name: string;
   committee_members: string;
   scheduled_date: string;
+  actual_date?: string | null;
   visit_mode: 'PHYSICAL' | 'VIRTUAL' | 'HYBRID';
   status: 'PENDING' | 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'POSTPONED';
+  visit_occurred?: 'OCCURRED' | 'DID_NOT_OCCUR' | 'UNCONFIRMED' | string;
+  missed_reason?: string | null;
+  evidence_verification_status?: 'PENDING' | 'VERIFIED' | 'REJECTED' | string;
+  location_details?: string | null;
+  structured_checklist?: string | null;
+  inspection_outcome?: 'RECOMMENDED' | 'NOT_RECOMMENDED' | 'CONDITIONAL' | string | null;
   report_summary?: string | null;
   recommendations?: string | null;
   assigned_by: string;
+  created_at: string;
+  evidence_count?: number;
+}
+
+export interface InspectionEvidence {
+  id: number;
+  visit_id: number;
+  application_id: number;
+  evidence_type: string;
+  file_name: string;
+  file_path: string;
+  file_hash: string;
+  file_size: number;
+  uploaded_by: string;
+  remarks?: string | null;
+  verification_status: 'PENDING' | 'VERIFIED' | 'REJECTED' | string;
+  verified_by?: string | null;
+  verified_at?: string | null;
+  created_at: string;
+}
+
+export interface StageRemark {
+  id: number;
+  application_id: number;
+  stage: string;
+  author_name: string;
+  author_email: string;
+  author_role: string;
+  comment_text: string;
+  action_type?: string;
+  visibility: 'APPLICANT_VISIBLE' | 'INTERNAL_OFFICER_ONLY' | string;
+  document_reference?: string | null;
+  parent_remark_id?: number | null;
+  is_resolved?: boolean;
+  resolution_notes?: string | null;
   created_at: string;
 }
 
@@ -289,22 +331,25 @@ export interface AvailableTransition {
   description: string;
 }
 
-export interface StageRemark {
+export interface AuditEvent {
   id: number;
   application_id: number;
-  stage: string;
-  author_name: string;
-  author_email: string;
-  author_role: string;
-  comment_text?: string;
-  remark_text?: string;
-  visibility: string;
-  document_reference?: string | null;
+  actor: string;
+  actor_role: string;
+  action: string;
+  from_stage: string | null;
+  to_stage: string | null;
+  details: string;
+  prev_hash?: string | null;
+  event_hash?: string | null;
   created_at: string;
+  application_reference?: string | null;
+  institution_name?: string | null;
 }
 
 export interface ApplicationDetailResponse {
   application: Application;
+  next_action?: NextBestAction | null;
   available_transitions: AvailableTransition[];
   audit_history: AuditEvent[];
   documents: DocumentRecord[];

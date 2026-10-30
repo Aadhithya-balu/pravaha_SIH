@@ -97,6 +97,8 @@ export async function fetchApplications(params?: { stage?: string; status?: stri
 
 export async function createApplication(data: {
   application_type: string;
+  institution_name?: string;
+  form_data?: any;
   academic_year?: string;
   notes?: string;
   region?: string;
@@ -125,12 +127,19 @@ export async function patchApplication(id: number, data: {
   });
 }
 
-export async function uploadApplicationDocument(id: number, file: File, documentType: string, documentName?: string): Promise<any> {
+export async function uploadApplicationDocument(
+  id: number,
+  file: File,
+  documentType: string,
+  documentName?: string,
+  documentCategory: string = 'INSTITUTIONAL_RECORDS'
+): Promise<any> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('document_type', documentType);
+  formData.append('document_category', documentCategory);
   if (documentName) formData.append('document_name', documentName);
-  return api(`/v1/applications/${id}/documents`, {
+  return api(`/applications/${id}/documents`, {
     method: 'POST',
     body: formData
   });
@@ -367,10 +376,16 @@ export async function addStageRemark(aid: number, data: {
   stage: string;
   comment_text?: string;
   remark_text?: string;
-  visibility?: string;
+  action_type?: string;
+  visibility?: 'APPLICANT_VISIBLE' | 'INTERNAL_OFFICER_ONLY' | string;
   document_reference?: string;
+  parent_remark_id?: number | null;
 }): Promise<any> {
-  return api(`/applications/${aid}/remarks`, { method: 'POST', body: JSON.stringify(data) });
+  const payload = {
+    ...data,
+    comment_text: data.comment_text || data.remark_text || '',
+  };
+  return api(`/applications/${aid}/remarks`, { method: 'POST', body: JSON.stringify(payload) });
 }
 
 export async function uploadEvcEvidence(visitId: number, file: File, evidenceType: string, remarks?: string): Promise<any> {
@@ -385,4 +400,37 @@ export async function replaceApplicationDocument(appId: number, docId: number, f
   const form = new FormData();
   form.append('file', file);
   return apiUpload(`/applications/${appId}/documents/${docId}/replace`, form);
+}
+
+
+export async function fetchInstitutionProfile(): Promise<any> {
+  return api('/institutions/profile');
+}
+
+export async function fetchInstitutions(): Promise<any[]> {
+  return api('/institutions');
+}
+
+export async function rescheduleEvcVisit(visitId: number, data: { new_date: string; reason: string; visit_mode?: string }): Promise<any> {
+  return api(`/evc/${visitId}/reschedule`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function approveEvcNextStage(visitId: number, data: { remarks: string; target_stage?: string }): Promise<any> {
+  return api(`/evc/${visitId}/approve-next-stage`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function verifyInspectionEvidence(evidenceId: number, action: 'VERIFY' | 'REJECT', remarks?: string): Promise<any> {
+  return api(`/evc/evidence/${evidenceId}/verify`, { method: 'POST', body: JSON.stringify({ action, remarks }) });
+}
+
+export async function fetchVisitEvidences(visitId: number): Promise<any[]> {
+  return api(`/evc/${visitId}/evidence`);
+}
+
+export async function retryDocumentProcessing(docId: number): Promise<any> {
+  return api(`/documents/${docId}/retry-processing`, { method: 'POST' });
+}
+
+export async function fetchApprovedDocuments(appId: number): Promise<any[]> {
+  return api(`/applications/${appId}/approved-documents`);
 }

@@ -69,6 +69,13 @@ TRANSITION_RULES: Dict[str, Dict[str, Dict[str, Any]]] = {
             "assigned_to": "EVC Coordinator",
             "description": "Referred to Expert Visiting Committee for physical infrastructure inspection"
         },
+        "SEND_COMMITTEE": {
+            "target_stage": "SAC_SHC_REVIEW",
+            "target_status": "IN_PROGRESS",
+            "allowed_roles": ["officer", "bureau", "admin"],
+            "assigned_to": "Bureau Officer",
+            "description": "Referred to Standing Appellate Committee for review"
+        },
         "REQUIRE_RE_SCRUTINY": {
             "target_stage": "RE_SCRUTINY",
             "target_status": "IN_PROGRESS",
@@ -152,6 +159,13 @@ TRANSITION_RULES: Dict[str, Dict[str, Dict[str, Any]]] = {
         }
     },
     "EVC_SCHEDULED": {
+        "RESCHEDULE_EVC": {
+            "target_stage": "EVC_SCHEDULED",
+            "target_status": "IN_PROGRESS",
+            "allowed_roles": ["evc_expert", "officer", "admin"],
+            "assigned_to": "EVC Inspection Panel",
+            "description": "Inspection date updated with mandatory justification"
+        },
         "COMPLETE_EVC": {
             "target_stage": "EVC_COMPLETED",
             "target_status": "IN_PROGRESS",
@@ -168,6 +182,13 @@ TRANSITION_RULES: Dict[str, Dict[str, Dict[str, Any]]] = {
         }
     },
     "EVC_COMPLETED": {
+        "APPROVE_NEXT": {
+            "target_stage": "SAC_SHC_REVIEW",
+            "target_status": "IN_PROGRESS",
+            "allowed_roles": ["evc_expert", "officer", "bureau", "admin"],
+            "assigned_to": "Bureau Officer",
+            "description": "Approve EVC inspection outcome and advance to Further Review"
+        },
         "FORWARD_SAC": {
             "target_stage": "SAC_SHC_REVIEW",
             "target_status": "IN_PROGRESS",

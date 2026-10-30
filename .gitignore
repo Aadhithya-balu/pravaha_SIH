@@ -8,3 +8,6 @@ dist/
 uploads/
 backend/uploads/
 cloudflared.exe
+
+backend/storage/documents/*
+!backend/storage/documents/.gitkeep

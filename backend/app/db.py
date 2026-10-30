@@ -194,6 +194,8 @@ def run_schema_migrations(eng):
                         conn.execute(text("ALTER TABLE documents ADD COLUMN file_hash VARCHAR(64);"))
                     if "processing_status" not in cols:
                         conn.execute(text("ALTER TABLE documents ADD COLUMN processing_status VARCHAR(40) DEFAULT 'COMPLETED';"))
+                    if "document_category" not in cols:
+                        conn.execute(text("ALTER TABLE documents ADD COLUMN document_category VARCHAR(100) DEFAULT 'INSTITUTIONAL_RECORDS';"))
                     if "ocr_status" not in cols:
                         conn.execute(text("ALTER TABLE documents ADD COLUMN ocr_status VARCHAR(40) DEFAULT 'SUCCESS';"))
                     if "extracted_fields" not in cols:
@@ -204,6 +206,43 @@ def run_schema_migrations(eng):
                         conn.execute(text("ALTER TABLE documents ADD COLUMN regulatory_status VARCHAR(50) DEFAULT 'PENDING_EVALUATION';"))
                     if "error_message" not in cols:
                         conn.execute(text("ALTER TABLE documents ADD COLUMN error_message TEXT;"))
+
+                if "evc_visits" in tables:
+                    cols = get_cols("evc_visits")
+                    if "actual_date" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN actual_date DATE;"))
+                    if "visit_occurred" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN visit_occurred VARCHAR(30) DEFAULT 'UNCONFIRMED';"))
+                    if "missed_reason" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN missed_reason TEXT;"))
+                    if "evidence_verification_status" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN evidence_verification_status VARCHAR(30) DEFAULT 'PENDING';"))
+                    if "location_details" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN location_details TEXT;"))
+                    if "structured_checklist" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN structured_checklist TEXT;"))
+                    if "inspection_outcome" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN inspection_outcome VARCHAR(40);"))
+
+                if "inspection_evidences" in tables:
+                    cols = get_cols("inspection_evidences")
+                    if "verification_status" not in cols:
+                        conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN verification_status VARCHAR(30) DEFAULT 'PENDING';"))
+                    if "verified_by" not in cols:
+                        conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN verified_by VARCHAR(255);"))
+                    if "verified_at" not in cols:
+                        conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN verified_at DATETIME;"))
+
+                if "stage_remarks" in tables:
+                    cols = get_cols("stage_remarks")
+                    if "action_type" not in cols:
+                        conn.execute(text("ALTER TABLE stage_remarks ADD COLUMN action_type VARCHAR(60) DEFAULT 'REVIEW_COMMENT';"))
+                    if "parent_remark_id" not in cols:
+                        conn.execute(text("ALTER TABLE stage_remarks ADD COLUMN parent_remark_id INTEGER;"))
+                    if "is_resolved" not in cols:
+                        conn.execute(text("ALTER TABLE stage_remarks ADD COLUMN is_resolved BOOLEAN DEFAULT 0;"))
+                    if "resolution_notes" not in cols:
+                        conn.execute(text("ALTER TABLE stage_remarks ADD COLUMN resolution_notes TEXT;"))
 
                 # Create email_delivery_records if missing
                 if "email_delivery_records" not in tables:
@@ -247,6 +286,21 @@ def run_schema_migrations(eng):
                     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS is_latest BOOLEAN DEFAULT TRUE;",
                     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64);",
                     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS processing_status VARCHAR(40) DEFAULT 'COMPLETED';",
+                                        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS document_category VARCHAR(100) DEFAULT 'INSTITUTIONAL_RECORDS';",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS actual_date DATE;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS visit_occurred VARCHAR(30) DEFAULT 'UNCONFIRMED';",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS missed_reason TEXT;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS evidence_verification_status VARCHAR(30) DEFAULT 'PENDING';",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS location_details TEXT;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS structured_checklist TEXT;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS inspection_outcome VARCHAR(40);",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS verification_status VARCHAR(30) DEFAULT 'PENDING';",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS verified_by VARCHAR(255);",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;",
+                    "ALTER TABLE stage_remarks ADD COLUMN IF NOT EXISTS action_type VARCHAR(60) DEFAULT 'REVIEW_COMMENT';",
+                    "ALTER TABLE stage_remarks ADD COLUMN IF NOT EXISTS parent_remark_id INTEGER;",
+                    "ALTER TABLE stage_remarks ADD COLUMN IF NOT EXISTS is_resolved BOOLEAN DEFAULT FALSE;",
+                    "ALTER TABLE stage_remarks ADD COLUMN IF NOT EXISTS resolution_notes TEXT;",
                     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS ocr_status VARCHAR(40) DEFAULT 'SUCCESS';",
                     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS extracted_fields TEXT;",
                     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS authenticity_status VARCHAR(50) DEFAULT 'UNVERIFIED';",

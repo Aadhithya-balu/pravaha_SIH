@@ -3,7 +3,6 @@ from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel, Field, ConfigDict
 
 
-
 class RegisterRequest(BaseModel):
     institution_name: str = Field(min_length=3, max_length=200)
     contact_name: str = Field(min_length=2, max_length=120)
@@ -16,6 +15,7 @@ class RegisterRequest(BaseModel):
     institution_code: Optional[str] = None
     address: Optional[str] = "Campus Address"
     password: str = Field(min_length=8)
+
 
 class LoginRequest(BaseModel):
     email: str = Field(min_length=3)
@@ -31,9 +31,25 @@ class UserOut(BaseModel):
     region: str
     designation: str
 
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InstitutionProfileOut(BaseModel):
+    id: int
+    code: str
+    name: str
+    region: str
+    state: str
+    address: str
+    contact_email: str
+    contact_phone: str
+    institution_type: str
+
+    model_config = ConfigDict(from_attributes=True)
+
 
 class ApplicationCreate(BaseModel):
-    institution_name: Optional[str] = None  # Populated from user profile for institutions
+    institution_name: Optional[str] = None  # Populated from user profile for institutions or entered by user
     application_type: str = "Extension of Approval"
     region: Optional[str] = None
     due_date: Optional[date] = None
@@ -57,6 +73,8 @@ class ApplicationUpdate(BaseModel):
     due_date: Optional[date] = None
     notes: Optional[str] = None
     form_data: Optional[Union[Dict[str, Any], str]] = None
+
+
 class FindingDispositionRequest(BaseModel):
     disposition: str = "ACCEPTED"  # ACCEPTED, WAIVED, CORRECTION_REQUESTED, REJECTED
     disposition_notes: Optional[str] = None
@@ -106,6 +124,8 @@ class ApplicationOut(BaseModel):
     updated_at: Optional[datetime] = None
     next_action: Optional[Dict[str, Any]] = None
 
+    model_config = ConfigDict(from_attributes=True)
+
 
 class AuditEventOut(BaseModel):
     id: int
@@ -119,6 +139,8 @@ class AuditEventOut(BaseModel):
     prev_hash: Optional[str] = None
     event_hash: Optional[str] = None
     created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RecentAuditEventOut(AuditEventOut):
@@ -158,18 +180,39 @@ class ComplianceOut(BaseModel):
     officer_comments: Optional[str] = None
     created_at: datetime
 
+    model_config = ConfigDict(from_attributes=True)
+
 
 class EVCVisitCreate(BaseModel):
     application_id: int
     committee_members: str
     scheduled_date: date
     visit_mode: str = "PHYSICAL"
+    location_details: Optional[str] = None
 
 
 class EVCVisitUpdate(BaseModel):
-    status: str = "COMPLETED"
-    report_summary: str = ""
-    recommendations: str = ""
+    status: Optional[str] = "COMPLETED"
+    report_summary: Optional[str] = ""
+    recommendations: Optional[str] = ""
+    actual_date: Optional[date] = None
+    visit_occurred: Optional[str] = "OCCURRED"  # OCCURRED, DID_NOT_OCCUR, UNCONFIRMED
+    missed_reason: Optional[str] = None
+    evidence_verification_status: Optional[str] = "PENDING"
+    location_details: Optional[str] = None
+    structured_checklist: Optional[Union[Dict[str, Any], str]] = None
+    inspection_outcome: Optional[str] = "RECOMMENDED"
+
+
+class EVCRescheduleRequest(BaseModel):
+    new_date: date
+    reason: str = Field(min_length=3, description="Mandatory reason for rescheduling inspection")
+    visit_mode: Optional[str] = None
+
+
+class EVCApproveNextStageRequest(BaseModel):
+    remarks: str = Field(default="", description="Mandatory or recommended remarks for advancing stage")
+    target_stage: Optional[str] = None
 
 
 class EVCVisitOut(BaseModel):
@@ -178,17 +221,52 @@ class EVCVisitOut(BaseModel):
     institution_name: str
     committee_members: str
     scheduled_date: date
+    actual_date: Optional[date] = None
     visit_mode: str
     status: str
+    visit_occurred: str = "UNCONFIRMED"
+    missed_reason: Optional[str] = None
+    evidence_verification_status: str = "PENDING"
+    location_details: Optional[str] = None
+    structured_checklist: Optional[str] = None
+    inspection_outcome: Optional[str] = None
     report_summary: Optional[str] = None
     recommendations: Optional[str] = None
     assigned_by: str
     created_at: datetime
+    evidence_count: Optional[int] = 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InspectionEvidenceOut(BaseModel):
+    id: int
+    visit_id: int
+    application_id: int
+    evidence_type: str
+    file_name: str
+    file_path: str
+    file_hash: str
+    file_size: int
+    uploaded_by: str
+    remarks: Optional[str] = None
+    verification_status: str = "PENDING"
+    verified_by: Optional[str] = None
+    verified_at: Optional[datetime] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InspectionEvidenceVerifyRequest(BaseModel):
+    action: str = "VERIFY"  # VERIFY or REJECT
+    remarks: Optional[str] = None
 
 
 class DocumentUploadCheck(BaseModel):
     document_name: str
     document_type: str = "LEASE_DEED"
+    document_category: str = "INSTITUTIONAL_RECORDS"
     extracted_text: str
     application_id: Optional[int] = None
 
@@ -196,6 +274,29 @@ class DocumentUploadCheck(BaseModel):
 class DocumentReviewAction(BaseModel):
     review_status: str  # ACCEPTED or CORRECTION_REQUIRED
     reviewer_notes: str = ""
+
+
+class DocumentOut(BaseModel):
+    id: int
+    application_id: Optional[int] = None
+    institution_name: str
+    document_name: str
+    document_type: str
+    document_category: str = "INSTITUTIONAL_RECORDS"
+    file_size: int
+    mime_type: str
+    uploaded_by: str
+    version: int = 1
+    is_latest: bool = True
+    file_hash: Optional[str] = None
+    processing_status: str = "COMPLETED"
+    review_status: str = "PENDING"
+    reviewer_notes: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AlertOut(BaseModel):
@@ -210,6 +311,8 @@ class AlertOut(BaseModel):
     is_read: bool
     trigger_type: str
     created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DashboardMetrics(BaseModel):
@@ -318,6 +421,8 @@ class ScrutinyFindingOut(BaseModel):
     disposed_at: Optional[datetime] = None
     created_at: datetime
 
+    model_config = ConfigDict(from_attributes=True)
+
 
 class ScrutinyFindingDispositionUpdate(BaseModel):
     disposition: str = Field(description="Officer review disposition: ACCEPTED, WAIVED, CORRECTION_REQUESTED, or REJECTED")
@@ -340,15 +445,22 @@ class ScrutinyRunOut(BaseModel):
     created_at: datetime
     findings: Optional[List[ScrutinyFindingOut]] = None
 
+    model_config = ConfigDict(from_attributes=True)
+
 
 class DocumentReviewOut(BaseModel):
     document_id: int
     application_id: Optional[int] = None
     document_name: str
     document_type: str
+    document_category: Optional[str] = "INSTITUTIONAL_RECORDS"
     file_size: int
     mime_type: str
     uploaded_by: str
+    version: int = 1
+    is_latest: bool = True
+    file_hash: Optional[str] = None
+    processing_status: str = "COMPLETED"
     review_status: str
     reviewer_notes: Optional[str] = None
     reviewed_by: Optional[str] = None
@@ -359,13 +471,17 @@ class DocumentReviewOut(BaseModel):
     findings: List[ScrutinyFindingOut] = []
     created_at: datetime
 
+    model_config = ConfigDict(from_attributes=True)
+
 
 class StageRemarkCreate(BaseModel):
     stage: str = "SCRUTINY"
     comment_text: Optional[str] = None
     remark: Optional[str] = None
+    action_type: Optional[str] = "REVIEW_COMMENT"
     visibility: Optional[str] = "APPLICANT_VISIBLE"
     document_reference: Optional[str] = None
+    parent_remark_id: Optional[int] = None
 
 
 class StageRemarkOut(BaseModel):
@@ -376,8 +492,27 @@ class StageRemarkOut(BaseModel):
     author_email: str
     author_role: str
     comment_text: str
+    action_type: str = "REVIEW_COMMENT"
     visibility: str
     document_reference: Optional[str] = None
+    parent_remark_id: Optional[int] = None
+    is_resolved: bool = False
+    resolution_notes: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RegulatoryCategoryOut(BaseModel):
+    id: int
+    category_code: str
+    title: str
+    institution_type: str
+    description: str
+    required_documents_json: str
+    workflow_sequence_json: str
+    sla_days: int
+    is_active: bool
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
