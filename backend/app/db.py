@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 from typing import Dict, Any, Optional
 from fastapi import HTTPException
@@ -63,6 +64,12 @@ else:
                 quoted_pass = urllib.parse.quote(password, safe="")
                 norm_url = f"{proto}://{user}:{quoted_pass}@{host_rest}"
 
+    # Strip pgbouncer query parameter if psycopg is used
+    if "pgbouncer=" in norm_url:
+        norm_url = re.sub(r"[?&]pgbouncer=[^&]*", "", norm_url)
+        if "?" not in norm_url and "&" in norm_url:
+            norm_url = norm_url.replace("&", "?", 1)
+
     URL = norm_url
 
 # Production Safety Assertion: Never silently use SQLite in production
@@ -79,13 +86,13 @@ engine = None
 
 if DATABASE_PROVIDER == "sqlite":
     engine_kwargs["connect_args"] = {"check_same_thread": False}
-    print(f"[DATABASE] Environment: {APP_ENV.upper()} | Provider: SQLITE | URL: {URL}")
+    print(f"[DATABASE] Environment: {APP_ENV.upper()} | Provider: SQLITE | URL: {URL}", flush=True)
 else:
     # PostgreSQL / Supabase pool configuration
     engine_kwargs["pool_pre_ping"] = True
     engine_kwargs["pool_recycle"] = 300
     engine_kwargs["connect_args"] = {"connect_timeout": 6}
-    print(f"[DATABASE] Environment: {APP_ENV.upper()} | Provider: SUPABASE (PostgreSQL Pooler)")
+    print(f"[DATABASE] Environment: {APP_ENV.upper()} | Provider: SUPABASE (PostgreSQL Pooler)", flush=True)
 
 try:
     engine = create_engine(URL, **engine_kwargs)
@@ -93,7 +100,7 @@ try:
         test_conn.execute(text("SELECT 1;"))
     DATABASE_READY = True
     DATABASE_ERROR = None
-    print(f"[DATABASE SUCCESS] Connected to authoritative database ({DATABASE_PROVIDER}).")
+    print(f"[DATABASE SUCCESS] Connected to authoritative database ({DATABASE_PROVIDER}).", flush=True)
 except Exception as conn_err:
     DATABASE_READY = False
     DATABASE_ERROR = str(conn_err)

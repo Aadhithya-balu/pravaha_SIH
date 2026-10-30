@@ -42,6 +42,11 @@ ALLOWED_MIME_TYPES = {
 }
 
 
+def get_storage_dir() -> str:
+    """Returns the active verified storage directory path."""
+    return STORAGE_DIR
+
+
 def sanitize_filename(filename: str) -> str:
     """Strips path traversal sequences and unsafe characters from filenames."""
     base = os.path.basename(filename)
@@ -53,30 +58,62 @@ def init_storage() -> Dict[str, Any]:
     """
     Initializes and verifies the persistent document storage directory at application startup.
     Performs writability and read-back health checks.
+    Automatically falls back to local application storage or temp directory if the configured
+    path has permission restrictions (e.g. non-root container environments like Render).
     """
-    try:
-        os.makedirs(STORAGE_DIR, exist_ok=True)
-        # Test write and delete
-        test_file = os.path.join(STORAGE_DIR, f".health_check_{uuid.uuid4().hex[:8]}")
-        with open(test_file, "w") as f:
-            f.write("OK")
-        if os.path.exists(test_file):
-            os.remove(test_file)
-        logger.info(f"[STORAGE] Verified persistent local document storage at: {STORAGE_DIR}")
-        return {
-            "status": "ready",
-            "directory": STORAGE_DIR,
-            "max_upload_size_mb": MAX_UPLOAD_SIZE_MB,
-            "writable": True
-        }
-    except Exception as e:
-        logger.error(f"[STORAGE FATAL] Failed to initialize local storage directory at {STORAGE_DIR}: {e}")
-        return {
-            "status": "error",
-            "directory": STORAGE_DIR,
-            "error": str(e),
-            "writable": False
-        }
+    global STORAGE_DIR
+    import tempfile
+
+    candidates = [
+        STORAGE_DIR,
+        os.path.normpath(os.path.join(BASE_DIR, "storage", "documents")),
+        os.path.normpath(os.path.join(tempfile.gettempdir(), "pravaha_storage"))
+    ]
+
+    last_err = None
+    for cand in candidates:
+        try:
+            os.makedirs(cand, exist_ok=True)
+            test_file = os.path.join(cand, f".health_check_{uuid.uuid4().hex[:8]}")
+            with open(test_file, "w") as f:
+                f.write("OK")
+            if os.path.exists(test_file):
+                os.remove(test_file)
+
+            if cand != STORAGE_DIR:
+                logger.warning(
+                    f"[STORAGE WARNING] Configured path '{STORAGE_DIR}' is not writable ({last_err}). "
+                    f"Successfully fell back to writable directory: {cand}"
+                )
+                print(
+                    f"[STORAGE WARNING] Configured path '{STORAGE_DIR}' was not writable ({last_err}). "
+                    f"Fell back to: {cand}",
+                    flush=True
+                )
+                STORAGE_DIR = cand
+            else:
+                logger.info(f"[STORAGE] Verified persistent local document storage at: {STORAGE_DIR}")
+                print(f"[STORAGE] Verified persistent local document storage at: {STORAGE_DIR}", flush=True)
+
+            return {
+                "status": "ready",
+                "directory": STORAGE_DIR,
+                "max_upload_size_mb": MAX_UPLOAD_SIZE_MB,
+                "writable": True
+            }
+        except Exception as e:
+            last_err = e
+            logger.warning(f"[STORAGE] Could not initialize directory at {cand}: {e}")
+            continue
+
+    logger.error(f"[STORAGE FATAL] All storage directories failed. Last error: {last_err}")
+    print(f"[STORAGE FATAL] All storage directories failed. Last error: {last_err}", flush=True)
+    return {
+        "status": "error",
+        "directory": STORAGE_DIR,
+        "error": str(last_err),
+        "writable": False
+    }
 
 
 def compute_sha256(content: bytes) -> str:

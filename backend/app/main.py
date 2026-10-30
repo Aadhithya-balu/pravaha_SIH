@@ -163,14 +163,17 @@ def check_evc_assignment(user: User, application: Application, db: Session):
 
 @app.on_event("startup")
 def startup():
-    init_storage()
+    storage_res = init_storage()
+    print(f"[STARTUP] Local document storage initialized: status={storage_res.get('status')}, directory={storage_res.get('directory')}", flush=True)
     if DATABASE_READY:
+        print("[STARTUP] Applying schema migrations and checking seed data...", flush=True)
         Base.metadata.create_all(engine)
         run_schema_migrations(engine)
         with next(get_db()) as db:
             seed_database(db)
+        print("[STARTUP READY] PRAVAHA backend is fully initialized and operational.", flush=True)
     else:
-        print(f"[STARTUP WARNING] Skipping DB migrations and seeding because database is not ready: {DATABASE_ERROR}")
+        print(f"[STARTUP WARNING] Skipping DB migrations and seeding because database is not ready: {DATABASE_ERROR}", flush=True)
 
 
 # --- Health & Auth Endpoints ---
