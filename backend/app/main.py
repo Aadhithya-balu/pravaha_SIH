@@ -21,6 +21,7 @@ from .models import (
     StageRemark, InspectionEvidence, RegulatoryCategory
 )
 from .schemas import (
+    InstitutionProfileOut, EVCRescheduleRequest, EVCApproveNextStageRequest, InspectionEvidenceOut, InspectionEvidenceVerifyRequest, DocumentOut, RegulatoryCategoryOut,
     StageRemarkCreate, StageRemarkOut,
     RegisterRequest,
     LoginRequest, UserOut, ApplicationCreate, ApplicationPatch, ApplicationTransition,
@@ -39,7 +40,7 @@ from .workflow import (
     compute_next_best_action, compute_bottleneck_analytics
 )
 from .ai_service import review_document, extract_candidate_fields
-from .doc_extractor import process_and_store_upload, UPLOAD_DIR
+from .doc_extractor import process_and_store_upload, parse_document_content, UPLOAD_DIR
 from .scrutiny import execute_scrutiny_pipeline, normalize_application_route, ROUTE_EOA, ROUTE_NEW_PROGRAMME
 from .escalation import run_escalation_engine
 from .seed import seed_database, password_hash
@@ -275,6 +276,43 @@ def me(user: User = Depends(get_current_user)):
     return user
 
 
+
+# --- Institution Profile Endpoints ---
+
+@app.get("/api/institutions/profile", response_model=InstitutionProfileOut)
+@app.get("/api/v1/institutions/profile", response_model=InstitutionProfileOut)
+@app.get("/api/institutions/me", response_model=InstitutionProfileOut)
+def get_institution_profile(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Fetches profile of logged-in institution or creates persistent record if newly registered."""
+    clean_name = (user.institution_name or "").strip()
+    inst = None
+    if clean_name:
+        inst = db.query(Institution).filter(Institution.name == clean_name).first()
+    if not inst:
+        inst = db.query(Institution).filter(Institution.contact_email == user.email).first()
+    if not inst:
+        inst_code = f"AICTE-1-{user.id:04d}"
+        inst = Institution(
+            code=inst_code,
+            name=clean_name or f"Institution {user.id}",
+            region=user.region or "Northern",
+            state="Delhi",
+            address="Campus Address",
+            contact_email=user.email,
+            contact_phone="+91-11-29581000",
+            institution_type="Engineering & Technology"
+        )
+        db.add(inst)
+        db.commit()
+        db.refresh(inst)
+    return inst
+
+@app.get("/api/institutions", response_model=List[InstitutionProfileOut])
+@app.get("/api/v1/institutions", response_model=List[InstitutionProfileOut])
+def list_institutions(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """List registered institutions for selection, prefill, and statutory oversight."""
+    return db.query(Institution).order_by(Institution.name).all()
+
 # --- Dashboard Analytics ---
 
 @app.get("/api/dashboard", response_model=DashboardMetrics)
@@ -406,14 +444,14 @@ def create_application(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    if user.role == "institution":
-        institution_name = user.institution_name
-        region = user.region
-    else:
-        if not req.institution_name or not req.institution_name.strip():
-            raise HTTPException(status_code=400, detail="Institution name is required.")
+    if req.institution_name and req.institution_name.strip():
         institution_name = req.institution_name.strip()
-        region = req.region or "Northern"
+    elif user.institution_name and user.institution_name.strip():
+        institution_name = user.institution_name.strip()
+    else:
+        raise HTTPException(status_code=400, detail="College / Institution name is mandatory.")
+
+    region = req.region or user.region or "Northern"
 
     reference = f"AICTE-{date.today().year}-{uuid4().hex[:6].upper()}"
     default_due = req.due_date or (date.today() + timedelta(days=14))
@@ -594,6 +632,7 @@ async def upload_application_document(
     aid: int,
     file: UploadFile = File(...),
     document_type: str = Form("LEASE_DEED"),
+    document_category: str = Form("INSTITUTIONAL_RECORDS"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -626,10 +665,15 @@ async def upload_application_document(
         institution_name=a.institution_name,
         document_name=upload_res["original_filename"],
         document_type=document_type,
+        document_category=document_category,
         file_path=upload_res["stored_filepath"],
         file_size=upload_res["file_size"],
+        file_hash=upload_res.get("file_hash"),
         mime_type=upload_res["mime_type"],
         uploaded_by=user.email,
+        version=1,
+        is_latest=True,
+        processing_status="COMPLETED" if upload_res.get("is_readable") else upload_res.get("extraction_status", "COMPLETED"),
         extracted_text=upload_res["extracted_text"][:10000],
         ai_summary=ai_result.get("summary"),
         ai_findings=json.dumps(ai_result),
@@ -658,7 +702,12 @@ async def upload_application_document(
             "application_id": doc.application_id,
             "document_name": doc.document_name,
             "document_type": doc.document_type,
+            "document_category": doc.document_category,
             "file_size": doc.file_size,
+            "file_hash": doc.file_hash,
+            "version": doc.version,
+            "is_latest": doc.is_latest,
+            "processing_status": doc.processing_status,
             "review_status": doc.review_status,
             "created_at": doc.created_at.isoformat()
         },
@@ -1518,6 +1567,66 @@ def officer_record_decision(
         details=f"Statutory Verdict: {dec} | Order Ref: {order_ref} | Remarks: {a.decision_remarks}"
     )
 
+    db.add(StageRemark(
+        application_id=aid,
+        stage="COMPLETED",
+        author_name=user.name,
+        author_email=user.email,
+        author_role=user.role,
+        comment_text=f"Statutory Decision Issued: {dec}. Order Reference: {order_ref}. Remarks: {a.decision_remarks}",
+        action_type="DECISION_REMARK",
+        visibility="APPLICANT_VISIBLE",
+        created_at=datetime.utcnow()
+    ))
+
+    # Generate post-approval compliance obligations if approved
+    if dec == "APPROVED":
+        # post_approval_compliance_generated
+        post_compliance = [
+            ComplianceItem(
+                institution_name=a.institution_name,
+                application_id=a.id,
+                item_type="FIRE_SAFETY_NOC",
+                description="Mandatory Annual Fire & Life Safety Certificate / NOC Renewal Submission",
+                due_date=date.today() + timedelta(days=365),
+                status="PENDING"
+            ),
+            ComplianceItem(
+                institution_name=a.institution_name,
+                application_id=a.id,
+                item_type="UNDERTAKING",
+                description="Faculty Cadre Ratio, Biometric Attendance & Salary Disbursal Compliance Affirmation",
+                due_date=date.today() + timedelta(days=90),
+                status="PENDING"
+            ),
+            ComplianceItem(
+                institution_name=a.institution_name,
+                application_id=a.id,
+                item_type="UNDERTAKING",
+                description="Mandatory Anti-Ragging Committee Constitution & Student Safeguards Affidavit",
+                due_date=date.today() + timedelta(days=60),
+                status="PENDING"
+            ),
+            ComplianceItem(
+                institution_name=a.institution_name,
+                application_id=a.id,
+                item_type="UNDERTAKING",
+                description="Fee Regulatory Committee Adherence & Student Grievance Redressal Portal Integration",
+                due_date=date.today() + timedelta(days=90),
+                status="PENDING"
+            )
+        ]
+        db.add_all(post_compliance)
+        db.add(Alert(
+            title=f"Post-Approval Compliance Obligations Initialized ({a.reference})",
+            message="Statutory post-approval undertakings and renewals have been registered in your compliance roster.",
+            severity="INFO",
+            target_role="institution",
+            institution_name=a.institution_name,
+            application_id=aid,
+            trigger_type="COMPLIANCE_CREATED"
+        ))
+
     db.add(Alert(
         title=f"AICTE Decision Order Issued: {dec} ({a.reference})",
         message=f"Application has been {dec.lower()}. Order Ref: {order_ref}. Remarks: {a.decision_remarks}",
@@ -1667,7 +1776,7 @@ def download_document(
                 raise HTTPException(status_code=403, detail="Forbidden. Cannot download other institutions' documents.")
             elif user.role == "officer":
                 check_officer_jurisdiction(user, app_rec)
-            elif user.role == "evc":
+            elif user.role in ["evc", "evc_expert"]:
                 check_evc_assignment(user, app_rec, db)
     elif user.role == "institution" and doc.institution_name != user.institution_name:
         raise HTTPException(status_code=403, detail="Forbidden. Cannot download other institutions' documents.")
@@ -1707,6 +1816,7 @@ async def check_document_text(req: DocumentUploadCheck, user: User = Depends(get
 async def upload_document(
     file: UploadFile = File(...),
     document_type: str = Form("LEASE_DEED"),
+    document_category: str = Form("INSTITUTIONAL_RECORDS"),
     application_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
@@ -1731,10 +1841,15 @@ async def upload_document(
         institution_name=institution_name,
         document_name=upload_res["original_filename"],
         document_type=document_type,
+        document_category=document_category,
         file_path=upload_res["stored_filepath"],
         file_size=upload_res["file_size"],
+        file_hash=upload_res.get("file_hash"),
         mime_type=upload_res["mime_type"],
         uploaded_by=user.email,
+        version=1,
+        is_latest=True,
+        processing_status="COMPLETED" if upload_res.get("is_readable") else upload_res.get("extraction_status", "COMPLETED"),
         extracted_text=upload_res["extracted_text"][:10000],
         ai_summary=ai_result.get("summary"),
         ai_findings=json.dumps(ai_result),
@@ -2000,7 +2115,7 @@ def list_evc_visits(db: Session = Depends(get_db), user: User = Depends(get_curr
     q = db.query(EVCVisit)
     if user.role == "institution":
         q = q.filter(EVCVisit.institution_name == user.institution_name)
-    elif user.role == "evc":
+    elif user.role in ["evc", "evc_expert"]:
         q = q.filter(
             or_(
                 EVCVisit.assigned_by == user.email,
@@ -2035,7 +2150,8 @@ def schedule_evc_visit(
     )
     db.add(visit)
 
-    if app_rec.current_stage == "EVC_PENDING":
+    if app_rec.current_stage in ["SCRUTINY", "EVC_PENDING"]:
+        prev_stg = app_rec.current_stage
         app_rec.current_stage = "EVC_SCHEDULED"
         record_audit_event(
             db=db,
@@ -2043,7 +2159,7 @@ def schedule_evc_visit(
             actor=user.email,
             actor_role=user.role,
             action="SCHEDULE_EVC",
-            from_stage="EVC_PENDING",
+            from_stage=prev_stg,
             to_stage="EVC_SCHEDULED",
             details=f"EVC visit scheduled on {req.scheduled_date}. Panel: {req.committee_members}"
         )
@@ -2053,7 +2169,8 @@ def schedule_evc_visit(
     return visit
 
 
-@app.post("/api/evc/{vid}/update")
+@app.post("/api/evc/{vid}/update", response_model=EVCVisitOut)
+@app.post("/api/v1/evc/{vid}/update", response_model=EVCVisitOut)
 def update_evc_visit(
     vid: int,
     req: EVCVisitUpdate,
@@ -2068,16 +2185,34 @@ def update_evc_visit(
     if app_rec:
         if user.role == "officer":
             check_officer_jurisdiction(user, app_rec)
-        elif user.role == "evc":
+        elif user.role in ["evc", "evc_expert"]:
             check_evc_assignment(user, app_rec, db)
 
-    v.status = req.status
+    if req.actual_date is not None:
+        v.actual_date = req.actual_date
+    if req.location_details is not None:
+        v.location_details = req.location_details
+    if req.visit_occurred is not None:
+        v.visit_occurred = req.visit_occurred
+    if req.missed_reason is not None:
+        v.missed_reason = req.missed_reason
+    if req.evidence_verification_status is not None:
+        v.evidence_verification_status = req.evidence_verification_status
+    if req.inspection_outcome is not None:
+        v.inspection_outcome = req.inspection_outcome
+    if req.structured_checklist is not None:
+        v.structured_checklist = json.dumps(req.structured_checklist) if isinstance(req.structured_checklist, dict) else str(req.structured_checklist)
     if req.report_summary:
         v.report_summary = req.report_summary
     if req.recommendations:
         v.recommendations = req.recommendations
 
-    if app_rec and req.status == "COMPLETED" and app_rec.current_stage == "EVC_SCHEDULED":
+    if req.visit_occurred == "DID_NOT_OCCUR":
+        v.status = "POSTPONED"
+    elif req.status is not None:
+        v.status = req.status
+
+    if app_rec and v.status == "COMPLETED" and v.visit_occurred == "OCCURRED" and app_rec.current_stage == "EVC_SCHEDULED":
         app_rec.current_stage = "EVC_COMPLETED"
         record_audit_event(
             db=db,
@@ -2093,6 +2228,202 @@ def update_evc_visit(
     db.commit()
     db.refresh(v)
     return v
+
+@app.post("/api/evc/{vid}/reschedule", response_model=EVCVisitOut)
+@app.post("/api/v1/evc/{vid}/reschedule", response_model=EVCVisitOut)
+def reschedule_evc_visit(
+    vid: int,
+    req: EVCRescheduleRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(evc_or_officer)
+):
+    """Reschedules an EVC visit with mandatory justification and triggers notifications."""
+    v = db.get(EVCVisit, vid)
+    if not v:
+        raise HTTPException(status_code=404, detail="EVC visit not found.")
+    app_rec = db.get(Application, v.application_id)
+    if not app_rec:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    old_date = v.scheduled_date
+    v.scheduled_date = req.new_date
+    v.missed_reason = req.reason.strip()
+    if req.visit_mode:
+        v.visit_mode = req.visit_mode
+    v.status = "SCHEDULED"
+
+    record_audit_event(
+        db=db,
+        application_id=app_rec.id,
+        actor=user.email,
+        actor_role=user.role,
+        action="RESCHEDULE_EVC",
+        from_stage=app_rec.current_stage,
+        to_stage=app_rec.current_stage,
+        details=f"EVC inspection rescheduled from {old_date} to {req.new_date}. Justification: {req.reason.strip()}"
+    )
+
+    db.add(Alert(
+        title=f"EVC Inspection Rescheduled: {app_rec.institution_name}",
+        message=f"EVC visit has been rescheduled to {req.new_date}. Reason: {req.reason.strip()}",
+        severity="WARNING",
+        target_role="all",
+        institution_name=app_rec.institution_name,
+        application_id=app_rec.id,
+        trigger_type="EVC_SCHEDULE_CHANGE"
+    ))
+
+    db.add(StageRemark(
+        application_id=app_rec.id,
+        stage=app_rec.current_stage,
+        author_name=user.name,
+        author_email=user.email,
+        author_role=user.role,
+        comment_text=f"EVC inspection rescheduled from {old_date} to {req.new_date}. Reason: {req.reason.strip()}",
+        action_type="EVC_OBSERVATION",
+        visibility="APPLICANT_VISIBLE",
+        created_at=datetime.utcnow()
+    ))
+
+    db.commit()
+    db.refresh(v)
+    return v
+
+@app.post("/api/evc/{vid}/approve-next-stage", response_model=ApplicationOut)
+@app.post("/api/v1/evc/{vid}/approve-next-stage", response_model=ApplicationOut)
+def evc_approve_next_stage(
+    vid: int,
+    req: EVCApproveNextStageRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(evc_or_officer)
+):
+    """
+    Approve Next Stage action on EVC review screen:
+    Verifies stage, confirms visit occurred, validates inspection evidence, records remarks,
+    advances application to next stage (SAC/SHC review or Compliance), and writes audit trail.
+    """
+    v = db.get(EVCVisit, vid)
+    if not v:
+        raise HTTPException(status_code=404, detail="EVC visit not found.")
+    app_rec = db.get(Application, v.application_id)
+    if not app_rec:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    if app_rec.current_stage not in ["EVC_SCHEDULED", "EVC_COMPLETED"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot approve next stage from current stage '{app_rec.current_stage}'. Application must be in EVC_SCHEDULED or EVC_COMPLETED."
+        )
+
+    if v.visit_occurred == "DID_NOT_OCCUR":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot advance application: EVC visit was marked as DID NOT OCCUR ({v.missed_reason or 'No reason provided'}). Inspection must be rescheduled."
+        )
+
+    if v.status != "COMPLETED":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot advance application: EVC inspection findings report has not been submitted and marked COMPLETED."
+        )
+
+    evidences = db.query(InspectionEvidence).filter(InspectionEvidence.visit_id == vid).all()
+    if not evidences:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot advance application: Mandatory geotagged inspection evidence/photographs are missing. Evidence must be uploaded before stage clearance."
+        )
+
+    rejected_evidences = [e for e in evidences if e.verification_status == "REJECTED"]
+    if rejected_evidences:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot advance application: {len(rejected_evidences)} inspection evidence item(s) are marked as REJECTED."
+        )
+
+    target = req.target_stage or "SAC_SHC_REVIEW"
+    prev_stage = app_rec.current_stage
+    app_rec.current_stage = target
+    app_rec.status = "IN_PROGRESS"
+    app_rec.assigned_to = "Bureau Officer" if target == "SAC_SHC_REVIEW" else "Regional Officer"
+    app_rec.assigned_role = "bureau" if target == "SAC_SHC_REVIEW" else "officer"
+
+    v.evidence_verification_status = "VERIFIED"
+    for e in evidences:
+        if e.verification_status != "VERIFIED":
+            e.verification_status = "VERIFIED"
+            e.verified_by = user.email
+            e.verified_at = datetime.utcnow()
+
+    remarks_text = req.remarks.strip() or f"EVC physical inspection cleared and verified by {user.name} ({user.role})."
+
+    record_audit_event(
+        db=db,
+        application_id=app_rec.id,
+        actor=user.email,
+        actor_role=user.role,
+        action="EVC_APPROVE_NEXT_STAGE",
+        from_stage=prev_stage,
+        to_stage=target,
+        details=f"EVC Inspection Approved. Target Stage: {target}. Remarks: {remarks_text}"
+    )
+
+    db.add(Alert(
+        title=f"EVC Inspection Approved: {app_rec.institution_name}",
+        message=f"EVC inspection has been formally approved and advanced to '{target}'. Remarks: {remarks_text}",
+        severity="INFO",
+        target_role="all",
+        institution_name=app_rec.institution_name,
+        application_id=app_rec.id,
+        trigger_type="STAGE_ADVANCE"
+    ))
+
+    db.add(StageRemark(
+        application_id=app_rec.id,
+        stage=prev_stage,
+        author_name=user.name,
+        author_email=user.email,
+        author_role=user.role,
+        comment_text=f"EVC Stage Approved: {remarks_text}",
+        action_type="EVC_OBSERVATION",
+        visibility="APPLICANT_VISIBLE",
+        created_at=datetime.utcnow()
+    ))
+
+    db.commit()
+    db.refresh(app_rec)
+    return app_rec
+
+@app.get("/api/evc/{vid}/evidence", response_model=List[InspectionEvidenceOut])
+@app.get("/api/v1/evc/{vid}/evidence", response_model=List[InspectionEvidenceOut])
+def list_visit_evidence(vid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    visit = db.get(EVCVisit, vid)
+    if not visit:
+        raise HTTPException(status_code=404, detail="EVC visit not found.")
+    return db.query(InspectionEvidence).filter(InspectionEvidence.visit_id == vid).order_by(InspectionEvidence.created_at.desc()).all()
+
+@app.post("/api/evc/evidence/{eid}/verify", response_model=InspectionEvidenceOut)
+@app.post("/api/v1/evc/evidence/{eid}/verify", response_model=InspectionEvidenceOut)
+def verify_inspection_evidence(
+    eid: int,
+    req: InspectionEvidenceVerifyRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(evc_or_officer)
+):
+    ev = db.get(InspectionEvidence, eid)
+    if not ev:
+        raise HTTPException(status_code=404, detail="Inspection evidence not found.")
+
+    action = req.action.upper().strip()
+    ev.verification_status = "VERIFIED" if action == "VERIFY" else "REJECTED"
+    ev.verified_by = user.email
+    ev.verified_at = datetime.utcnow()
+    if req.remarks:
+        ev.remarks = f"[{action}] {req.remarks.strip()}"
+
+    db.commit()
+    db.refresh(ev)
+    return ev
 
 
 @app.post("/api/escalation/run-check")
@@ -2671,6 +3002,7 @@ def add_stage_remark(
     if visibility not in ["APPLICANT_VISIBLE", "INTERNAL_OFFICER_ONLY"]:
         visibility = "APPLICANT_VISIBLE"
 
+    action_type = req.action_type or "REVIEW_COMMENT"
     rem = StageRemark(
         application_id=aid,
         stage=stage,
@@ -2678,8 +3010,10 @@ def add_stage_remark(
         author_email=user.email,
         author_role=user.role,
         comment_text=comment_text.strip(),
+        action_type=action_type,
         visibility=visibility,
-        document_reference=document_reference
+        document_reference=document_reference,
+        parent_remark_id=req.parent_remark_id
     )
     db.add(rem)
     
@@ -2750,6 +3084,86 @@ async def upload_inspection_evidence(
     db.refresh(evidence)
     return evidence
 
+
+
+@app.post("/api/documents/{did}/retry-processing", response_model=DocumentReviewOut)
+@app.post("/api/v1/documents/{did}/retry-processing", response_model=DocumentReviewOut)
+async def retry_document_processing(
+    did: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Safely retries OCR and parsing on an uploaded document file without creating duplicates."""
+    doc = db.get(Document, did)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document record not found.")
+
+    if user.role == "institution" and doc.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden.")
+
+    if not doc.file_path or not os.path.exists(doc.file_path):
+        raise HTTPException(status_code=400, detail="Document file payload not found on disk for reprocessing.")
+
+    with open(doc.file_path, "rb") as f:
+        file_bytes = f.read()
+
+    parsed = parse_document_content(file_bytes, doc.document_name)
+    doc.extracted_text = parsed["extracted_text"][:10000]
+    doc.file_hash = parsed["file_hash"]
+    doc.processing_status = "COMPLETED" if parsed["is_readable"] else parsed["extraction_status"]
+
+    ai_result = await review_document(
+        document_name=doc.document_name,
+        document_type=doc.document_type,
+        text=parsed["extracted_text"]
+    )
+    doc.ai_summary = ai_result.get("summary")
+    doc.ai_findings = json.dumps(ai_result)
+    doc.ai_confidence = float(ai_result.get("confidence_score", 0.9))
+
+    db.commit()
+    db.refresh(doc)
+
+    findings = db.query(ScrutinyFinding).filter(ScrutinyFinding.document_id == did).all()
+    return DocumentReviewOut(
+        document_id=doc.id,
+        application_id=doc.application_id,
+        document_name=doc.document_name,
+        document_type=doc.document_type,
+        document_category=doc.document_category,
+        file_size=doc.file_size,
+        mime_type=doc.mime_type,
+        uploaded_by=doc.uploaded_by,
+        version=doc.version,
+        is_latest=doc.is_latest,
+        file_hash=doc.file_hash,
+        processing_status=doc.processing_status,
+        review_status=doc.review_status,
+        reviewer_notes=doc.reviewer_notes,
+        reviewed_by=doc.reviewed_by,
+        reviewed_at=doc.reviewed_at,
+        ai_summary=doc.ai_summary,
+        ai_confidence=doc.ai_confidence,
+        ai_analysis=ai_result,
+        findings=findings,
+        created_at=doc.created_at
+    )
+
+@app.get("/api/applications/{aid}/approved-documents", response_model=List[DocumentOut])
+@app.get("/api/v1/applications/{aid}/approved-documents", response_model=List[DocumentOut])
+def get_approved_documents(aid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Retrieves verified and approved documents for the given application."""
+    app_rec = db.get(Application, aid)
+    if not app_rec:
+        raise HTTPException(status_code=404, detail="Application not found.")
+    if user.role == "institution" and app_rec.institution_name != user.institution_name:
+        raise HTTPException(status_code=403, detail="Forbidden.")
+
+    docs = db.query(Document).filter(
+        Document.application_id == aid,
+        Document.review_status.in_(["ACCEPTED", "VERIFIED"])
+    ).order_by(Document.created_at.desc()).all()
+    return docs
 
 # --- Document Replacement & Version Control ---
 

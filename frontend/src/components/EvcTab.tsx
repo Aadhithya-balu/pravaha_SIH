@@ -27,8 +27,8 @@ import {
   CalendarDays,
   ListFilter
 } from 'lucide-react';
-import { EVCVisit, Application, User } from '../types';
-import { api } from '../api';
+import { EVCVisit, Application, User, InspectionEvidence } from '../types';
+import { api, rescheduleEvcVisit, approveEvcNextStage, fetchVisitEvidences, verifyInspectionEvidence } from '../api';
 
 interface EvcTabProps {
   user: User | null;
@@ -51,6 +51,29 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
   const [isViewReportOpen, setIsViewReportOpen] = useState(false);
   const [selectedVisit, setSelectedVisit] = useState<EVCVisit | null>(null);
   const [expandedPanelVisitId, setExpandedPanelVisitId] = useState<number | null>(null);
+
+  // EVC Workflow Enhancements: Location, Reschedule, Evidence, Next Stage Approval
+  const [locationDetails, setLocationDetails] = useState('');
+  const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rescheduleReason, setRescheduleReason] = useState('');
+  const [rescheduleLocation, setRescheduleLocation] = useState('');
+  const [isApproveOpen, setIsApproveOpen] = useState(false);
+  const [approveRemarks, setApproveRemarks] = useState('');
+  const [isEvidenceModalOpen, setIsEvidenceModalOpen] = useState(false);
+  const [currentEvidences, setCurrentEvidences] = useState<InspectionEvidence[]>([]);
+  const [isLoadingEvidences, setIsLoadingEvidences] = useState(false);
+  const [evidenceRemarks, setEvidenceRemarks] = useState('');
+
+  // Enhanced Report Submission States
+  const [visitOccurred, setVisitOccurred] = useState<'OCCURRED' | 'DID_NOT_OCCUR'>('OCCURRED');
+  const [missedReason, setMissedReason] = useState('');
+  const [inspectionOutcome, setInspectionOutcome] = useState<'RECOMMENDED' | 'DEFICIENCIES_NOTED' | 'REJECTED'>('RECOMMENDED');
+  const [evidenceVerificationStatus, setEvidenceVerificationStatus] = useState<'VERIFIED' | 'PENDING' | 'REJECTED'>('VERIFIED');
+  const [checklistLand, setChecklistLand] = useState(true);
+  const [checklistLabs, setChecklistLabs] = useState(true);
+  const [checklistFaculty, setChecklistFaculty] = useState(true);
+  const [checklistSafety, setChecklistSafety] = useState(true);
 
   // Form State
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -195,7 +218,8 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
           application_id: Number(selectedAppId),
           committee_members: committeeMembers.trim(),
           scheduled_date: scheduledDate,
-          visit_mode: visitMode
+          visit_mode: visitMode,
+          location_details: locationDetails.trim() || undefined
         })
       });
       setIsScheduleOpen(false);
@@ -205,6 +229,102 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
       onRefresh();
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to schedule EVC visit.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  // Reschedule Handlers
+  function handleOpenReschedule(v: EVCVisit) {
+    setSelectedVisit(v);
+    setRescheduleDate(v.scheduled_date);
+    setRescheduleReason('');
+    setRescheduleLocation(v.location_details || '');
+    setIsRescheduleOpen(true);
+  }
+
+  async function handleRescheduleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedVisit || !rescheduleDate || !rescheduleReason.trim()) return;
+    setIsSubmitting(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      await rescheduleEvcVisit(selectedVisit.id, {
+        new_date: rescheduleDate,
+        reason: rescheduleReason.trim(),
+        visit_mode: visitMode
+      });
+      setIsRescheduleOpen(false);
+      setSuccessMsg(`Inspection for ${selectedVisit.institution_name} successfully rescheduled to ${rescheduleDate}.`);
+      await loadVisits();
+      onRefresh();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to reschedule inspection.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  // Approve Next Stage Handlers
+  function handleOpenApprove(v: EVCVisit) {
+    setSelectedVisit(v);
+    setApproveRemarks('Inspection findings verified. Quorum attendance confirmed and geotagged evidence validated.');
+    setIsApproveOpen(true);
+  }
+
+  async function handleApproveNextStageSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedVisit) return;
+    setIsSubmitting(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      const res = await approveEvcNextStage(selectedVisit.id, {
+        remarks: approveRemarks.trim()
+      });
+      setIsApproveOpen(false);
+      setSuccessMsg(`Next stage approved! Application advanced to ${res.current_stage || 'SAC/SHC Committee Review'}.`);
+      await loadVisits();
+      onRefresh();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to approve next stage.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  // Inspection Evidence Handlers
+  async function handleOpenEvidences(v: EVCVisit) {
+    setSelectedVisit(v);
+    setIsEvidenceModalOpen(true);
+    setIsLoadingEvidences(true);
+    try {
+      const evs = await fetchVisitEvidences(v.id);
+      setCurrentEvidences(evs);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to load inspection evidences.');
+    } finally {
+      setIsLoadingEvidences(false);
+    }
+  }
+
+  async function handleVerifyEvidenceItem(evidenceId: number, status: 'VERIFIED' | 'REJECTED') {
+    setIsSubmitting(true);
+    try {
+      await verifyInspectionEvidence(
+        evidenceId,
+        status === 'VERIFIED' ? 'VERIFY' : 'REJECT',
+        evidenceRemarks.trim() || undefined
+      );
+      if (selectedVisit) {
+        const evs = await fetchVisitEvidences(selectedVisit.id);
+        setCurrentEvidences(evs);
+      }
+      setSuccessMsg(`Evidence successfully marked as ${status}.`);
+      await loadVisits();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to verify evidence.');
     } finally {
       setIsSubmitting(false);
     }
@@ -222,7 +342,17 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
         body: JSON.stringify({
           status: 'COMPLETED',
           report_summary: reportSummary.trim(),
-          recommendations: recommendations.trim()
+          recommendations: recommendations.trim(),
+          visit_occurred: visitOccurred,
+          missed_reason: visitOccurred === 'DID_NOT_OCCUR' ? missedReason.trim() : undefined,
+          structured_checklist: JSON.stringify({
+            land_verified: checklistLand,
+            labs_verified: checklistLabs,
+            faculty_verified: checklistFaculty,
+            safety_verified: checklistSafety
+          }),
+          inspection_outcome: inspectionOutcome,
+          evidence_verification_status: evidenceVerificationStatus
         })
       });
       setIsReportOpen(false);
@@ -1164,6 +1294,57 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                     </div>
                   </div>
 
+                  {/* Visit Badges: Location, Attendance, Evidence, Outcome */}
+                  {(v.location_details || v.visit_occurred || v.evidence_verification_status || v.inspection_outcome) && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', padding: '6px 0', borderTop: '1px dashed #E2E8F0' }}>
+                      {v.location_details && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: '#334155' }}>
+                          <MapPin size={11} color="#2563EB" />
+                          <span>{v.location_details}</span>
+                        </span>
+                      )}
+                      {v.visit_occurred && (
+                        <span style={{
+                          fontSize: 10.5,
+                          fontWeight: 600,
+                          padding: '2px 7px',
+                          borderRadius: 4,
+                          background: v.visit_occurred === 'OCCURRED' ? '#ECFDF5' : '#FEF2F2',
+                          color: v.visit_occurred === 'OCCURRED' ? '#047857' : '#B91C1C',
+                          border: `1px solid ${v.visit_occurred === 'OCCURRED' ? '#A7F3D0' : '#FECACA'}`
+                        }}>
+                          {v.visit_occurred === 'OCCURRED' ? '✓ Visit Occurred' : `✕ Did Not Occur: ${v.missed_reason || 'Unspecified'}`}
+                        </span>
+                      )}
+                      {v.evidence_verification_status && (
+                        <span style={{
+                          fontSize: 10.5,
+                          fontWeight: 600,
+                          padding: '2px 7px',
+                          borderRadius: 4,
+                          background: v.evidence_verification_status === 'VERIFIED' ? '#EFF6FF' : '#FFFBEB',
+                          color: v.evidence_verification_status === 'VERIFIED' ? '#1D4ED8' : '#B45309',
+                          border: `1px solid ${v.evidence_verification_status === 'VERIFIED' ? '#BFDBFE' : '#FDE68A'}`
+                        }}>
+                          Evidence: {v.evidence_verification_status}
+                        </span>
+                      )}
+                      {v.inspection_outcome && (
+                        <span style={{
+                          fontSize: 10.5,
+                          fontWeight: 600,
+                          padding: '2px 7px',
+                          borderRadius: 4,
+                          background: v.inspection_outcome === 'RECOMMENDED' ? '#ECFDF5' : '#FEF2F2',
+                          color: v.inspection_outcome === 'RECOMMENDED' ? '#047857' : '#B91C1C',
+                          border: `1px solid ${v.inspection_outcome === 'RECOMMENDED' ? '#A7F3D0' : '#FECACA'}`
+                        }}>
+                          Outcome: {v.inspection_outcome}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   {/* Middle Content: Panel Members & Findings Snippet */}
                   <div style={{
                     display: 'grid',
@@ -1327,6 +1508,31 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
 
                     {/* Contextual Action Buttons */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {/* Reschedule Button (When visit pending) */}
+                      {!isCompleted && user?.role !== 'institution' && (
+                        <button
+                          type="button"
+                          id={`btn-reschedule-${v.id}`}
+                          onClick={() => handleOpenReschedule(v)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            padding: '5px 12px',
+                            borderRadius: 6,
+                            background: '#FFFFFF',
+                            border: '1px solid #D97706',
+                            color: '#B45309',
+                            fontSize: 12,
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <RotateCcw size={13} />
+                          <span>Reschedule</span>
+                        </button>
+                      )}
+
                       {/* View Report Button */}
                       {isCompleted && (
                         <button
@@ -1352,6 +1558,56 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                         >
                           <Eye size={13} />
                           <span>View Full Report</span>
+                        </button>
+                      )}
+
+                      {/* Evidences Button */}
+                      <button
+                        type="button"
+                        id={`btn-evidences-${v.id}`}
+                        onClick={() => handleOpenEvidences(v)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          padding: '5px 10px',
+                          borderRadius: 6,
+                          background: '#F8FAFC',
+                          border: '1px solid #CBD5E1',
+                          color: '#334155',
+                          fontSize: 12,
+                          fontWeight: 500,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <ClipboardList size={12} />
+                        <span>Evidence</span>
+                      </button>
+
+                      {/* Prominent Approve Next Stage Button (for completed inspections) */}
+                      {isCompleted && user?.role !== 'institution' && (
+                        <button
+                          type="button"
+                          id={`btn-approve-evc-${v.id}`}
+                          onClick={() => handleOpenApprove(v)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            padding: '6px 14px',
+                            borderRadius: 6,
+                            background: '#16845B',
+                            border: 'none',
+                            color: '#FFFFFF',
+                            fontSize: 12,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            boxShadow: '0 1px 2px rgba(22, 132, 91, 0.25)',
+                            transition: 'all 0.12s ease'
+                          }}
+                        >
+                          <CheckCircle2 size={13} />
+                          <span>Approve Next Stage</span>
                         </button>
                       )}
 
@@ -1481,6 +1737,34 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                       Notice: No applications are currently flagged in SCRUTINY or EVC_PENDING stage.
                     </span>
                   )}
+                </div>
+
+                {/* Location / Campus Details */}
+                <div>
+                  <label htmlFor="evc-location-input" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1E293B', marginBottom: 4 }}>
+                    Campus & Inspection Location Details
+                  </label>
+                  <input
+                    id="evc-location-input"
+                    type="text"
+                    placeholder="e.g. Main Engineering Block, Mechanical & AI Labs, Pune Campus"
+                    value={locationDetails}
+                    onChange={(e) => {
+                      setLocationDetails(e.target.value);
+                      setScheduleDirty(true);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      borderRadius: 6,
+                      border: '1px solid #CBD5E1',
+                      fontSize: 12.5,
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  <span style={{ fontSize: 11, color: '#64748B', display: 'block', marginTop: 2 }}>
+                    Designated physical campus facility or laboratory zone
+                  </span>
                 </div>
 
                 {/* Date & Mode Grid */}
@@ -1625,7 +1909,127 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                   <span style={{ fontSize: 11.5, color: '#64748B' }}>
                     Inspection Date: {selectedVisit.scheduled_date} · Mode: {selectedVisit.visit_mode} · Panel: {selectedVisit.committee_members.split(',')[0]}
                   </span>
+                  {selectedVisit.location_details && (
+                    <div style={{ fontSize: 11.5, color: '#2563EB', marginTop: 3 }}>
+                      📍 Location: {selectedVisit.location_details}
+                    </div>
+                  )}
                 </div>
+
+                {/* Visit Attendance / Occurrence Verification */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1E293B', marginBottom: 4 }}>
+                      Inspection Visit Status <span style={{ color: '#DC2626' }}>*</span>
+                    </label>
+                    <select
+                      id="evc-visit-occurred-select"
+                      value={visitOccurred}
+                      onChange={(e) => setVisitOccurred(e.target.value as any)}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        borderRadius: 6,
+                        border: '1px solid #CBD5E1',
+                        fontSize: 12.5,
+                        background: '#FFFFFF'
+                      }}
+                    >
+                      <option value="OCCURRED">Visit Occurred & Committee Quorum Verified</option>
+                      <option value="DID_NOT_OCCUR">Visit Did Not Occur / Postponed</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1E293B', marginBottom: 4 }}>
+                      Inspection Outcome <span style={{ color: '#DC2626' }}>*</span>
+                    </label>
+                    <select
+                      id="evc-outcome-select"
+                      value={inspectionOutcome}
+                      onChange={(e) => setInspectionOutcome(e.target.value as any)}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        borderRadius: 6,
+                        border: '1px solid #CBD5E1',
+                        fontSize: 12.5,
+                        background: '#FFFFFF'
+                      }}
+                    >
+                      <option value="RECOMMENDED">Recommended for Approval</option>
+                      <option value="DEFICIENCIES_NOTED">Deficiencies Noted / Rectification Req.</option>
+                      <option value="REJECTED">Not Recommended / Rejected</option>
+                    </select>
+                  </div>
+                </div>
+
+                {visitOccurred === 'DID_NOT_OCCUR' && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#DC2626', marginBottom: 4 }}>
+                      Mandatory Reason for Non-Visit <span style={{ color: '#DC2626' }}>*</span>
+                    </label>
+                    <textarea
+                      id="evc-missed-reason"
+                      rows={2}
+                      required
+                      placeholder="State why the inspection could not take place (e.g. Institution campus closed, panel transport disruption, official adjournment)..."
+                      value={missedReason}
+                      onChange={(e) => setMissedReason(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        borderRadius: 6,
+                        border: '1px solid #EF4444',
+                        fontSize: 12.5,
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* Structured Statutory Inspection Checklist */}
+                {visitOccurred === 'OCCURRED' && (
+                  <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 6, padding: '10px 12px' }}>
+                    <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1E293B', marginBottom: 8 }}>
+                      Mandatory Statutory Checklist (AICTE APH Guidelines)
+                    </span>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={checklistLand}
+                          onChange={(e) => setChecklistLand(e.target.checked)}
+                        />
+                        <span>Land & Built-up Area Verified</span>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={checklistLabs}
+                          onChange={(e) => setChecklistLabs(e.target.checked)}
+                        />
+                        <span>Labs & High-Speed Bandwidth</span>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={checklistFaculty}
+                          onChange={(e) => setChecklistFaculty(e.target.checked)}
+                        />
+                        <span>Faculty Cadre Ratio & Biometrics</span>
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={checklistSafety}
+                          onChange={(e) => setChecklistSafety(e.target.checked)}
+                        />
+                        <span>Fire Safety & Barrier-Free Access</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <label htmlFor="evc-report-summary" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1E293B', marginBottom: 4 }}>
@@ -1802,6 +2206,332 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                   setIsViewReportOpen(false);
                   setSelectedVisit(null);
                 }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL 4: Reschedule Inspection */}
+      {isRescheduleOpen && selectedVisit && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="reschedule-modal-title">
+          <div className="modal-dialog" style={{ maxWidth: 540 }}>
+            <div className="modal-header">
+              <div>
+                <h3 id="reschedule-modal-title" style={{ margin: 0, fontSize: 16 }}>Reschedule EVC Inspection</h3>
+                <span style={{ fontSize: 11.5, color: '#64748B' }}>
+                  Update inspection date with mandatory statutory justification
+                </span>
+              </div>
+              <button
+                type="button"
+                style={{ background: 'transparent', border: 0, cursor: 'pointer', color: '#64748B' }}
+                onClick={() => setIsRescheduleOpen(false)}
+                aria-label="Close modal"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleRescheduleSubmit}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ background: '#F8FAFC', padding: '10px 14px', borderRadius: 6, border: '1px solid #E2E8F0' }}>
+                  <b style={{ display: 'block', fontSize: 13, color: '#1E293B' }}>{selectedVisit.institution_name}</b>
+                  <span style={{ fontSize: 11.5, color: '#64748B' }}>
+                    Currently Scheduled: {selectedVisit.scheduled_date} ({selectedVisit.visit_mode})
+                  </span>
+                </div>
+
+                <div>
+                  <label htmlFor="evc-new-date" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1E293B', marginBottom: 4 }}>
+                    New Inspection Date <span style={{ color: '#DC2626' }}>*</span>
+                  </label>
+                  <input
+                    id="evc-new-date"
+                    type="date"
+                    required
+                    value={rescheduleDate}
+                    onChange={(e) => setRescheduleDate(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      borderRadius: 6,
+                      border: '1px solid #CBD5E1',
+                      fontSize: 12.5,
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="evc-reschedule-location" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1E293B', marginBottom: 4 }}>
+                    Updated Location / Campus Details
+                  </label>
+                  <input
+                    id="evc-reschedule-location"
+                    type="text"
+                    value={rescheduleLocation}
+                    onChange={(e) => setRescheduleLocation(e.target.value)}
+                    placeholder="e.g. Pune Main Campus, Building 2, Lab 4"
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      borderRadius: 6,
+                      border: '1px solid #CBD5E1',
+                      fontSize: 12.5,
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="evc-reschedule-reason" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1E293B', marginBottom: 4 }}>
+                    Mandatory Reason for Rescheduling <span style={{ color: '#DC2626' }}>*</span>
+                  </label>
+                  <textarea
+                    id="evc-reschedule-reason"
+                    rows={3}
+                    required
+                    placeholder="Explain the statutory reason for rescheduling (e.g. Committee expert unavailability, university examination conflict)..."
+                    value={rescheduleReason}
+                    onChange={(e) => setRescheduleReason(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: 6,
+                      border: '1px solid #CBD5E1',
+                      fontSize: 12.5,
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  <span style={{ fontSize: 11, color: '#64748B', display: 'block', marginTop: 2 }}>
+                    This reason will be logged in the immutable audit trail and visible in stage history.
+                  </span>
+                </div>
+              </div>
+
+              <div className="modal-footer" style={{ padding: '12px 18px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setIsRescheduleOpen(false)}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={isSubmitting || !rescheduleDate || rescheduleReason.trim().length < 5}
+                  style={{ background: '#D97706', borderColor: '#D97706' }}
+                >
+                  {isSubmitting ? 'Rescheduling...' : 'Confirm Reschedule'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: Approve Next Stage */}
+      {isApproveOpen && selectedVisit && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="approve-modal-title">
+          <div className="modal-dialog" style={{ maxWidth: 580 }}>
+            <div className="modal-header">
+              <div>
+                <h3 id="approve-modal-title" style={{ margin: 0, fontSize: 16 }}>Approve Next Stage (EVC Completion)</h3>
+                <span style={{ fontSize: 11.5, color: '#64748B' }}>
+                  Verify inspection outcome & forward dossier to Standing Committee Review (SAC/SHC)
+                </span>
+              </div>
+              <button
+                type="button"
+                style={{ background: 'transparent', border: 0, cursor: 'pointer', color: '#64748B' }}
+                onClick={() => setIsApproveOpen(false)}
+                aria-label="Close modal"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleApproveNextStageSubmit}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ background: '#F8FAFC', padding: '12px 16px', borderRadius: 8, border: '1px solid #E2E8F0' }}>
+                  <b style={{ display: 'block', fontSize: 14, color: '#1E293B', marginBottom: 6 }}>
+                    {selectedVisit.institution_name}
+                  </b>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12, color: '#475569' }}>
+                    <div>Visit Mode: <b>{selectedVisit.visit_mode}</b></div>
+                    <div>Inspection Date: <b>{selectedVisit.scheduled_date}</b></div>
+                    <div>Attendance: <b style={{ color: selectedVisit.visit_occurred === 'DID_NOT_OCCUR' ? '#DC2626' : '#16845B' }}>{selectedVisit.visit_occurred || 'OCCURRED'}</b></div>
+                    <div>Evidence: <b>{selectedVisit.evidence_verification_status || 'VERIFIED'}</b></div>
+                  </div>
+                  {selectedVisit.inspection_outcome && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: '#1E40AF' }}>
+                      Inspection Outcome: <b>{selectedVisit.inspection_outcome}</b>
+                    </div>
+                  )}
+                </div>
+
+                {selectedVisit.visit_occurred === 'DID_NOT_OCCUR' && (
+                  <div style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 6, padding: '10px 12px', color: '#991B1B', fontSize: 12 }}>
+                    ⚠️ <b>Regulatory Warning:</b> Visit is recorded as "DID_NOT_OCCUR" ({selectedVisit.missed_reason}). The approval workflow will block progression unless the visit occurred or an authorised override is recorded.
+                  </div>
+                )}
+
+                <div>
+                  <label htmlFor="evc-approve-remarks" style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#1E293B', marginBottom: 4 }}>
+                    Officer Endorsement & Transmission Remarks
+                  </label>
+                  <textarea
+                    id="evc-approve-remarks"
+                    rows={3}
+                    placeholder="Enter endorsement remarks for the Standing Hearing Committee / Approval Bureau..."
+                    value={approveRemarks}
+                    onChange={(e) => setApproveRemarks(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: 6,
+                      border: '1px solid #CBD5E1',
+                      fontSize: 12.5,
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  <span style={{ fontSize: 11, color: '#64748B', display: 'block', marginTop: 2 }}>
+                    Remarks will be permanently recorded in stage history and committee minutes.
+                  </span>
+                </div>
+              </div>
+
+              <div className="modal-footer" style={{ padding: '12px 18px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setIsApproveOpen(false)}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={isSubmitting}
+                  style={{ background: '#16845B', borderColor: '#16845B' }}
+                >
+                  {isSubmitting ? 'Advancing Stage...' : 'Approve Next Stage (SAC/SHC)'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: Inspection Evidences & Geotagged Proofs */}
+      {isEvidenceModalOpen && selectedVisit && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="evidence-modal-title">
+          <div className="modal-dialog" style={{ maxWidth: 640 }}>
+            <div className="modal-header">
+              <div>
+                <h3 id="evidence-modal-title" style={{ margin: 0, fontSize: 16 }}>Inspection Evidences & Geotagged Files</h3>
+                <span style={{ fontSize: 11.5, color: '#64748B' }}>
+                  Application #{selectedVisit.application_id} — {selectedVisit.institution_name}
+                </span>
+              </div>
+              <button
+                type="button"
+                style={{ background: 'transparent', border: 0, cursor: 'pointer', color: '#64748B' }}
+                onClick={() => setIsEvidenceModalOpen(false)}
+                aria-label="Close modal"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {isLoadingEvidences ? (
+                <div style={{ padding: 24, textAlign: 'center', color: '#64748B' }}>Loading inspection evidences...</div>
+              ) : currentEvidences.length === 0 ? (
+                <div style={{ padding: 24, textAlign: 'center', background: '#F8FAFC', borderRadius: 6, border: '1px dashed #CBD5E1' }}>
+                  <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>No inspection evidences filed yet for this visit.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {currentEvidences.map((ev) => (
+                    <div
+                      key={ev.id}
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: 6,
+                        border: '1px solid #E2E8F0',
+                        background: '#FFFFFF',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: 8
+                      }}
+                    >
+                      <div>
+                        <b style={{ display: 'block', fontSize: 13, color: '#1E293B' }}>{ev.evidence_type}</b>
+                        <span style={{ fontSize: 11.5, color: '#64748B' }}>
+                          Uploaded {new Date(ev.created_at).toLocaleString()} · Status: <b style={{ color: ev.verification_status === 'VERIFIED' ? '#16845B' : ev.verification_status === 'REJECTED' ? '#DC2626' : '#D97706' }}>{ev.verification_status || 'PENDING'}</b>
+                        </span>
+                        {ev.remarks && (
+                          <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>
+                            Remarks: {ev.remarks}
+                          </div>
+                        )}
+                      </div>
+
+                      {user?.role !== 'institution' && (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            type="button"
+                            onClick={() => handleVerifyEvidenceItem(ev.id, 'VERIFIED')}
+                            disabled={isSubmitting}
+                            style={{
+                              padding: '4px 8px',
+                              borderRadius: 4,
+                              background: '#ECFDF5',
+                              border: '1px solid #A7F3D0',
+                              color: '#047857',
+                              fontSize: 11,
+                              fontWeight: 600,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            ✓ Verify
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleVerifyEvidenceItem(ev.id, 'REJECTED')}
+                            disabled={isSubmitting}
+                            style={{
+                              padding: '4px 8px',
+                              borderRadius: 4,
+                              background: '#FEF2F2',
+                              border: '1px solid #FECACA',
+                              color: '#B91C1C',
+                              fontSize: 11,
+                              fontWeight: 600,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            ✕ Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer" style={{ padding: '12px 18px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setIsEvidenceModalOpen(false)}
               >
                 Close
               </button>
