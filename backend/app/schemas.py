@@ -34,6 +34,21 @@ class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RegulatoryCategoryOut(BaseModel):
+    id: int
+    category_code: str
+    title: str
+    institution_type: str
+    description: str
+    required_documents_json: str
+    workflow_sequence_json: str
+    sla_days: int
+    is_active: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class InstitutionProfileOut(BaseModel):
     id: int
     code: str
@@ -44,6 +59,21 @@ class InstitutionProfileOut(BaseModel):
     contact_email: str
     contact_phone: str
     institution_type: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RegulatoryCategoryOut(BaseModel):
+    id: int
+    category_code: str
+    title: str
+    institution_type: str
+    description: str
+    required_documents_json: str
+    workflow_sequence_json: str
+    sla_days: int
+    is_active: bool
+    created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -127,6 +157,21 @@ class ApplicationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RegulatoryCategoryOut(BaseModel):
+    id: int
+    category_code: str
+    title: str
+    institution_type: str
+    description: str
+    required_documents_json: str
+    workflow_sequence_json: str
+    sla_days: int
+    is_active: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AuditEventOut(BaseModel):
     id: int
     application_id: int
@@ -138,6 +183,21 @@ class AuditEventOut(BaseModel):
     details: str
     prev_hash: Optional[str] = None
     event_hash: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RegulatoryCategoryOut(BaseModel):
+    id: int
+    category_code: str
+    title: str
+    institution_type: str
+    description: str
+    required_documents_json: str
+    workflow_sequence_json: str
+    sla_days: int
+    is_active: bool
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -178,6 +238,21 @@ class ComplianceOut(BaseModel):
     verified_by: Optional[str] = None
     verified_at: Optional[datetime] = None
     officer_comments: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RegulatoryCategoryOut(BaseModel):
+    id: int
+    category_code: str
+    title: str
+    institution_type: str
+    description: str
+    required_documents_json: str
+    workflow_sequence_json: str
+    sla_days: int
+    is_active: bool
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -239,6 +314,21 @@ class EVCVisitOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RegulatoryCategoryOut(BaseModel):
+    id: int
+    category_code: str
+    title: str
+    institution_type: str
+    description: str
+    required_documents_json: str
+    workflow_sequence_json: str
+    sla_days: int
+    is_active: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class InspectionEvidenceOut(BaseModel):
     id: int
     visit_id: int
@@ -253,6 +343,21 @@ class InspectionEvidenceOut(BaseModel):
     verification_status: str = "PENDING"
     verified_by: Optional[str] = None
     verified_at: Optional[datetime] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RegulatoryCategoryOut(BaseModel):
+    id: int
+    category_code: str
+    title: str
+    institution_type: str
+    description: str
+    required_documents_json: str
+    workflow_sequence_json: str
+    sla_days: int
+    is_active: bool
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -299,6 +404,21 @@ class DocumentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RegulatoryCategoryOut(BaseModel):
+    id: int
+    category_code: str
+    title: str
+    institution_type: str
+    description: str
+    required_documents_json: str
+    workflow_sequence_json: str
+    sla_days: int
+    is_active: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AlertOut(BaseModel):
     id: int
     title: str
@@ -310,6 +430,36 @@ class AlertOut(BaseModel):
     recipient_user_id: Optional[int] = None
     is_read: bool
     trigger_type: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RegulatoryCategoryOut(BaseModel):
+    id: int
+    category_code: str
+    title: str
+    institution_type: str
+    description: str
+    required_documents_json: str
+    workflow_sequence_json: str
+    sla_days: int
+    is_active: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RegulatoryCategoryOut(BaseModel):
+    id: int
+    category_code: str
+    title: str
+    institution_type: str
+    description: str
+    required_documents_json: str
+    workflow_sequence_json: str
+    sla_days: int
+    is_active: bool
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -424,6 +574,21 @@ class ScrutinyFindingOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RegulatoryCategoryOut(BaseModel):
+    id: int
+    category_code: str
+    title: str
+    institution_type: str
+    description: str
+    required_documents_json: str
+    workflow_sequence_json: str
+    sla_days: int
+    is_active: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ScrutinyFindingDispositionUpdate(BaseModel):
     disposition: str = Field(description="Officer review disposition: ACCEPTED, WAIVED, CORRECTION_REQUESTED, or REJECTED")
     remarks: str = Field(min_length=3, description="Officer recorded remarks or legal justification for disposition")
@@ -444,6 +609,21 @@ class ScrutinyRunOut(BaseModel):
     ruleset_version: Optional[str] = None
     created_at: datetime
     findings: Optional[List[ScrutinyFindingOut]] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RegulatoryCategoryOut(BaseModel):
+    id: int
+    category_code: str
+    title: str
+    institution_type: str
+    description: str
+    required_documents_json: str
+    workflow_sequence_json: str
+    sla_days: int
+    is_active: bool
+    created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -469,6 +649,21 @@ class DocumentReviewOut(BaseModel):
     ai_confidence: Optional[float] = None
     ai_analysis: Optional[Dict[str, Any]] = None
     findings: List[ScrutinyFindingOut] = []
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RegulatoryCategoryOut(BaseModel):
+    id: int
+    category_code: str
+    title: str
+    institution_type: str
+    description: str
+    required_documents_json: str
+    workflow_sequence_json: str
+    sla_days: int
+    is_active: bool
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
