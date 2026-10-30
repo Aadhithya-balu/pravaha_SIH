@@ -2,7 +2,10 @@ from datetime import date, timedelta, datetime
 import hashlib
 import secrets
 from sqlalchemy.orm import Session
-from .models import User, Institution, Application, AuditEvent, Document, EVCVisit, ComplianceItem, Alert, RegulatoryCategory
+import os
+import json
+from .models import User, Institution, Application, AuditEvent, Document, EVCVisit, ComplianceItem, Alert, RegulatoryCategory, InspectionEvidence
+from .doc_extractor import UPLOAD_DIR
 
 
 def password_hash(password: str) -> str:
@@ -56,6 +59,20 @@ def seed_database(db: Session, force: bool = False):
             "role": "bureau",
             "region": "HQ",
             "designation": "Advisor & Bureau Head (Approval Bureau)"
+        },
+        {
+            "email": "evc2@demo.local",
+            "name": "Dr. Priya Sharma",
+            "role": "evc_expert",
+            "region": "Southern",
+            "designation": "EVC Panel Member (Southern Region)"
+        },
+        {
+            "email": "officer_south@demo.local",
+            "name": "Dr. K. Swaminathan",
+            "role": "officer",
+            "region": "Southern",
+            "designation": "Southern Regional Officer"
         }
     ]
 
@@ -92,6 +109,8 @@ def seed_database(db: Session, force: bool = False):
             "region": "Northern",
             "state": "Uttar Pradesh",
             "address": "Sector 62, Institutional Area, Noida 201309",
+            "latitude": 28.6139,
+            "longitude": 77.2090,
             "contact_email": "principal@abccollege.demo.local",
             "contact_phone": "+91-120-2400100",
             "institution_type": "Engineering & Technology"
@@ -102,6 +121,8 @@ def seed_database(db: Session, force: bool = False):
             "region": "Western",
             "state": "Maharashtra",
             "address": "Plot 14, Hinjewadi Phase 1, Pune 411057",
+            "latitude": 18.5913,
+            "longitude": 73.7389,
             "contact_email": "director@sunrise.demo.local",
             "contact_phone": "+91-20-6600200",
             "institution_type": "Engineering & Technology"
@@ -112,6 +133,8 @@ def seed_database(db: Session, force: bool = False):
             "region": "Southern",
             "state": "Karnataka",
             "address": "Ring Road, Electronic City, Bengaluru 560100",
+            "latitude": 12.8452,
+            "longitude": 77.6602,
             "contact_email": "admin@greenfieldpoly.demo.local",
             "contact_phone": "+91-80-4100300",
             "institution_type": "Polytechnic / Diploma"
@@ -464,20 +487,213 @@ def seed_database(db: Session, force: bool = False):
                 reviewer_notes=None
             ))
 
-    # 5. Seed EVC Inspection Record
+    # 5. Seed Realistic EVC Inspection Proof Scenarios across 6 lifecycle states
+    committee_members_str = "Dr. S. Radhakrishnan (Expert, evc@demo.local), Prof. S. Ramanujan (Chairperson), Sh. Alok Nath (RO)"
+
+    # Demo 1: Scheduled (Proof Not Submitted)
     if "AICTE-2026-1002" in apps:
         app2 = apps["AICTE-2026-1002"]
-        existing_evc = db.query(EVCVisit).filter(EVCVisit.application_id == app2.id).first()
-        if not existing_evc:
-            db.add(EVCVisit(
+        v1 = db.query(EVCVisit).filter(EVCVisit.application_id == app2.id).first()
+        if not v1:
+            v1 = EVCVisit(
                 application_id=app2.id,
                 institution_name=app2.institution_name,
-                committee_members="Prof. S. Ramanujan (Chairperson, IIT Bombay nominee), Dr. Kavita Sharma (Expert, VJTI Mumbai), Sh. Alok Nath (AICTE Regional Officer)",
+                committee_members=committee_members_str,
                 scheduled_date=today + timedelta(days=3),
                 visit_mode="PHYSICAL",
                 status="SCHEDULED",
+                proof_submission_status="NOT_SUBMITTED",
                 assigned_by="officer@demo.local"
+            )
+            db.add(v1)
+
+    # Demo 2: Evidence Uploaded
+    if "AICTE-2026-1004" in apps:
+        app4 = apps["AICTE-2026-1004"]
+        v2 = db.query(EVCVisit).filter(EVCVisit.application_id == app4.id).first()
+        if not v2:
+            v2 = EVCVisit(
+                application_id=app4.id,
+                institution_name=app4.institution_name,
+                committee_members=committee_members_str,
+                scheduled_date=today - timedelta(days=1),
+                actual_date=today - timedelta(days=1),
+                visit_mode="PHYSICAL",
+                status="IN_PROGRESS",
+                proof_submission_status="EVIDENCE_UPLOADED",
+                assigned_by="officer@demo.local"
+            )
+            db.add(v2)
+            db.flush()
+            db.add(InspectionEvidence(
+                visit_id=v2.id,
+                application_id=app4.id,
+                evidence_type="ENTRANCE_SIGNBOARD",
+                file_name="apex_main_entrance.jpg",
+                file_path=os.path.join(UPLOAD_DIR, "apex_main_entrance.jpg"),
+                file_hash="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                file_size=204850,
+                uploaded_by="evc@demo.local",
+                remarks="Main campus gate with clearly visible AICTE approval signboard.",
+                ai_analysis_status="PENDING",
+                verification_status="PENDING"
             ))
+
+    # Demo 3: AI Analysis Completed
+    if "AICTE-2026-1005" in apps:
+        app5 = apps["AICTE-2026-1005"]
+        v3 = db.query(EVCVisit).filter(EVCVisit.application_id == app5.id).first()
+        if not v3:
+            v3 = EVCVisit(
+                application_id=app5.id,
+                institution_name=app5.institution_name,
+                committee_members=committee_members_str,
+                scheduled_date=today - timedelta(days=2),
+                actual_date=today - timedelta(days=2),
+                visit_mode="PHYSICAL",
+                status="IN_PROGRESS",
+                proof_submission_status="AI_COMPLETED",
+                gps_latitude=30.3615,
+                gps_longitude=78.0768,
+                gps_accuracy=12.5,
+                gps_distance_km=0.15,
+                location_status="WITHIN_PROXIMITY",
+                assigned_by="officer@demo.local"
+            )
+            db.add(v3)
+            db.flush()
+            db.add(InspectionEvidence(
+                visit_id=v3.id,
+                application_id=app5.id,
+                evidence_type="LABORATORIES_WORKSHOPS",
+                file_name="pharma_lab_inspection.jpg",
+                file_path=os.path.join(UPLOAD_DIR, "pharma_lab_inspection.jpg"),
+                file_hash="9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+                file_size=312400,
+                uploaded_by="evc@demo.local",
+                remarks="Advanced Pharmaceutical Chemistry laboratory with fume hoods and workstations.",
+                ai_analysis_status="COMPLETED",
+                ai_analysis_result=json.dumps({
+                    "image_category": "LABORATORIES_WORKSHOPS",
+                    "institutional_environment_detected": True,
+                    "visible_signboard": False,
+                    "matches_expected_category": True,
+                    "image_quality": "good",
+                    "relevance_assessment": "relevant",
+                    "observations": ["Educational laboratory environment confirmed with safety equipment present"],
+                    "warnings": [],
+                    "requires_human_review": True
+                }),
+                ai_observations="Educational laboratory environment confirmed with safety equipment present",
+                verification_status="PENDING"
+            ))
+
+    # Demo 4: Submitted for Verification (Awaiting RO/Admin)
+    if "AICTE-2026-1003" in apps:
+        app3 = apps["AICTE-2026-1003"]
+        v4 = db.query(EVCVisit).filter(EVCVisit.application_id == app3.id).first()
+        if not v4:
+            v4 = EVCVisit(
+                application_id=app3.id,
+                institution_name=app3.institution_name,
+                committee_members=committee_members_str,
+                scheduled_date=today - timedelta(days=4),
+                actual_date=today - timedelta(days=4),
+                visit_mode="PHYSICAL",
+                status="COMPLETED",
+                proof_submission_status="SUBMITTED",
+                proof_submitted_at=datetime.utcnow() - timedelta(days=1),
+                proof_declaration="I confirm that I am submitting these photographs and supporting records in connection with the assigned institutional inspection. The information provided is accurate to the best of my knowledge.",
+                gps_latitude=12.8450,
+                gps_longitude=77.6600,
+                gps_accuracy=8.2,
+                gps_distance_km=0.08,
+                location_status="WITHIN_PROXIMITY",
+                assigned_by="officer@demo.local"
+            )
+            db.add(v4)
+            db.flush()
+            db.add(InspectionEvidence(
+                visit_id=v4.id,
+                application_id=app3.id,
+                evidence_type="CLASSROOMS",
+                file_name="greenfield_smart_classroom.jpg",
+                file_path=os.path.join(UPLOAD_DIR, "greenfield_smart_classroom.jpg"),
+                file_hash="5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8",
+                file_size=280100,
+                uploaded_by="evc@demo.local",
+                remarks="60-seater tiered smart classroom with digital projection and ergonomic desks.",
+                ai_analysis_status="COMPLETED",
+                ai_analysis_result=json.dumps({
+                    "image_category": "CLASSROOMS",
+                    "institutional_environment_detected": True,
+                    "visible_signboard": False,
+                    "matches_expected_category": True,
+                    "image_quality": "good",
+                    "relevance_assessment": "relevant",
+                    "observations": ["Lecture hall seating and educational display setup verified"],
+                    "warnings": [],
+                    "requires_human_review": True
+                }),
+                ai_observations="Lecture hall seating and educational display setup verified",
+                verification_status="PENDING"
+            ))
+
+    # Demo 5: Additional Evidence Required
+    if "AICTE-2026-1001" in apps:
+        app1 = apps["AICTE-2026-1001"]
+        v5 = db.query(EVCVisit).filter(EVCVisit.application_id == app1.id).first()
+        if not v5:
+            v5 = EVCVisit(
+                application_id=app1.id,
+                institution_name=app1.institution_name,
+                committee_members=committee_members_str,
+                scheduled_date=today - timedelta(days=6),
+                actual_date=today - timedelta(days=6),
+                visit_mode="PHYSICAL",
+                status="IN_PROGRESS",
+                proof_submission_status="ADDITIONAL_EVIDENCE_REQUIRED",
+                proof_submitted_at=datetime.utcnow() - timedelta(days=3),
+                proof_decided_by="officer@demo.local",
+                proof_decided_at=datetime.utcnow() - timedelta(days=2),
+                proof_decision_remarks="Photographs of digital library stack room and emergency evacuation signage required as per statutory APH norm 4.2.",
+                gps_latitude=28.6145,
+                gps_longitude=77.2085,
+                gps_accuracy=15.0,
+                gps_distance_km=0.12,
+                location_status="WITHIN_PROXIMITY",
+                assigned_by="officer@demo.local"
+            )
+            db.add(v5)
+
+    # Demo 6: Accepted Proof
+    if "AICTE-2026-1006" in apps:
+        app6 = apps["AICTE-2026-1006"]
+        v6 = db.query(EVCVisit).filter(EVCVisit.application_id == app6.id).first()
+        if not v6:
+            v6 = EVCVisit(
+                application_id=app6.id,
+                institution_name=app6.institution_name,
+                committee_members=committee_members_str,
+                scheduled_date=today - timedelta(days=10),
+                actual_date=today - timedelta(days=10),
+                visit_mode="PHYSICAL",
+                status="COMPLETED",
+                proof_submission_status="ACCEPTED",
+                proof_submitted_at=datetime.utcnow() - timedelta(days=8),
+                proof_declaration="I confirm that I am submitting these photographs and supporting records in connection with the assigned institutional inspection. The information provided is accurate to the best of my knowledge.",
+                proof_decided_by="officer@demo.local",
+                proof_decided_at=datetime.utcnow() - timedelta(days=7),
+                proof_decision_remarks="Physical visit authenticity verified. Geotagged coordinates match campus baseline within 100 meters. Signboard and infrastructure confirmed compliant.",
+                evidence_verification_status="VERIFIED",
+                gps_latitude=28.6140,
+                gps_longitude=77.2092,
+                gps_accuracy=9.5,
+                gps_distance_km=0.03,
+                location_status="WITHIN_PROXIMITY",
+                assigned_by="officer@demo.local"
+            )
+            db.add(v6)
 
     # 6. Seed Compliance Items
     if "AICTE-2026-1001" in apps:
@@ -560,7 +776,6 @@ def seed_database(db: Session, force: bool = False):
 
     # 8. Seed Standard AICTE Regulatory Categories
     if not db.query(RegulatoryCategory).first():
-        import json
         categories = [
             RegulatoryCategory(
                 category_code="EOA",

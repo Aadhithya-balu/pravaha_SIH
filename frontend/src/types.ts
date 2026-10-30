@@ -168,6 +168,7 @@ export interface InspectionEvidence {
   file_name: string;
   file_path: string;
   file_hash: string;
+  phash?: string | null;
   file_size: number;
   uploaded_by: string;
   remarks?: string | null;
@@ -231,6 +232,18 @@ export interface EVCVisit {
   assigned_by: string;
   created_at: string;
   evidence_count?: number;
+  proof_submission_status?: 'NOT_SUBMITTED' | 'EVIDENCE_UPLOADED' | 'AI_COMPLETED' | 'SUBMITTED' | 'UNDER_REVIEW' | 'ACCEPTED' | 'ADDITIONAL_EVIDENCE_REQUIRED' | 'REJECTED' | string;
+  proof_submitted_at?: string | null;
+  proof_declaration?: string | null;
+  proof_decided_by?: string | null;
+  proof_decided_at?: string | null;
+  proof_decision_remarks?: string | null;
+  gps_latitude?: number | null;
+  gps_longitude?: number | null;
+  gps_accuracy?: number | null;
+  gps_captured_at?: string | null;
+  gps_distance_km?: number | null;
+  location_status?: 'WITHIN_PROXIMITY' | 'DISTANCE_EXCEEDED' | 'BASELINE_UNAVAILABLE' | 'UNAVAILABLE' | string | null;
 }
 
 export interface InspectionEvidence {
@@ -241,13 +254,64 @@ export interface InspectionEvidence {
   file_name: string;
   file_path: string;
   file_hash: string;
+  phash?: string | null;
   file_size: number;
   uploaded_by: string;
   remarks?: string | null;
+  gps_latitude?: number | null;
+  gps_longitude?: number | null;
+  gps_accuracy?: number | null;
+  captured_at?: string | null;
+  ai_analysis_status?: 'PENDING' | 'COMPLETED' | 'FAILED' | 'UNAVAILABLE' | string;
+  ai_analysis_result?: string | null;
+  ai_observations?: string | null;
+  ai_warnings?: string | null;
+  is_duplicate?: boolean;
+  duplicate_reference?: string | null;
+  download_url?: string;
   verification_status: 'PENDING' | 'VERIFIED' | 'REJECTED' | string;
   verified_by?: string | null;
   verified_at?: string | null;
   created_at: string;
+}
+
+export interface EVCVisitProofDossier {
+  visit: EVCVisit;
+  institution_address?: string | null;
+  institution_latitude?: number | null;
+  institution_longitude?: number | null;
+  evidences: InspectionEvidence[];
+  combined_assessment: {
+    overall_status: 'Evidence Appears Relevant' | 'Evidence Requires Review' | 'Insufficient Evidence' | 'AI Analysis Unavailable' | string;
+    image_analysis: {
+      total_photographs: number;
+      analyzed_count: number;
+      failed_count: number;
+      unavailable_count: number;
+      duplicate_warnings_count: number;
+      categories_present: string[];
+      missing_core_categories: string[];
+    };
+    location_evidence: {
+      gps_available: boolean;
+      latitude?: number | null;
+      longitude?: number | null;
+      accuracy_meters?: number | null;
+      distance_km?: number | null;
+      location_status: string;
+    };
+    timestamp_evidence: {
+      earliest_timestamp?: string | null;
+      latest_timestamp?: string | null;
+      timestamp_consistency: string;
+    };
+    submission_completeness: {
+      total_photographs: number;
+      minimum_photographs_met: boolean;
+      has_declaration: boolean;
+      status: string;
+    };
+  };
 }
 
 export interface StageRemark {

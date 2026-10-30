@@ -1,3 +1,4 @@
+import type { EVCVisitProofDossier, InspectionEvidence, EVCVisit } from './types';
 const BASE_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 
 export const token = (): string => localStorage.getItem('ps4_token') || '';
@@ -439,4 +440,50 @@ export async function retryDocumentProcessing(docId: number): Promise<any> {
 
 export async function fetchApprovedDocuments(appId: number): Promise<any[]> {
   return api(`/applications/${appId}/approved-documents`);
+}
+
+export async function fetchVisitProofDossier(visitId: number): Promise<EVCVisitProofDossier> {
+  return api(`/evc/${visitId}/proof`);
+}
+
+export async function uploadEvcPhotoEvidence(
+  visitId: number,
+  formData: FormData
+): Promise<InspectionEvidence> {
+  return apiUpload(`/evc/${visitId}/evidence`, formData);
+}
+
+export async function analyzeEvcEvidence(evidenceId: number): Promise<InspectionEvidence> {
+  return api(`/evc/evidence/${evidenceId}/analyze`, { method: 'POST' });
+}
+
+export async function captureEvcLocation(
+  visitId: number,
+  data: { latitude: number; longitude: number; accuracy?: number; captured_at?: string }
+): Promise<EVCVisit> {
+  return api(`/evc/${visitId}/location`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function submitEvcVisitProof(
+  visitId: number,
+  declaration: string
+): Promise<EVCVisitProofDossier> {
+  return api(`/evc/${visitId}/proof/submit`, { method: 'POST', body: JSON.stringify({ declaration }) });
+}
+
+export async function verifyEvcVisitProof(
+  visitId: number,
+  action: 'ACCEPT' | 'REQUEST_ADDITIONAL_EVIDENCE' | 'REJECT' | string,
+  remarks?: string
+): Promise<EVCVisitProofDossier> {
+  return api(`/evc/${visitId}/proof/verify`, { method: 'POST', body: JSON.stringify({ action, remarks }) });
+}
+
+export async function deleteEvcEvidence(evidenceId: number): Promise<{ deleted: boolean; evidence_id: number }> {
+  return api(`/evc/evidence/${evidenceId}`, { method: 'DELETE' });
+}
+
+export function getEvidenceImageUrl(evidenceId: number): string {
+  const t = token();
+  return `${BASE_URL}/v1/evc/evidence/${evidenceId}/download${t ? `?token=${encodeURIComponent(t)}` : ''}`;
 }

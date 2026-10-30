@@ -25,10 +25,12 @@ import {
   ClipboardList,
   Eye,
   CalendarDays,
-  ListFilter
+  ListFilter,
+  Camera
 } from 'lucide-react';
 import { EVCVisit, Application, User, InspectionEvidence } from '../types';
 import { api, rescheduleEvcVisit, approveEvcNextStage, fetchVisitEvidences, verifyInspectionEvidence } from '../api';
+import { EvcVisitProofModal } from './EvcVisitProofModal';
 
 interface EvcTabProps {
   user: User | null;
@@ -51,6 +53,7 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
   const [isViewReportOpen, setIsViewReportOpen] = useState(false);
   const [selectedVisit, setSelectedVisit] = useState<EVCVisit | null>(null);
   const [expandedPanelVisitId, setExpandedPanelVisitId] = useState<number | null>(null);
+  const [proofModalVisitId, setProofModalVisitId] = useState<number | null>(null);
 
   // EVC Workflow Enhancements: Location, Reschedule, Evidence, Next Stage Approval
   const [locationDetails, setLocationDetails] = useState('');
@@ -130,6 +133,14 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
       if (statusFilter !== 'ALL') {
         if (statusFilter === 'REPORTS_PENDING') {
           if (v.status === 'COMPLETED' || v.report_summary) return false;
+        } else if (statusFilter === 'PROOF_SUBMITTED') {
+          if (v.proof_submission_status !== 'SUBMITTED' && v.proof_submission_status !== 'IN_REVIEW') return false;
+        } else if (statusFilter === 'PROOF_ACCEPTED') {
+          if (v.proof_submission_status !== 'ACCEPTED') return false;
+        } else if (statusFilter === 'PROOF_REJECTED') {
+          if (v.proof_submission_status !== 'REJECTED') return false;
+        } else if (statusFilter === 'PROOF_ADDITIONAL') {
+          if (v.proof_submission_status !== 'ADDITIONAL_EVIDENCE_REQUIRED') return false;
         } else if (v.status !== statusFilter) {
           return false;
         }
@@ -894,6 +905,10 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
             <option value="SCHEDULED">Scheduled</option>
             <option value="COMPLETED">Completed</option>
             <option value="REPORTS_PENDING">Reports Pending</option>
+            <option value="PROOF_SUBMITTED">Proof Submitted</option>
+            <option value="PROOF_ACCEPTED">Proof Accepted</option>
+            <option value="PROOF_ADDITIONAL">Additional Evidence Required</option>
+            <option value="PROOF_REJECTED">Proof Rejected</option>
             <option value="PENDING">Pending</option>
             <option value="POSTPONED">Postponed</option>
           </select>
@@ -1295,12 +1310,41 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
                   </div>
 
                   {/* Visit Badges: Location, Attendance, Evidence, Outcome */}
-                  {(v.location_details || v.visit_occurred || v.evidence_verification_status || v.inspection_outcome) && (
+                  {(v.location_details || v.proof_submission_status || v.visit_occurred || v.evidence_verification_status || v.inspection_outcome) && (
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', padding: '6px 0', borderTop: '1px dashed #E2E8F0' }}>
                       {v.location_details && (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: '#334155' }}>
                           <MapPin size={11} color="#2563EB" />
                           <span>{v.location_details}</span>
+                        </span>
+                      )}
+                      {v.proof_submission_status && v.proof_submission_status !== 'NOT_SUBMITTED' && (
+                        <span style={{
+                          fontSize: 10.5,
+                          fontWeight: 600,
+                          padding: '2px 7px',
+                          borderRadius: 4,
+                          background:
+                            v.proof_submission_status === 'ACCEPTED' ? '#ECFDF5' :
+                            v.proof_submission_status === 'REJECTED' ? '#FEF2F2' :
+                            v.proof_submission_status === 'ADDITIONAL_EVIDENCE_REQUIRED' ? '#FFFBEB' :
+                            v.proof_submission_status === 'SUBMITTED' ? '#EFF6FF' :
+                            v.proof_submission_status === 'AI_COMPLETED' ? '#F5F3FF' : '#F8FAFC',
+                          color:
+                            v.proof_submission_status === 'ACCEPTED' ? '#047857' :
+                            v.proof_submission_status === 'REJECTED' ? '#B91C1C' :
+                            v.proof_submission_status === 'ADDITIONAL_EVIDENCE_REQUIRED' ? '#B45309' :
+                            v.proof_submission_status === 'SUBMITTED' ? '#1D4ED8' :
+                            v.proof_submission_status === 'AI_COMPLETED' ? '#6D28D9' : '#475569',
+                          border: `1px solid ${
+                            v.proof_submission_status === 'ACCEPTED' ? '#A7F3D0' :
+                            v.proof_submission_status === 'REJECTED' ? '#FECACA' :
+                            v.proof_submission_status === 'ADDITIONAL_EVIDENCE_REQUIRED' ? '#FDE68A' :
+                            v.proof_submission_status === 'SUBMITTED' ? '#BFDBFE' :
+                            v.proof_submission_status === 'AI_COMPLETED' ? '#DDD6FE' : '#E2E8F0'
+                          }`
+                        }}>
+                          Visit Proof: {v.proof_submission_status.replace(/_/g, ' ')}
                         </span>
                       )}
                       {v.visit_occurred && (
@@ -1508,6 +1552,67 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
 
                     {/* Contextual Action Buttons */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {/* EVC Visit Proof & Authenticity Verification */}
+                      <button
+                        type="button"
+                        id={`btn-visit-proof-${v.id}`}
+                        onClick={() => setProofModalVisitId(v.id)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          padding: '6px 12px',
+                          borderRadius: 6,
+                          background:
+                            v.proof_submission_status === 'ACCEPTED'
+                              ? '#ECFDF5'
+                              : v.proof_submission_status === 'SUBMITTED' && user?.role !== 'evc_expert'
+                              ? '#EFF6FF'
+                              : v.proof_submission_status === 'ADDITIONAL_EVIDENCE_REQUIRED' && user?.role === 'evc_expert'
+                              ? '#FFFBEB'
+                              : '#1E293B',
+                          border: `1px solid ${
+                            v.proof_submission_status === 'ACCEPTED'
+                              ? '#A7F3D0'
+                              : v.proof_submission_status === 'SUBMITTED' && user?.role !== 'evc_expert'
+                              ? '#3B82F6'
+                              : v.proof_submission_status === 'ADDITIONAL_EVIDENCE_REQUIRED' && user?.role === 'evc_expert'
+                              ? '#F59E0B'
+                              : '#1E293B'
+                          }`,
+                          color:
+                            v.proof_submission_status === 'ACCEPTED'
+                              ? '#047857'
+                              : v.proof_submission_status === 'SUBMITTED' && user?.role !== 'evc_expert'
+                              ? '#1D4ED8'
+                              : v.proof_submission_status === 'ADDITIONAL_EVIDENCE_REQUIRED' && user?.role === 'evc_expert'
+                              ? '#B45309'
+                              : '#FFFFFF',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                          transition: 'all 0.12s ease'
+                        }}
+                        title="Upload, screen with AI, or verify physical visit photographs and location"
+                      >
+                        <Camera size={13} />
+                        <span>
+                          {user?.role === 'evc_expert'
+                            ? (v.proof_submission_status === 'ACCEPTED'
+                                ? 'Visit Proof (Accepted)'
+                                : v.proof_submission_status === 'SUBMITTED'
+                                ? 'Visit Proof (Submitted)'
+                                : v.proof_submission_status === 'ADDITIONAL_EVIDENCE_REQUIRED'
+                                ? 'Upload Additional Proof (!)'
+                                : 'Visit Proof & Photos')
+                            : (v.proof_submission_status === 'SUBMITTED'
+                                ? 'Review Visit Proof (!)'
+                                : v.proof_submission_status === 'ACCEPTED'
+                                ? 'Visit Proof (Accepted)'
+                                : 'Visit Proof & Verification')}
+                        </span>
+                      </button>
                       {/* Reschedule Button (When visit pending) */}
                       {!isCompleted && user?.role !== 'institution' && (
                         <button
@@ -2538,6 +2643,16 @@ export const EvcTab: React.FC<EvcTabProps> = ({ user, applications, onRefresh, o
             </div>
           </div>
         </div>
+      )}
+
+      {/* AI-Powered EVC Visit Proof & Authenticity Verification Modal */}
+      {proofModalVisitId && (
+        <EvcVisitProofModal
+          visitId={proofModalVisitId}
+          user={user}
+          onClose={() => setProofModalVisitId(null)}
+          onUpdated={loadVisits}
+        />
       )}
     </div>
   );

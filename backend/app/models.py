@@ -29,6 +29,8 @@ class Institution(Base):
     contact_email: Mapped[str] = mapped_column(String(255))
     contact_phone: Mapped[str] = mapped_column(String(40), default="+91-11-29581000")
     institution_type: Mapped[str] = mapped_column(String(100), default="Engineering & Technology")
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -183,6 +185,18 @@ class EVCVisit(Base):
     report_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     recommendations: Mapped[str | None] = mapped_column(Text, nullable=True)
     assigned_by: Mapped[str] = mapped_column(String(255), default="Regional Officer")
+    proof_submission_status: Mapped[str] = mapped_column(String(50), default="NOT_SUBMITTED")  # NOT_SUBMITTED, EVIDENCE_UPLOADED, AI_COMPLETED, SUBMITTED, UNDER_REVIEW, ACCEPTED, ADDITIONAL_EVIDENCE_REQUIRED, REJECTED
+    proof_submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    proof_declaration: Mapped[str | None] = mapped_column(Text, nullable=True)
+    proof_decided_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    proof_decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    proof_decision_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    gps_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gps_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gps_accuracy: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gps_captured_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    gps_distance_km: Mapped[float | None] = mapped_column(Float, nullable=True)
+    location_status: Mapped[str | None] = mapped_column(String(40), nullable=True)  # WITHIN_PROXIMITY, DISTANCE_EXCEEDED, BASELINE_UNAVAILABLE, UNAVAILABLE
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -248,6 +262,17 @@ class InspectionEvidence(Base):
     file_size: Mapped[int] = mapped_column(Integer, default=0)
     uploaded_by: Mapped[str] = mapped_column(String(255))
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    gps_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gps_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gps_accuracy: Mapped[float | None] = mapped_column(Float, nullable=True)
+    captured_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ai_analysis_status: Mapped[str] = mapped_column(String(40), default="PENDING")  # PENDING, COMPLETED, FAILED, UNAVAILABLE
+    ai_analysis_result: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_observations: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_warnings: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_duplicate: Mapped[bool] = mapped_column(Boolean, default=False)
+    duplicate_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     verification_status: Mapped[str] = mapped_column(String(30), default="PENDING")  # PENDING, VERIFIED, REJECTED
     verified_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

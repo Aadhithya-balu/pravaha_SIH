@@ -1,4 +1,5 @@
 import os
+import io
 import re
 import json
 from datetime import datetime, date
@@ -966,3 +967,263 @@ async def review_document(
     fallback["model"] = "rule-engine-v1.2"
     fallback["mode_fallback_reason"] = "Live Groq AI is unconfigured (set GROQ_API_KEY in backend/.env). Document evaluated via deterministic APH regulatory rules."
     return fallback
+
+
+# ==============================================================================
+# AI-Powered EVC Visit Proof & Vision Authenticity Verification
+# ==============================================================================
+
+import base64
+from PIL import Image
+
+
+def compute_image_phash(image_bytes: bytes) -> Optional[str]:
+    """
+    Computes a 64-bit perceptual average hash (aHash) of image bytes
+    to detect visually identical or near-duplicate evidence across inspections.
+    """
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            img = img.convert('L').resize((8, 8), Image.Resampling.LANCZOS)
+            pixels = list(img.getdata())
+            avg = sum(pixels) / len(pixels)
+            bits = "".join("1" if p > avg else "0" for p in pixels)
+            return hex(int(bits, 2))[2:].zfill(16)
+    except Exception:
+        return None
+
+
+def get_vision_config() -> Dict[str, str]:
+    """
+    Resolves vision provider and model configuration from environment.
+    Supported vision models:
+    - Groq Vision: llama-3.2-11b-vision-preview, llama-3.2-90b-vision-preview
+    - OpenAI Vision: gpt-4o, gpt-4o-mini
+    - Google Gemini: gemini-1.5-flash, gemini-2.0-flash
+    """
+    provider = os.getenv("VISION_PROVIDER") or os.getenv("AI_VISION_PROVIDER") or ""
+    groq_key = os.getenv("GROQ_API_KEY", "").strip()
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    gemini_key = (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY", "")).strip()
+
+    if not provider:
+        if groq_key and os.getenv("GROQ_VISION_MODEL"):
+            provider = "groq"
+        elif openai_key:
+            provider = "openai"
+        elif gemini_key:
+            provider = "gemini"
+        elif groq_key:
+            provider = "groq"
+        else:
+            provider = "none"
+
+    if provider == "groq" and groq_key:
+        return {
+            "provider": "groq",
+            "api_key": groq_key,
+            "model": os.getenv("GROQ_VISION_MODEL", "llama-3.2-11b-vision-preview"),
+            "base_url": os.getenv("GROQ_VISION_URL", "https://api.groq.com/openai/v1/chat/completions")
+        }
+    elif provider == "openai" and openai_key:
+        return {
+            "provider": "openai",
+            "api_key": openai_key,
+            "model": os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini"),
+            "base_url": "https://api.openai.com/v1/chat/completions"
+        }
+    elif provider in ["gemini", "google"] and gemini_key:
+        return {
+            "provider": "gemini",
+            "api_key": gemini_key,
+            "model": os.getenv("GEMINI_VISION_MODEL", "gemini-1.5-flash"),
+            "base_url": f"https://generativelanguage.googleapis.com/v1beta/models/{os.getenv('GEMINI_VISION_MODEL', 'gemini-1.5-flash')}:generateContent?key={gemini_key}"
+        }
+
+    return {"provider": "none", "api_key": "", "model": "none", "base_url": ""}
+
+
+async def analyze_evc_image(
+    file_bytes: bytes,
+    filename: str,
+    institution_name: str,
+    institution_type: str = "Technical Institution",
+    evidence_category: str = "CAMPUS_BUILDINGS",
+    expected_location: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Performs AI vision analysis on uploaded institutional inspection photograph.
+    Assesses educational relevance, campus building/signboard presence, image quality,
+    category alignment, and potential visual manipulation.
+    """
+    cfg = get_vision_config()
+    provider = cfg["provider"]
+    model = cfg["model"]
+    key = cfg["api_key"]
+
+    # Basic image validation
+    is_valid_image = False
+    try:
+        with Image.open(io.BytesIO(file_bytes)) as test_img:
+            test_img.verify()
+            is_valid_image = True
+    except Exception:
+        return {
+            "status": "FAILED",
+            "provider": provider,
+            "model": model,
+            "image_category": evidence_category,
+            "institutional_environment_detected": False,
+            "visible_signboard": False,
+            "detected_institution_name": None,
+            "matches_expected_category": False,
+            "image_quality": "corrupt_or_unreadable",
+            "relevance_assessment": "unrelated",
+            "possible_duplicate_warning": False,
+            "possible_manipulation_warning": True,
+            "observations": ["Image file could not be parsed or contains corrupted headers."],
+            "warnings": ["Corrupt or unreadable image file."],
+            "requires_human_review": True,
+            "analyzed_at": datetime.utcnow().isoformat()
+        }
+
+    # If no live vision provider is configured, return honest fallback
+    if provider == "none" or not key:
+        return {
+            "status": "UNAVAILABLE",
+            "provider": "none",
+            "model": "none",
+            "image_category": evidence_category,
+            "institutional_environment_detected": None,
+            "visible_signboard": None,
+            "detected_institution_name": None,
+            "matches_expected_category": True,
+            "image_quality": "good",
+            "relevance_assessment": "inconclusive",
+            "possible_duplicate_warning": False,
+            "possible_manipulation_warning": False,
+            "observations": [
+                "AI vision analysis unavailable. Manual evidence review is required."
+            ],
+            "warnings": [
+                "Live vision model not configured. Officer manual verification is authoritative."
+            ],
+            "requires_human_review": True,
+            "analyzed_at": datetime.utcnow().isoformat()
+        }
+
+    # Prepare base64 representation for OpenAI/Groq vision API
+    ext = os.path.splitext(filename)[1].lower().replace(".", "")
+    mime = "image/jpeg" if ext in ["jpg", "jpeg"] else f"image/{ext}" if ext in ["png", "webp"] else "image/jpeg"
+    b64_img = base64.b64encode(file_bytes).decode("utf-8")
+    data_uri = f"data:{mime};base64,{b64_img}"
+
+    system_prompt = """You are an expert AICTE regulatory inspection auditor verifying photographic evidence of an institutional visit.
+Analyze the provided image and return strictly a valid JSON object without markdown formatting.
+JSON Schema:
+{
+  "image_category": "ENTRANCE_SIGNBOARD|CAMPUS_BUILDINGS|CLASSROOMS|LABORATORIES_WORKSHOPS|LIBRARY|OTHER_FACILITIES",
+  "institutional_environment_detected": true,
+  "visible_signboard": true,
+  "detected_institution_name": "string or null",
+  "matches_expected_category": true,
+  "image_quality": "good|fair|poor|blurry",
+  "relevance_assessment": "relevant|partially_relevant|unrelated|inconclusive",
+  "possible_duplicate_warning": false,
+  "possible_manipulation_warning": false,
+  "observations": ["observation 1", "observation 2"],
+  "warnings": ["warning 1 if any"],
+  "requires_human_review": true
+}
+Rules:
+- Only report detected_institution_name if the institution name is clearly visible and legible on a signboard or banner.
+- Do not fabricate or hallucinate institution names from generic building appearances.
+- Flag blur, extreme darkness, screenshots, or promotional brochure cutouts under image_quality or warnings.
+- Always set requires_human_review to true because AI is an assistive auditor, not statutory authority."""
+    user_text = (
+        f"Institution Name: {institution_name}\n"
+        f"Institution Type: {institution_type}\n"
+        f"Declared Evidence Category: {evidence_category}\n"
+        f"Filename: {filename}\n"
+        "Evaluate this inspection photograph in accordance with AICTE Approval Process Handbook (APH) standards."
+    )
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            headers = {
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": user_text},
+                            {"type": "image_url", "image_url": {"url": data_uri}}
+                        ]
+                    }
+                ],
+                "temperature": 0.1,
+                "max_tokens": 800
+            }
+
+            resp = await client.post(cfg["base_url"], headers=headers, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                raw_content = data["choices"][0]["message"]["content"].strip()
+                # Clean possible markdown block wrappers
+                if raw_content.startswith("```"):
+                    raw_content = re.sub(r"^```(?:json)?\n?", "", raw_content)
+                    raw_content = re.sub(r"\n?```$", "", raw_content)
+                parsed = json.loads(raw_content)
+                parsed["status"] = "COMPLETED"
+                parsed["provider"] = provider
+                parsed["model"] = model
+                parsed["analyzed_at"] = datetime.utcnow().isoformat()
+                return parsed
+            else:
+                return {
+                    "status": "FAILED",
+                    "provider": provider,
+                    "model": model,
+                    "image_category": evidence_category,
+                    "institutional_environment_detected": None,
+                    "visible_signboard": None,
+                    "detected_institution_name": None,
+                    "matches_expected_category": True,
+                    "image_quality": "unassessed",
+                    "relevance_assessment": "inconclusive",
+                    "possible_duplicate_warning": False,
+                    "possible_manipulation_warning": False,
+                    "observations": [
+                        "AI vision model returned HTTP error; manual evidence review is required."
+                    ],
+                    "warnings": [
+                        f"{provider.title()} Vision API returned status {resp.status_code}: {resp.text[:120]}"
+                    ],
+                    "requires_human_review": True,
+                    "analyzed_at": datetime.utcnow().isoformat()
+                }
+    except Exception as exc:
+        return {
+            "status": "FAILED",
+            "provider": provider,
+            "model": model,
+            "image_category": evidence_category,
+            "institutional_environment_detected": None,
+            "visible_signboard": None,
+            "detected_institution_name": None,
+            "matches_expected_category": True,
+            "image_quality": "unassessed",
+            "relevance_assessment": "inconclusive",
+            "possible_duplicate_warning": False,
+            "possible_manipulation_warning": False,
+            "observations": [
+                "AI vision analysis failed due to connection error; manual evidence review required."
+            ],
+            "warnings": [f"Vision analysis exception ({type(exc).__name__}): {str(exc)[:120]}"],
+            "requires_human_review": True,
+            "analyzed_at": datetime.utcnow().isoformat()
+        }

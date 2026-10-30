@@ -310,6 +310,18 @@ class EVCVisitOut(BaseModel):
     assigned_by: str
     created_at: datetime
     evidence_count: Optional[int] = 0
+    proof_submission_status: Optional[str] = "NOT_SUBMITTED"
+    proof_submitted_at: Optional[datetime] = None
+    proof_declaration: Optional[str] = None
+    proof_decided_by: Optional[str] = None
+    proof_decided_at: Optional[datetime] = None
+    proof_decision_remarks: Optional[str] = None
+    gps_latitude: Optional[float] = None
+    gps_longitude: Optional[float] = None
+    gps_accuracy: Optional[float] = None
+    gps_captured_at: Optional[datetime] = None
+    gps_distance_km: Optional[float] = None
+    location_status: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -340,12 +352,45 @@ class InspectionEvidenceOut(BaseModel):
     file_size: int
     uploaded_by: str
     remarks: Optional[str] = None
+    gps_latitude: Optional[float] = None
+    gps_longitude: Optional[float] = None
+    gps_accuracy: Optional[float] = None
+    captured_at: Optional[datetime] = None
+    ai_analysis_status: Optional[str] = "PENDING"
+    ai_analysis_result: Optional[str] = None
+    ai_observations: Optional[str] = None
+    ai_warnings: Optional[str] = None
+    is_duplicate: Optional[bool] = False
+    duplicate_reference: Optional[str] = None
+    phash: Optional[str] = None
+    download_url: Optional[str] = None
     verification_status: str = "PENDING"
     verified_by: Optional[str] = None
     verified_at: Optional[datetime] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+class EVCLocationCaptureRequest(BaseModel):
+    latitude: float
+    longitude: float
+    accuracy: Optional[float] = None
+    captured_at: Optional[datetime] = None
+
+class EVCProofSubmitRequest(BaseModel):
+    declaration: str = Field(min_length=10, description="Mandatory EVC declaration confirmation")
+
+class EVCProofVerifyRequest(BaseModel):
+    action: str = Field(..., description="ACCEPT, REQUEST_ADDITIONAL_EVIDENCE, or REJECT")
+    remarks: Optional[str] = None
+
+class EVCVisitProofDossierOut(BaseModel):
+    visit: EVCVisitOut
+    institution_address: Optional[str] = None
+    institution_latitude: Optional[float] = None
+    institution_longitude: Optional[float] = None
+    evidences: List[InspectionEvidenceOut] = []
+    combined_assessment: Dict[str, Any] = {}
 
 
 class RegulatoryCategoryOut(BaseModel):

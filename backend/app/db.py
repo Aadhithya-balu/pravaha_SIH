@@ -251,6 +251,40 @@ def run_schema_migrations(eng):
                     if "inspection_outcome" not in cols:
                         conn.execute(text("ALTER TABLE evc_visits ADD COLUMN inspection_outcome VARCHAR(40);"))
 
+                if "institutions" in tables:
+                    cols = get_cols("institutions")
+                    if "latitude" not in cols:
+                        conn.execute(text("ALTER TABLE institutions ADD COLUMN latitude FLOAT;"))
+                    if "longitude" not in cols:
+                        conn.execute(text("ALTER TABLE institutions ADD COLUMN longitude FLOAT;"))
+
+                if "evc_visits" in tables:
+                    cols = get_cols("evc_visits")
+                    if "proof_submission_status" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN proof_submission_status VARCHAR(50) DEFAULT 'NOT_SUBMITTED';"))
+                    if "proof_submitted_at" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN proof_submitted_at DATETIME;"))
+                    if "proof_declaration" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN proof_declaration TEXT;"))
+                    if "proof_decided_by" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN proof_decided_by VARCHAR(255);"))
+                    if "proof_decided_at" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN proof_decided_at DATETIME;"))
+                    if "proof_decision_remarks" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN proof_decision_remarks TEXT;"))
+                    if "gps_latitude" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN gps_latitude FLOAT;"))
+                    if "gps_longitude" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN gps_longitude FLOAT;"))
+                    if "gps_accuracy" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN gps_accuracy FLOAT;"))
+                    if "gps_captured_at" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN gps_captured_at DATETIME;"))
+                    if "gps_distance_km" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN gps_distance_km FLOAT;"))
+                    if "location_status" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN location_status VARCHAR(40);"))
+
                 if "inspection_evidences" in tables:
                     cols = get_cols("inspection_evidences")
                     if "verification_status" not in cols:
@@ -259,6 +293,28 @@ def run_schema_migrations(eng):
                         conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN verified_by VARCHAR(255);"))
                     if "verified_at" not in cols:
                         conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN verified_at DATETIME;"))
+                    if "gps_latitude" not in cols:
+                        conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN gps_latitude FLOAT;"))
+                    if "gps_longitude" not in cols:
+                        conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN gps_longitude FLOAT;"))
+                    if "gps_accuracy" not in cols:
+                        conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN gps_accuracy FLOAT;"))
+                    if "captured_at" not in cols:
+                        conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN captured_at DATETIME;"))
+                    if "ai_analysis_status" not in cols:
+                        conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN ai_analysis_status VARCHAR(40) DEFAULT 'PENDING';"))
+                    if "ai_analysis_result" not in cols:
+                        conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN ai_analysis_result TEXT;"))
+                    if "ai_observations" not in cols:
+                        conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN ai_observations TEXT;"))
+                    if "ai_warnings" not in cols:
+                        conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN ai_warnings TEXT;"))
+                    if "is_duplicate" not in cols:
+                        conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN is_duplicate BOOLEAN DEFAULT 0;"))
+                    if "duplicate_reference" not in cols:
+                        conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN duplicate_reference VARCHAR(255);"))
+                    if "phash" not in cols:
+                        conn.execute(text("ALTER TABLE inspection_evidences ADD COLUMN phash VARCHAR(64);"))
 
                 if "stage_remarks" in tables:
                     cols = get_cols("stage_remarks")
@@ -321,9 +377,59 @@ def run_schema_migrations(eng):
                     "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS location_details TEXT;",
                     "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS structured_checklist TEXT;",
                     "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS inspection_outcome VARCHAR(40);",
+                    "ALTER TABLE institutions ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;",
+                    "ALTER TABLE institutions ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS proof_submission_status VARCHAR(50) DEFAULT 'NOT_SUBMITTED';",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS proof_submitted_at TIMESTAMPTZ;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS proof_declaration TEXT;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS proof_decided_by VARCHAR(255);",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS proof_decided_at TIMESTAMPTZ;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS proof_decision_remarks TEXT;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS gps_latitude DOUBLE PRECISION;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS gps_longitude DOUBLE PRECISION;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS gps_accuracy DOUBLE PRECISION;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS gps_captured_at TIMESTAMPTZ;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS gps_distance_km DOUBLE PRECISION;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS location_status VARCHAR(40);",
+                    "ALTER TABLE institutions ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;",
+                    "ALTER TABLE institutions ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS proof_submission_status VARCHAR(50) DEFAULT 'NOT_SUBMITTED';",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS proof_submitted_at TIMESTAMPTZ;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS proof_declaration TEXT;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS proof_decided_by VARCHAR(255);",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS proof_decided_at TIMESTAMPTZ;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS proof_decision_remarks TEXT;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS gps_latitude DOUBLE PRECISION;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS gps_longitude DOUBLE PRECISION;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS gps_accuracy DOUBLE PRECISION;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS gps_captured_at TIMESTAMPTZ;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS gps_distance_km DOUBLE PRECISION;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS location_status VARCHAR(40);",
                     "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS verification_status VARCHAR(30) DEFAULT 'PENDING';",
                     "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS verified_by VARCHAR(255);",
                     "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS gps_latitude DOUBLE PRECISION;",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS gps_longitude DOUBLE PRECISION;",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS gps_accuracy DOUBLE PRECISION;",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS captured_at TIMESTAMPTZ;",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS ai_analysis_status VARCHAR(40) DEFAULT 'PENDING';",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS ai_analysis_result TEXT;",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS ai_observations TEXT;",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS ai_warnings TEXT;",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS is_duplicate BOOLEAN DEFAULT FALSE;",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS duplicate_reference VARCHAR(255);",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS phash VARCHAR(64);",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS gps_latitude DOUBLE PRECISION;",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS gps_longitude DOUBLE PRECISION;",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS gps_accuracy DOUBLE PRECISION;",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS captured_at TIMESTAMPTZ;",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS ai_analysis_status VARCHAR(40) DEFAULT 'PENDING';",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS ai_analysis_result TEXT;",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS ai_observations TEXT;",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS ai_warnings TEXT;",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS is_duplicate BOOLEAN DEFAULT FALSE;",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS duplicate_reference VARCHAR(255);",
+                    "ALTER TABLE inspection_evidences ADD COLUMN IF NOT EXISTS phash VARCHAR(64);",
                     "ALTER TABLE stage_remarks ADD COLUMN IF NOT EXISTS action_type VARCHAR(60) DEFAULT 'REVIEW_COMMENT';",
                     "ALTER TABLE stage_remarks ADD COLUMN IF NOT EXISTS parent_remark_id INTEGER;",
                     "ALTER TABLE stage_remarks ADD COLUMN IF NOT EXISTS is_resolved BOOLEAN DEFAULT FALSE;",
