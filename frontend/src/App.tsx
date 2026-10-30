@@ -743,36 +743,6 @@ export default function App() {
           onRunEscalation={handleRunEscalation}
         />
 
-        {/* Floating Quick Guide Button */}
-        <button
-          type="button"
-          onClick={() => setIsGuideOpen(true)}
-          className="floating-help-btn"
-          title="Open Platform Guide and User Instructions (or press ?)"
-          style={{
-            position: 'fixed',
-            bottom: 22,
-            right: 22,
-            zIndex: 990,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 7,
-            padding: '9px 16px',
-            borderRadius: 30,
-            background: '#1E3A8A',
-            color: '#FFFFFF',
-            border: '1.5px solid rgba(255, 255, 255, 0.4)',
-            boxShadow: '0 4px 14px rgba(30, 58, 138, 0.35)',
-            fontSize: 12.5,
-            fontWeight: 600,
-            cursor: 'pointer',
-            transition: 'all 0.2s ease'
-          }}
-        >
-          <Compass size={16} color="#93C5FD" />
-          <span>How to Use</span>
-        </button>
-
         {/* Application Details & Workflow Timeline Modal */}
         {selectedApp && (
           <ApplicationDetailModal

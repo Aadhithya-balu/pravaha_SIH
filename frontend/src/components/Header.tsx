@@ -1,5 +1,5 @@
 import React from 'react';
-import { PlayCircle, Bell, RefreshCw, Menu, ArrowLeft, Compass, Search } from 'lucide-react';
+import { PlayCircle, Bell, RefreshCw, Menu, ArrowLeft, Search } from 'lucide-react';
 import { User } from '../types';
 
 interface HeaderProps {
@@ -26,28 +26,8 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigateTab,
   unreadCount = 0,
   onToggleMobileMenu,
-  onOpenGuide,
   onOpenCommandPalette
 }) => {
-  // Phase 4: 3 Canonical Demo Accounts (Institution, Combined RO/Admin, EVC Expert)
-  const demoAccounts = [
-    { label: 'Applicant', email: 'college@demo.local', role: 'institution', title: 'Institution Applicant' },
-    { label: 'RO / Admin', email: 'officer@demo.local', role: 'officer', title: 'Regional Officer & Administrator' },
-    { label: 'EVC Expert', email: 'evc@demo.local', role: 'evc_expert', title: 'Expert Visit Committee Inspector' },
-  ];
-
-  const pageSubtitles: Record<string, string> = {
-    Overview: 'Executive operations summary & regulatory pipeline',
-    Applications: 'Centralized dossier register & lifecycle management',
-    'AI Assistant': 'Statutory scrutiny, candidate extraction & discrepancy review',
-    'Document Scrutiny': 'Statutory scrutiny, candidate extraction & discrepancy review',
-    'EVC Inspections': 'Expert Visit Committee roster & compliance reports',
-    Compliance: 'Statutory clearances, 30-year lease & undertakings',
-    Alerts: 'SLA countdowns & regulatory escalations',
-    Reports: 'Official regulatory registers & data export',
-    'Role Matrix': 'Governance model, permissions & evaluation personas',
-  };
-
   const tabCategories: Record<string, string> = {
     Overview: 'Operations',
     Applications: 'Operations',
@@ -64,9 +44,9 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="topbar">
-      {/* Left: Mobile Menu Toggle & Official GovTech Header & Breadcrumb */}
+      {/* Left: Mobile Menu Toggle, Breadcrumbs & Title */}
       <div className="topbar-left">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div className="topbar-left-inner">
           {onToggleMobileMenu && (
             <button
               type="button"
@@ -79,7 +59,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          <div>
+          <div className="topbar-heading-block">
             <nav aria-label="Breadcrumb" className="topbar-breadcrumb">
               <button
                 type="button"
@@ -89,41 +69,27 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 AICTE PRAVAHA
               </button>
-              <span>/</span>
-              <span>{currentCategory}</span>
-              <span>/</span>
+              <span className="breadcrumb-separator">/</span>
+              <span className="breadcrumb-category">{currentCategory}</span>
+              <span className="breadcrumb-separator">/</span>
               <span className="breadcrumb-current">{currentTab}</span>
             </nav>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 1 }}>
+            <div className="topbar-title-row">
               <h2 className="topbar-title">{currentTab}</h2>
               <div className="topbar-demo-pill" title="Demonstration environment (SIH26262)">
                 <span className="demo-pulse-dot" />
-                <span>SIH26262 DEMO</span>
+                <span className="topbar-demo-text">SIH26262 DEMO</span>
               </div>
               {currentTab !== 'Overview' && onNavigateTab && (
                 <button
                   type="button"
+                  className="topbar-back-btn"
                   onClick={() => onNavigateTab('Overview')}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    padding: '3px 10px',
-                    borderRadius: 6,
-                    background: '#EFF6FF',
-                    border: '1px solid #BFDBFE',
-                    color: '#163A63',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    height: 28,
-                    transition: 'all 0.15s ease'
-                  }}
-                  title="Return to Regulatory Operations Dashboard"
+                  title="Return to Command Centre Dashboard"
                 >
-                  <ArrowLeft size={13} />
-                  <span>Back to Dashboard</span>
+                  <ArrowLeft size={12} />
+                  <span className="topbar-back-text">Dashboard</span>
                 </button>
               )}
             </div>
@@ -131,7 +97,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Right Actions */}
+      {/* Right: Quick Search, Role Chip, Actions */}
       <div className="topbar-actions">
         {/* Global Quick Search / Command Palette Shortcut */}
         {onOpenCommandPalette && (
@@ -139,80 +105,23 @@ export const Header: React.FC<HeaderProps> = ({
             type="button"
             className="topbar-search-trigger"
             onClick={onOpenCommandPalette}
-            title="Search applications, tabs, or switch personas (Ctrl + K)"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '6px 12px',
-              borderRadius: 8,
-              background: '#F8FAFC',
-              border: '1px solid #E2E8F0',
-              color: '#64748B',
-              fontSize: 12.5,
-              cursor: 'pointer',
-              height: 34,
-              transition: 'all 0.15s ease'
-            }}
+            title="Search applications, dossiers, or personas (Ctrl + K)"
           >
             <Search size={14} color="#2563EB" />
-            <span style={{ fontSize: 12, color: '#475569' }}>Quick Search...</span>
-            <kbd style={{
-              background: '#FFFFFF',
-              border: '1px solid #CBD5E1',
-              borderRadius: 4,
-              padding: '1px 5px',
-              fontSize: 10,
-              fontWeight: 700,
-              color: '#64748B'
-            }}>
-              Ctrl K
-            </kbd>
+            <span className="topbar-search-text">Quick Search...</span>
+            <kbd className="topbar-search-kbd">Ctrl K</kbd>
           </button>
         )}
 
-        {/* Interactive Platform Guide / User Instructions */}
-        {onOpenGuide && (
-          <button
-            type="button"
-            className="btn-secondary btn-nav-action"
-            onClick={onOpenGuide}
-            title="Open platform guide, interactive user manual and glossary"
-            style={{
-              background: '#EFF6FF',
-              borderColor: '#BFDBFE',
-              color: '#163A63',
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6
-            }}
-          >
-            <Compass size={14} color="#2563EB" />
-            <span>How to Use</span>
-          </button>
-        )}
-
-        {/* Verified User Identity Chip (Strict Server-enforced Role) */}
+        {/* Verified User Identity Chip */}
         {user && (
           <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '4px 10px',
-              borderRadius: 6,
-              background: '#F8FAFC',
-              border: '1px solid #E2E8F0',
-              fontSize: 12
-            }}
+            className="topbar-user-chip"
             title={`${user.name} (${user.email}) — ${user.designation || user.role}`}
           >
             <div
+              className="topbar-user-status-dot"
               style={{
-                width: 7,
-                height: 7,
-                borderRadius: '50%',
                 background:
                   user.role === 'admin'
                     ? '#7C3AED'
@@ -223,20 +132,10 @@ export const Header: React.FC<HeaderProps> = ({
                     : '#D97706'
               }}
             />
-            <span style={{ fontWeight: 600, color: '#1E293B', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span className="topbar-user-name">
               {user.name}
             </span>
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                padding: '1px 6px',
-                borderRadius: 4,
-                background: '#E2E8F0',
-                color: '#475569'
-              }}
-            >
+            <span className="topbar-user-role-badge">
               {user.role === 'institution'
                 ? 'Applicant'
                 : user.role === 'officer'
@@ -252,13 +151,13 @@ export const Header: React.FC<HeaderProps> = ({
         {user?.role !== 'institution' && (
           <button
             type="button"
-            className="btn-secondary btn-nav-action"
+            className="btn-secondary btn-nav-action topbar-scan-btn"
             onClick={onRunEscalation}
             disabled={isScanning}
             title="Scan active case deadlines and auto-trigger SLA escalation alerts"
           >
             <PlayCircle size={13} color="#D97706" />
-            <span>{isScanning ? 'Scanning...' : 'Scan Deadlines'}</span>
+            <span className="topbar-btn-text">{isScanning ? 'Scanning...' : 'Scan Deadlines'}</span>
           </button>
         )}
 
@@ -266,7 +165,7 @@ export const Header: React.FC<HeaderProps> = ({
         {onNavigateTab && (
           <button
             type="button"
-            className="btn-icon btn-nav-action"
+            className="btn-icon btn-nav-action topbar-bell-btn"
             onClick={() => onNavigateTab('Alerts')}
             title={`View notifications (${unreadCount} unread)`}
             style={{ position: 'relative' }}
@@ -292,12 +191,12 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Refresh Live Database Records */}
         <button
           type="button"
-          className="btn-secondary btn-nav-action"
+          className="btn-secondary btn-nav-action topbar-refresh-btn"
           onClick={onRefresh}
           title="Reload live database records"
         >
           <RefreshCw size={12} />
-          <span>Refresh</span>
+          <span className="topbar-btn-text">Refresh</span>
         </button>
       </div>
     </header>

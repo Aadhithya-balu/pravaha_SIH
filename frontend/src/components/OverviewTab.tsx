@@ -1062,29 +1062,6 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {onOpenGuide && (
-                <button
-                  type="button"
-                  onClick={onOpenGuide}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '6px 12px',
-                    background: '#2563EB',
-                    color: '#FFFFFF',
-                    border: 'none',
-                    borderRadius: 6,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                  title="Open full interactive manual with glossary"
-                >
-                  <Compass size={13} />
-                  <span>Open Full User Guide</span>
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => setIsQuickTourOpen(false)}
