@@ -3443,10 +3443,20 @@ def download_evidence_file(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """Downloads original inspection evidence file safely."""
+    """Downloads original inspection evidence file safely with RBAC checks."""
     ev = db.get(InspectionEvidence, eid)
     if not ev:
         raise HTTPException(status_code=404, detail="Inspection evidence not found.")
+
+    if ev.application_id:
+        app_rec = db.get(Application, ev.application_id)
+        if app_rec:
+            if user.role == "institution" and app_rec.institution_name != user.institution_name:
+                raise HTTPException(status_code=403, detail="Forbidden. Cannot download other institutions' inspection evidence.")
+            elif user.role == "officer":
+                check_officer_jurisdiction(user, app_rec)
+            elif user.role in ["evc", "evc_expert"]:
+                check_evc_assignment(user, app_rec, db)
 
     try:
         ref = ev.file_path or ev.file_name

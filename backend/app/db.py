@@ -62,6 +62,7 @@ if APP_ENV == "production" and DATABASE_PROVIDER == "sqlite":
 engine_kwargs = {}
 DATABASE_READY = False
 DATABASE_ERROR: Optional[str] = None
+engine = None
 
 if DATABASE_PROVIDER == "sqlite":
     engine_kwargs["connect_args"] = {"check_same_thread": False}
@@ -96,7 +97,13 @@ except Exception as conn_err:
     else:
         raise conn_err
 
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+if engine is not None:
+    if engine is not None:
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+else:
+    SessionLocal = None
+else:
+    SessionLocal = None
 
 
 class Base(DeclarativeBase):
@@ -330,7 +337,7 @@ def run_schema_migrations(eng):
 
 
 def get_db():
-    if not DATABASE_READY:
+    if not DATABASE_READY or SessionLocal is None:
         raise HTTPException(
             status_code=503,
             detail=f"Authoritative database '{DATABASE_PROVIDER}' is currently unreachable: {DATABASE_ERROR}. "
