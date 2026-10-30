@@ -97,12 +97,9 @@ except Exception as conn_err:
     else:
         raise conn_err
 
-if engine is not None:
-    if engine is not None:
+if engine is not None:
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 else:
-    SessionLocal = None
-else:
     SessionLocal = None
 
 
