@@ -131,14 +131,19 @@ export const RoleMatrixTab: React.FC<RoleMatrixTabProps> = ({ onSwitchRole }) =>
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span className="user-role-badge">{r.role}</span>
-                <button
-                  className="btn-secondary"
-                  style={{ padding: '4px 8px', fontSize: 11 }}
-                  onClick={() => onSwitchRole(r.email)}
+                <span
+                  style={{
+                    padding: '3px 8px',
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    borderRadius: 4,
+                    background: '#F1F5F9',
+                    color: '#475569',
+                    border: '1px solid #CBD5E1'
+                  }}
                 >
-                  <LogIn size={12} />
-                  <span>Switch Role</span>
-                </button>
+                  Authorized Persona
+                </span>
               </div>
 
               <div>

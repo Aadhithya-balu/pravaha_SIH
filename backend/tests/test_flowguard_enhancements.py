@@ -346,4 +346,3 @@ def test_stage_remarks_and_post_approval_compliance(client):
     types = [c["item_type"] for c in comp_items]
     assert "FIRE_SAFETY_NOC" in types
     assert "UNDERTAKINGS" in types or "UNDERTAKING" in types
-

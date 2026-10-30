@@ -374,13 +374,18 @@ export async function fetchStageRemarks(aid: number): Promise<any[]> {
 
 export async function addStageRemark(aid: number, data: {
   stage: string;
-  comment_text: string;
+  comment_text?: string;
+  remark_text?: string;
   action_type?: string;
-  visibility?: 'APPLICANT_VISIBLE' | 'INTERNAL_OFFICER_ONLY';
+  visibility?: 'APPLICANT_VISIBLE' | 'INTERNAL_OFFICER_ONLY' | string;
   document_reference?: string;
   parent_remark_id?: number | null;
 }): Promise<any> {
-  return api(`/applications/${aid}/remarks`, { method: 'POST', body: JSON.stringify(data) });
+  const payload = {
+    ...data,
+    comment_text: data.comment_text || data.remark_text || '',
+  };
+  return api(`/applications/${aid}/remarks`, { method: 'POST', body: JSON.stringify(payload) });
 }
 
 export async function uploadEvcEvidence(visitId: number, file: File, evidenceType: string, remarks?: string): Promise<any> {

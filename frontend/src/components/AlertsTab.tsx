@@ -30,11 +30,16 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   onRunEscalation,
   isScanning
 }) => {
+  const [localAlerts, setLocalAlerts] = useState<AlertItem[]>(alerts);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [severityFilter, setSeverityFilter] = useState('ALL');
   const [markingId, setMarkingId] = useState<number | null>(null);
 
-  const filteredAlerts = alerts.filter((al) => {
+  React.useEffect(() => {
+    setLocalAlerts(alerts);
+  }, [alerts]);
+
+  const filteredAlerts = localAlerts.filter((al) => {
     if (unreadOnly && al.is_read) return false;
     if (severityFilter !== 'ALL' && al.severity !== severityFilter) return false;
     return true;
@@ -44,7 +49,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     setMarkingId(aid);
     try {
       await markNotificationRead(aid);
-      onRefresh();
+      setLocalAlerts((prev) => prev.map((a) => (a.id === aid ? { ...a, is_read: true } : a)));
     } catch (err: any) {
       console.error('Failed to mark alert as read:', err);
     } finally {
@@ -81,7 +86,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     }
   };
 
-  const unreadCount = alerts.filter((a) => !a.is_read).length;
+  const unreadCount = localAlerts.filter((a) => !a.is_read).length;
 
   return (
     <div className="page-container">

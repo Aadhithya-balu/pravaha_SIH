@@ -127,6 +127,7 @@ export default function App() {
       });
       localStorage.setItem('ps4_token', data.access_token);
       setAuthToken(data.access_token);
+      setLoginEmail(regEmail.trim().toLowerCase());
       showToast('Registration successful! Welcome to the PRAVAHA Institutional Portal.', 'success');
       await loadData();
     } catch (err: any) {
@@ -206,7 +207,7 @@ export default function App() {
     setIsLoggingIn(true);
     setErrorMsg('');
     try {
-      const email = customEmail || loginEmail;
+      const email = (customEmail || loginEmail).trim().toLowerCase();
       const password = customPass || loginPassword;
       const res = await api('/auth/login', {
         method: 'POST',

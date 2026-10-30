@@ -1,10 +1,10 @@
-export type UserRole = 'institution' | 'officer' | 'bureau' | 'evc_expert' | 'admin';
+import { LucideIcon } from 'lucide-react';
 
 export interface User {
   id: number;
   email: string;
   name: string;
-  role: UserRole;
+  role: 'institution' | 'officer' | 'bureau' | 'evc_expert' | 'admin';
   institution_name?: string | null;
   region: string;
   designation: string;
@@ -35,7 +35,6 @@ export interface NextBestAction {
   days_remaining?: number | null;
   is_user_authorized: boolean;
 }
-
 export interface Application {
   id: number;
   reference: string;
@@ -47,7 +46,7 @@ export interface Application {
   assigned_role: string;
   region: string;
   submission_date: string;
-  due_date: string | null;
+  due_date?: string | null;
   notes: string;
   deficiency_count: number;
   academic_year: string;
@@ -66,28 +65,26 @@ export interface CandidateField {
   field_label: string;
   label?: string;
   extracted_value: string;
+  original_value?: string;
   provenance: string;
   source_document: string;
   page_number?: number | string | null;
   evidence_quote?: string | null;
-  confidence_label: string;
+  confidence_label?: 'HIGH_CONFIDENCE' | 'MEDIUM_CONFIDENCE' | 'NEEDS_VERIFICATION' | 'OFFICIALLY_REGISTERED' | string;
   confidence?: number;
-  target_form_field?: string | null;
-  validation_status?: 'EXTRACTED' | 'APPLICANT_ENTERED' | 'VERIFIED' | 'NEEDS_REVIEW' | string;
+  target_form_field: string;
+  validation_status?: string;
   user_edited?: boolean;
-  original_value?: string;
 }
 
 export interface CorrectionRequest {
   id?: number;
-  application_id?: number;
-  requested_by?: string;
-  source?: 'RETURN_DEFICIENCY' | 'DOCUMENT_CORRECTION' | string;
+  source?: string;
   reason: string;
   document_id?: number | null;
   document_name?: string | null;
   deficiencies_json?: string | null;
-  status?: 'PENDING' | 'RESUBMITTED' | 'RESOLVED' | string;
+  status?: string;
   institution_response?: string | null;
   response_submitted_at?: string | null;
   resolved_at?: string | null;
@@ -102,8 +99,8 @@ export interface ScrutinyFinding {
   document_id?: number | null;
   rule_id: string;
   document_type: string;
-  severity: 'INFO' | 'WARNING' | 'DEFICIENCY' | string;
-  category: 'MISSING_DOCUMENT' | 'REGULATORY_NON_COMPLIANCE' | 'INCONSISTENCY' | 'ABSENT_EVIDENCE' | 'EXTRACTION_FAILURE' | 'PROCEDURAL_REQUIREMENT' | string;
+  severity: 'INFO' | 'WARNING' | 'DEFICIENCY';
+  category: string;
   description: string;
   evidence_quote?: string | null;
   source_document?: string | null;
@@ -111,9 +108,9 @@ export interface ScrutinyFinding {
   expected_requirement?: string | null;
   observed_value?: string | null;
   suggested_action?: string | null;
-  is_provisional?: boolean;
+  is_provisional: boolean;
   source_reference?: string | null;
-  officer_disposition: 'PENDING' | 'ACCEPTED' | 'WAIVED' | 'CORRECTION_REQUESTED' | 'RESOLVED' | 'REJECTED' | string;
+  officer_disposition: 'PENDING' | 'ACCEPTED' | 'WAIVED' | 'CORRECTION_REQUESTED' | 'REJECTED';
   disposition_notes?: string | null;
   disposed_by?: string | null;
   disposed_at?: string | null;
@@ -123,12 +120,12 @@ export interface ScrutinyFinding {
 export interface ScrutinyRun {
   id: number;
   application_id: number;
-  run_type: 'INITIAL' | 'RE_SCRUTINY' | string;
+  run_type: string;
   conducted_by: string;
-  status: 'PASSED' | 'DEFICIENCIES_FOUND' | 'PENDING_REVIEW' | string;
+  status: string;
   summary: string;
-  missing_docs?: string[] | string | null;
-  rule_results?: string | null;
+  missing_docs?: string | null;
+  rule_results?: any;
   ai_assisted: boolean;
   model_provider?: string | null;
   model_name?: string | null;
@@ -144,6 +141,7 @@ export interface DocumentRecord {
   document_name: string;
   document_type: string;
   document_category?: string;
+  file_path?: string | null;
   file_size: number;
   mime_type: string;
   uploaded_by: string;
@@ -151,7 +149,7 @@ export interface DocumentRecord {
   is_latest?: boolean;
   file_hash?: string | null;
   processing_status?: string;
-  extracted_text: string;
+  extracted_text?: string;
   ai_summary?: string | null;
   ai_findings?: string | null;
   ai_confidence?: number | null;
@@ -162,29 +160,50 @@ export interface DocumentRecord {
   created_at: string;
 }
 
-export interface AiAnalysisResult {
-  mode: 'demo_mode' | 'real_llm' | string;
-  execution_mode?: 'deterministic' | 'real_llm' | 'deterministic_fallback';
-  provider?: string;
-  model?: string;
-  ruleset_version?: string;
-  document_name: string;
-  document_type: string;
-  summary: string;
-  extracted_fields: Record<string, string>;
-  candidate_fields?: CandidateField[];
-  missing_information: string[];
-  potential_inconsistencies: string[];
-  verification_questions: string[];
-  structured_findings?: ScrutinyFinding[];
-  confidence_score: number;
-  disclaimer: string;
-  mode_fallback_reason?: string;
+export interface InspectionEvidence {
+  id: number;
+  visit_id: number;
+  application_id: number;
+  evidence_type: string;
+  file_name: string;
+  file_path: string;
+  file_hash: string;
+  file_size: number;
+  uploaded_by: string;
+  remarks?: string | null;
+  created_at: string;
 }
 
-export interface DocumentReviewResponse {
-  document: DocumentRecord;
-  review_status: string;
+export interface RegulatoryCategory {
+  id: number;
+  category_code: string;
+  title: string;
+  institution_type: string;
+  description: string;
+  required_documents_json: string;
+  workflow_sequence_json: string;
+  sla_days: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface DocumentReviewItem {
+  id: number;
+  application_id?: number | null;
+  application_reference?: string | null;
+  institution_name: string;
+  document_name: string;
+  document_type: string;
+  file_path?: string | null;
+  file_size: number;
+  mime_type: string;
+  uploaded_by: string;
+  created_at: string;
+  extracted_text: string;
+  ai_summary?: string | null;
+  ai_findings?: string | null;
+  ai_confidence?: number | null;
+  review_status: 'PENDING' | 'ACCEPTED' | 'CORRECTION_REQUIRED';
   reviewer_notes?: string | null;
   reviewed_by?: string | null;
   reviewed_at?: string | null;
@@ -288,35 +307,17 @@ export interface DashboardMetrics {
   by_type: Record<string, number>;
   evc_pending_count: number;
   compliance_pending_count: number;
-  urgent_alerts: Array<{
-    id: number;
-    title: string;
-    message: string;
-    severity: string;
-    created_at: string;
-  }>;
+  total_alerts: number;
+  active_institutions: number;
 }
 
 export interface BottleneckAnalytics {
-  total_active_applications: number;
+  total_in_progress: number;
   total_active_cases?: number;
-  sla_compliance_rate: number;
-  total_sla_breaches: number;
-  stage_analytics: Array<{
-    stage: string;
-    count: number;
-    avg_age_days: number;
-    max_age_days: number;
-    is_bottleneck: boolean;
-  }>;
-  critical_bottlenecks?: Array<{
-    stage: string;
-    backlog_count: number;
-    avg_ageing_days: number;
-    sla_limit_days: number;
-    bottleneck_severity: string;
-    recommendation: string;
-  }>;
+  total_active_applications?: number;
+  critical_bottlenecks?: any;
+  average_days_in_stage: Record<string, number>;
+  stage_counts: Record<string, number>;
   region_workload: Record<string, number>;
   regional_workload?: Record<string, number>;
   officer_workload: Record<string, number>;
@@ -357,4 +358,20 @@ export interface ApplicationDetailResponse {
   scrutiny_findings?: ScrutinyFinding[];
   correction_requests?: CorrectionRequest[];
   remarks?: StageRemark[];
+}
+
+export interface AiAnalysisResult {
+  mode: string;
+  execution_mode?: string;
+  mode_fallback_reason?: string;
+  provider: string;
+  model: string;
+  ruleset_version?: string;
+  summary: string;
+  extracted_fields?: Record<string, string>;
+  missing_information?: string[];
+  potential_inconsistencies?: string[];
+  verification_questions?: string[];
+  confidence_score?: number;
+  disclaimer?: string;
 }

@@ -5,6 +5,7 @@ import re
 import hashlib
 from typing import Dict, Any, Tuple, List, Optional
 from fastapi import HTTPException, UploadFile
+from .document_storage import save_uploaded_document, STORAGE_DIR, sanitize_filename, compute_sha256
 
 try:
     import fitz  # PyMuPDF
@@ -28,8 +29,7 @@ except ImportError:
     Image = None
     pytesseract = None
 
-UPLOAD_DIR = os.getenv("UPLOAD_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads"))
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+UPLOAD_DIR = STORAGE_DIR
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB limit
 
 
@@ -42,15 +42,6 @@ def is_tesseract_available() -> bool:
         return True
     except Exception:
         return False
-
-
-def sanitize_filename(filename: str) -> str:
-    """Removes path traversal and unsafe characters from filenames."""
-    base = os.path.basename(filename)
-    safe = re.sub(r"[^a-zA-Z0-9_\.-]", "_", base)
-    return safe[:100] or "unnamed_file.pdf"
-
-
 def extract_pages_from_pdf(content: bytes) -> Tuple[str, int, List[Dict[str, Any]], bool]:
     """
     Safely extracts page-by-page text, total page count, structured pages list,
@@ -298,53 +289,37 @@ def parse_document_content(content: bytes, filename: str) -> Dict[str, Any]:
 
 async def process_and_store_upload(file: UploadFile) -> Dict[str, Any]:
     """
-    Ingests an uploaded document:
-    1. Validates size (<= 10MB)
-    2. Validates allowed file extension (.pdf, .docx, .doc, .txt, .png, .jpg, .jpeg)
-    3. Saves file with secure UUID filename in UPLOAD_DIR
+    Ingests an uploaded document using authoritative document_storage service:
+    1. Validates size (<= 10MB) and allowed extension
+    2. Persists file to local document storage with unguessable UUID filename
+    3. Calculates cryptographic SHA-256 hash
     4. Extracts text safely using appropriate format parser
     5. Calculates cryptographic SHA-256 hash
     6. Returns metadata, readability status, and extracted text
     """
-    safe_name = sanitize_filename(file.filename or "upload.pdf")
-    ext = os.path.splitext(safe_name)[1].lower()
-    allowed_exts = {".pdf", ".docx", ".doc", ".txt", ".png", ".jpg", ".jpeg"}
-    if ext not in allowed_exts:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file format '{ext}'. Permitted extensions: {', '.join(sorted(allowed_exts))}"
-        )
-
     content = await file.read()
-    file_size = len(content)
-    if file_size > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File exceeds maximum permitted limit of 10MB (Current size: {round(file_size / (1024*1024), 2)}MB)"
-        )
-    if file_size == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Uploaded file is empty (0 bytes). Please upload a valid document."
-        )
 
-    # Generate unique stored filename
-    stored_name = f"{uuid.uuid4().hex}_{safe_name}"
-    stored_path = os.path.join(UPLOAD_DIR, stored_name)
+    # Save via centralized document_storage service
+    storage_meta = save_uploaded_document(
+        content=content,
+        original_filename=file.filename or "upload.pdf",
+        content_type=file.content_type
+    )
 
-    # Save to disk
-    with open(stored_path, "wb") as f:
-        f.write(content)
+    safe_name = storage_meta["original_filename"]
+    ext = os.path.splitext(safe_name)[1].lower()
+    file_size = storage_meta["file_size"]
 
     parse_result = parse_document_content(content, safe_name)
 
     return {
         "original_filename": safe_name,
-        "stored_filename": stored_name,
-        "stored_filepath": stored_path,
+        "stored_filename": storage_meta["stored_filename"],
+        "stored_filepath": storage_meta["relative_path"],
+        "absolute_path": storage_meta["absolute_path"],
         "file_size": file_size,
-        "file_hash": parse_result["file_hash"],
-        "mime_type": file.content_type or "application/octet-stream",
+        "file_hash": storage_meta.get("file_hash") or parse_result.get("file_hash"),
+        "mime_type": storage_meta.get("mime_type") or file.content_type or "application/octet-stream",
         "extracted_text": parse_result["extracted_text"],
         "unit_count": parse_result["unit_count"],
         "is_readable": parse_result["is_readable"],

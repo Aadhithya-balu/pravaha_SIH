@@ -139,7 +139,7 @@ TRANSITION_RULES: Dict[str, Dict[str, Dict[str, Any]]] = {
         "SCHEDULE_EVC": {
             "target_stage": "EVC_SCHEDULED",
             "target_status": "IN_PROGRESS",
-            "allowed_roles": ["officer", "evc_expert", "admin"],
+            "allowed_roles": ["officer", "admin"],
             "assigned_to": "EVC Inspection Panel",
             "description": "EVC date confirmed and committee constituted"
         },

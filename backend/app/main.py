@@ -14,11 +14,12 @@ from sqlalchemy import or_, and_, desc
 from jose import jwt, JWTError
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from .db import Base, engine, get_db, run_schema_migrations
+from .db import Base, engine, get_db, run_schema_migrations, get_database_diagnostics, DATABASE_READY, DATABASE_ERROR
+from .document_storage import init_storage, resolve_storage_path, get_storage_diagnostics, reconcile_storage, verify_file_integrity, delete_stored_document, STORAGE_DIR
 from .models import (
     User, Institution, Application, AuditEvent, Document, EVCVisit,
     ComplianceItem, Alert, ScrutinyRun, ScrutinyFinding, CorrectionRequest,
-    StageRemark, InspectionEvidence, RegulatoryCategory
+    StageRemark, InspectionEvidence, RegulatoryCategory, EmailDeliveryRecord
 )
 from .schemas import (
     InstitutionProfileOut, EVCRescheduleRequest, EVCApproveNextStageRequest, InspectionEvidenceOut, InspectionEvidenceVerifyRequest, DocumentOut, RegulatoryCategoryOut,
@@ -44,6 +45,7 @@ from .doc_extractor import process_and_store_upload, parse_document_content, UPL
 from .scrutiny import execute_scrutiny_pipeline, normalize_application_route, ROUTE_EOA, ROUTE_NEW_PROGRAMME
 from .escalation import run_escalation_engine
 from .seed import seed_database, password_hash
+from .email_service import send_workflow_email, get_email_status
 
 
 SECRET = os.getenv("SECRET_KEY", "aicte-sih-prototype-secure-token-secret-2026")
@@ -121,12 +123,24 @@ admin_only = require_roles(["admin"])
 
 
 def check_officer_jurisdiction(user: User, application: Application):
-    """Regional officers may only act on applications in their assigned region."""
-    if user.role == "officer" and user.region and user.region != "HQ":
-        if application.region != user.region and application.assigned_to != user.name:
+    """
+    Regional officers may act on applications in their assigned region,
+    unassigned regional queue cases, or cases assigned to them.
+    HQ/National/Admin officers have nationwide jurisdiction.
+    """
+    if user.role in ["admin", "bureau"]:
+        return
+    if user.role == "officer":
+        if not user.region or user.region in ["HQ", "National"]:
+            return
+        if application.assigned_to in [None, "Regional Officer", user.name]:
+            return
+        if application.region and application.region == user.region:
+            return
+        if application.assigned_to and application.assigned_to not in [user.name, "Regional Officer"]:
             raise HTTPException(
                 status_code=403,
-                detail=f"Access denied. Application region '{application.region}' is outside your authorized regional jurisdiction '{user.region}'."
+                detail=f"Access denied outside regional jurisdiction. Application is assigned to {application.assigned_to} in region '{application.region}'."
             )
 
 
@@ -149,10 +163,14 @@ def check_evc_assignment(user: User, application: Application, db: Session):
 
 @app.on_event("startup")
 def startup():
-    Base.metadata.create_all(engine)
-    run_schema_migrations(engine)
-    with next(get_db()) as db:
-        seed_database(db)
+    init_storage()
+    if DATABASE_READY:
+        Base.metadata.create_all(engine)
+        run_schema_migrations(engine)
+        with next(get_db()) as db:
+            seed_database(db)
+    else:
+        print(f"[STARTUP WARNING] Skipping DB migrations and seeding because database is not ready: {DATABASE_ERROR}")
 
 
 # --- Health & Auth Endpoints ---
@@ -160,10 +178,22 @@ def startup():
 @app.get("/api/health")
 @app.get("/api/v1/health")
 def health():
+    db_diag = get_database_diagnostics()
+    storage_diag = get_storage_diagnostics()
+
+    is_healthy = db_diag.get("database_ready", False) and storage_diag.get("status") == "healthy"
+
     return {
-        "status": "ok",
+        "status": "ok" if is_healthy else "degraded",
         "service": "Pravaha AICTE Regulatory Workflow & Scrutiny Engine",
         "timestamp": datetime.utcnow().isoformat(),
+        "database_ready": db_diag.get("database_ready", False),
+        "database_provider": db_diag.get("database_provider", "sqlite"),
+        "database_error": db_diag.get("database_error"),
+        "environment": os.getenv("APP_ENV", "development"),
+        "storage_provider": "local_storage",
+        "storage_directory": storage_diag.get("directory"),
+        "storage_ready": storage_diag.get("status") == "healthy",
         "routes_supported": ["Extension of Approval (EoA)", "New Programme / Level"]
     }
 
@@ -326,7 +356,12 @@ def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_us
         q = q.filter(Application.institution_name == user.institution_name)
         cq = cq.filter(ComplianceItem.institution_name == user.institution_name)
     elif user.role == "officer" and user.region and user.region != "HQ":
-        q = q.filter(or_(Application.region == user.region, Application.assigned_to == user.name))
+        q = q.filter(or_(
+            Application.region == user.region,
+            Application.assigned_to == user.name,
+            Application.assigned_to == "Regional Officer",
+            Application.region.is_(None)
+        ))
         cq = cq.filter(ComplianceItem.institution_name.in_(db.query(Institution.name).filter(Institution.region == user.region)))
     elif user.role == "evc_expert":
         assigned_app_ids = db.query(EVCVisit.application_id).filter(
@@ -411,7 +446,12 @@ def list_applications(
     if user.role == "institution":
         q = q.filter(Application.institution_name == user.institution_name)
     elif user.role == "officer" and user.region and user.region != "HQ":
-        q = q.filter(or_(Application.region == user.region, Application.assigned_to == user.name))
+        q = q.filter(or_(
+            Application.region == user.region,
+            Application.assigned_to == user.name,
+            Application.assigned_to == "Regional Officer",
+            Application.region.is_(None)
+        ))
     elif user.role == "evc_expert":
         assigned_app_ids = db.query(EVCVisit.application_id).filter(
             or_(
@@ -571,6 +611,12 @@ def get_application_details(aid: int, db: Session = Depends(get_db), user: User 
     next_action = compute_next_best_action(a, db, user)
     a.next_action = next_action
 
+    # Fetch Stage Remarks
+    q_rem = db.query(StageRemark).filter(StageRemark.application_id == aid)
+    if user.role == "institution":
+        q_rem = q_rem.filter(StageRemark.visibility == "APPLICANT_VISIBLE")
+    remarks = q_rem.order_by(StageRemark.created_at.asc()).all()
+
     return {
         "application": a,
         "next_action": next_action,
@@ -580,7 +626,8 @@ def get_application_details(aid: int, db: Session = Depends(get_db), user: User 
         "evc_visit": evc,
         "scrutiny_runs": scrutiny_runs,
         "scrutiny_findings": scrutiny_findings,
-        "correction_requests": correction_requests
+        "correction_requests": correction_requests,
+        "remarks": remarks
     }
 
 
@@ -660,41 +707,51 @@ async def upload_application_document(
         text=upload_res["extracted_text"]
     )
 
-    doc = Document(
-        application_id=aid,
-        institution_name=a.institution_name,
-        document_name=upload_res["original_filename"],
-        document_type=document_type,
-        document_category=document_category,
-        file_path=upload_res["stored_filepath"],
-        file_size=upload_res["file_size"],
-        file_hash=upload_res.get("file_hash"),
-        mime_type=upload_res["mime_type"],
-        uploaded_by=user.email,
-        version=1,
-        is_latest=True,
-        processing_status="COMPLETED" if upload_res.get("is_readable") else upload_res.get("extraction_status", "COMPLETED"),
-        extracted_text=upload_res["extracted_text"][:10000],
-        ai_summary=ai_result.get("summary"),
-        ai_findings=json.dumps(ai_result),
-        ai_confidence=float(ai_result.get("confidence_score", 0.9)),
-        review_status="PENDING"
-    )
-    db.add(doc)
+    try:
+        doc = Document(
+            application_id=aid,
+            institution_name=a.institution_name,
+            document_name=upload_res["original_filename"],
+            stored_filename=upload_res.get("stored_filename"),
+            document_type=document_type,
+            document_category=document_category,
+            file_path=upload_res["stored_filepath"],
+            file_size=upload_res["file_size"],
+            file_hash=upload_res.get("file_hash"),
+            mime_type=upload_res["mime_type"],
+            uploaded_by=user.email,
+            version=1,
+            is_latest=True,
+            ocr_status=upload_res.get("extraction_status", "SUCCESS"),
+            processing_status="COMPLETED" if upload_res.get("is_readable") else "NEEDS_REVIEW",
+            authenticity_status="UNVERIFIED",
+            regulatory_status="PENDING_EVALUATION",
+            extracted_text=upload_res["extracted_text"][:10000],
+            extracted_fields=json.dumps(ai_result.get("extracted_fields", {})),
+            ai_summary=ai_result.get("summary"),
+            ai_findings=json.dumps(ai_result),
+            ai_confidence=float(ai_result.get("confidence_score", 0.9)),
+            review_status="PENDING"
+        )
+        db.add(doc)
 
-    record_audit_event(
-        db=db,
-        application_id=aid,
-        actor=user.email,
-        actor_role=user.role,
-        action="DOC_UPLOADED",
-        from_stage=a.current_stage,
-        to_stage=a.current_stage,
-        details=f"Uploaded '{upload_res['original_filename']}' ({document_type}, {round(upload_res['file_size']/1024, 1)} KB)."
-    )
+        record_audit_event(
+            db=db,
+            application_id=aid,
+            actor=user.email,
+            actor_role=user.role,
+            action="DOC_UPLOADED",
+            from_stage=a.current_stage,
+            to_stage=a.current_stage,
+            details=f"Uploaded '{upload_res['original_filename']}' ({document_type}, {round(upload_res['file_size']/1024, 1)} KB). SHA-256: {upload_res.get('file_hash', 'N/A')[:16]}..."
+        )
 
-    db.commit()
-    db.refresh(doc)
+        db.commit()
+        db.refresh(doc)
+    except Exception as db_err:
+        db.rollback()
+        delete_stored_document(upload_res.get("stored_filename", ""))
+        raise db_err
 
     return {
         "document": {
@@ -716,7 +773,7 @@ async def upload_application_document(
 
 
 @app.post("/api/applications/{aid}/submit", response_model=ApplicationOut)
-def submit_application(
+async def submit_application(
     aid: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
@@ -738,6 +795,8 @@ def submit_application(
     prev_stage = a.current_stage
     a.current_stage = "SCRUTINY"
     a.status = "IN_PROGRESS"
+    a.assigned_to = "Regional Officer"
+    a.assigned_role = "officer"
     a.submission_date = date.today()
 
     record_audit_event(
@@ -763,11 +822,15 @@ def submit_application(
 
     db.commit()
     db.refresh(a)
+    try:
+        await execute_scrutiny_pipeline(aid, db, user.email, "INITIAL")
+    except Exception as e:
+        logger.warning(f"Initial scrutiny pipeline failed on submission: {e}")
     return a
 
 
 @app.post("/api/applications/{aid}/resubmit", response_model=ApplicationOut)
-def resubmit_application(
+async def resubmit_application(
     aid: int,
     req: ApplicationResubmit,
     db: Session = Depends(get_db),
@@ -831,6 +894,10 @@ def resubmit_application(
 
     db.commit()
     db.refresh(a)
+    try:
+        await execute_scrutiny_pipeline(aid, db, user.email, "RE_SCRUTINY")
+    except Exception as e:
+        logger.warning(f"Re-scrutiny pipeline failed on resubmission: {e}")
     return a
 
 
@@ -1062,18 +1129,63 @@ def transition_application(
         details=details
     )
 
-    # If returned, notify institution
-    if new_status == "RETURNED":
+    # If EVC is scheduled, ensure an EVCVisit record exists for the panel
+    if new_stage == "EVC_SCHEDULED" or req.action.upper() == "SCHEDULE_EVC":
+        existing_visit = db.query(EVCVisit).filter(EVCVisit.application_id == aid).first()
+        if not existing_visit:
+            new_visit = EVCVisit(
+                application_id=aid,
+                institution_name=a.institution_name,
+                committee_members=req.reason.strip() if req.reason else "Dr. EVC Expert (evc@demo.local), Prof. K. Sharma",
+                scheduled_date=date.today() + timedelta(days=7),
+                visit_mode="PHYSICAL",
+                status="SCHEDULED",
+                assigned_by=user.email
+            )
+            db.add(new_visit)
+            db.flush()
+
+    # If returned, persist CorrectionRequest and notify institution
+    if new_status == "RETURNED" or req.action.upper() == "RETURN":
         a.deficiency_count += 1
+        cr = CorrectionRequest(
+            application_id=aid,
+            requested_by=user.email,
+            reason=req.reason.strip(),
+            deficiencies_json=json.dumps([]),
+            status="PENDING",
+            created_at=datetime.utcnow()
+        )
+        db.add(cr)
         db.add(Alert(
-            title=f"Application Returned: {a.reference}",
-            message=f"Case returned by {user.name}: {req.reason.strip()}",
+            title=f"Action Required: Clarifications Demanded for {a.reference}",
+            message=f"Regional Officer {user.name} returned your application for rectification: {req.reason.strip()}",
             severity="WARNING",
             target_role="institution",
             institution_name=a.institution_name,
             application_id=aid,
-            trigger_type="STAGE_CHANGE"
+            trigger_type="CORRECTION_REQUESTED"
         ))
+        send_workflow_email(
+            recipient=user.email,
+            subject=f"Action Required: Deficiency Memo Issued for {a.reference}",
+            template_type="CORRECTION_REQUESTED",
+            context={
+                "reference": a.reference,
+                "institution_name": a.institution_name,
+                "stage": "RETURNED_FOR_CLARIFICATION",
+                "details": req.reason.strip()
+            }
+        )
+    elif req.action.upper() in ["SCRUTINY_PASS", "RESCRUTINY_CLEARED", "SEND_EVC"]:
+        pending_crs = db.query(CorrectionRequest).filter(
+            CorrectionRequest.application_id == aid,
+            CorrectionRequest.status.in_(["PENDING", "RESUBMITTED"])
+        ).all()
+        for cr in pending_crs:
+            cr.status = "RESOLVED"
+            cr.resolved_at = datetime.utcnow()
+            cr.resolved_by = user.email
 
     db.commit()
     db.refresh(a)
@@ -1781,22 +1893,26 @@ def download_document(
     elif user.role == "institution" and doc.institution_name != user.institution_name:
         raise HTTPException(status_code=403, detail="Forbidden. Cannot download other institutions' documents.")
 
-    if not doc.file_path or not os.path.exists(doc.file_path):
+    # Safely resolve target storage path (prevents traversal)
+    resolved_path = None
+    try:
+        if doc.file_path or doc.stored_filename:
+            ref = doc.stored_filename or doc.file_path
+            resolved_path = resolve_storage_path(ref)
+    except Exception:
+        resolved_path = None
+
+    if not resolved_path or not os.path.exists(resolved_path):
         if doc.extracted_text:
             return Response(
                 content=doc.extracted_text,
                 media_type="text/plain",
                 headers={"Content-Disposition": f'attachment; filename="{doc.document_name}.txt"'}
             )
-        raise HTTPException(status_code=404, detail="Document file not available on storage.")
-
-    norm_path = os.path.normcase(os.path.abspath(doc.file_path))
-    upload_norm = os.path.normcase(os.path.abspath(UPLOAD_DIR))
-    if not norm_path.startswith(upload_norm):
-        raise HTTPException(status_code=400, detail="Invalid document storage path.")
+        raise HTTPException(status_code=404, detail="Original document file not found on local storage.")
 
     return FileResponse(
-        path=norm_path,
+        path=resolved_path,
         filename=doc.document_name,
         media_type=doc.mime_type or "application/octet-stream"
     )
@@ -2130,7 +2246,7 @@ def list_evc_visits(db: Session = Depends(get_db), user: User = Depends(get_curr
 def schedule_evc_visit(
     req: EVCVisitCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(evc_or_officer)
+    user: User = Depends(officer_or_admin)
 ):
     app_rec = db.get(Application, req.application_id)
     if not app_rec:
@@ -2636,37 +2752,49 @@ async def v1_upload_application_document(
         text=upload_res["extracted_text"]
     )
 
-    doc = Document(
-        application_id=aid,
-        institution_name=a.institution_name,
-        document_name=document_name or upload_res["original_filename"],
-        document_type=document_type,
-        file_path=upload_res["stored_filepath"],
-        file_size=upload_res["file_size"],
-        mime_type=upload_res["mime_type"],
-        uploaded_by=user.email,
-        extracted_text=upload_res["extracted_text"][:10000],
-        ai_summary=ai_result.get("summary"),
-        ai_findings=json.dumps(ai_result),
-        ai_confidence=float(ai_result.get("confidence_score", 0.9)),
-        review_status="PENDING"
-    )
-    db.add(doc)
-    db.flush()
+    try:
+        doc = Document(
+            application_id=aid,
+            institution_name=a.institution_name,
+            document_name=document_name or upload_res["original_filename"],
+            stored_filename=upload_res.get("stored_filename"),
+            document_type=document_type,
+            file_path=upload_res["stored_filepath"],
+            file_size=upload_res["file_size"],
+            file_hash=upload_res.get("file_hash"),
+            mime_type=upload_res["mime_type"],
+            uploaded_by=user.email,
+            ocr_status=upload_res.get("extraction_status", "SUCCESS"),
+            processing_status="COMPLETED" if upload_res.get("is_readable") else "NEEDS_REVIEW",
+            authenticity_status="UNVERIFIED",
+            regulatory_status="PENDING_EVALUATION",
+            extracted_text=upload_res["extracted_text"][:10000],
+            extracted_fields=json.dumps(ai_result.get("extracted_fields", {})),
+            ai_summary=ai_result.get("summary"),
+            ai_findings=json.dumps(ai_result),
+            ai_confidence=float(ai_result.get("confidence_score", 0.9)),
+            review_status="PENDING"
+        )
+        db.add(doc)
+        db.flush()
 
-    record_audit_event(
-        db=db,
-        application_id=aid,
-        actor=user.email,
-        actor_role=user.role,
-        action="DOC_UPLOADED",
-        from_stage=a.current_stage,
-        to_stage=a.current_stage,
-        details=f"Document '{doc.document_name}' ({doc.document_type}) uploaded by {user.name}."
-    )
-    a.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(doc)
+        record_audit_event(
+            db=db,
+            application_id=aid,
+            actor=user.email,
+            actor_role=user.role,
+            action="DOC_UPLOADED",
+            from_stage=a.current_stage,
+            to_stage=a.current_stage,
+            details=f"Document '{doc.document_name}' ({doc.document_type}) uploaded by {user.name}. SHA-256: {upload_res.get('file_hash', 'N/A')[:16]}..."
+        )
+        a.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(doc)
+    except Exception as db_err:
+        db.rollback()
+        delete_stored_document(upload_res.get("stored_filename", ""))
+        raise db_err
 
     return {
         "message": f"Document '{doc.document_name}' successfully attached to application {a.reference}.",
@@ -2689,7 +2817,7 @@ def v1_download_document(did: int, db: Session = Depends(get_db), user: User = D
 
 
 @v1_router.post("/applications/{aid}/submit", response_model=ApplicationOut)
-def v1_submit_application(
+async def v1_submit_application(
     aid: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
@@ -2751,11 +2879,15 @@ def v1_submit_application(
 
     db.commit()
     db.refresh(a)
+    try:
+        await execute_scrutiny_pipeline(aid, db, user.email, "INITIAL")
+    except Exception as e:
+        logger.warning(f"Initial scrutiny pipeline failed on v1 submission: {e}")
     return a
 
 
 @v1_router.post("/applications/{aid}/resubmit", response_model=ApplicationOut)
-def v1_resubmit_application(
+async def v1_resubmit_application(
     aid: int,
     req: ApplicationResubmit,
     db: Session = Depends(get_db),
@@ -2824,6 +2956,10 @@ def v1_resubmit_application(
 
     db.commit()
     db.refresh(a)
+    try:
+        await execute_scrutiny_pipeline(aid, db, user.email, "RE_SCRUTINY")
+    except Exception as e:
+        logger.warning(f"Re-scrutiny pipeline failed on v1 resubmission: {e}")
     return a
 
 
@@ -3050,11 +3186,7 @@ async def upload_inspection_evidence(
         raise HTTPException(status_code=404, detail="EVC visit not found.")
     
     upload_res = await process_and_store_upload(file)
-    
-    import hashlib
-    with open(upload_res["stored_filepath"], "rb") as f:
-        file_bytes = f.read()
-        f_hash = hashlib.sha256(file_bytes).hexdigest()
+    f_hash = upload_res.get("file_hash")
     
     evidence = InspectionEvidence(
         visit_id=vid,
@@ -3191,11 +3323,7 @@ async def replace_application_document(
         raise HTTPException(status_code=400, detail="Cannot replace documents on finalized applications.")
     
     upload_res = await process_and_store_upload(file)
-    
-    import hashlib
-    with open(upload_res["stored_filepath"], "rb") as f:
-        file_bytes = f.read()
-        f_hash = hashlib.sha256(file_bytes).hexdigest()
+    f_hash = upload_res.get("file_hash")
     
     # Mark old version as not latest
     old_doc.is_latest = False
@@ -3252,3 +3380,85 @@ def application_decision_alias(
     user: User = Depends(officer_or_admin)
 ):
     return officer_record_decision(aid=aid, req=req, db=db, user=user)
+
+@app.get("/api/email/status")
+def get_system_email_status(user: User = Depends(officer_or_admin)):
+    """Exposes real SMTP and notification delivery status for administrators."""
+    return get_email_status()
+
+
+# --- Storage Diagnostics, Reconciliation & Integrity Endpoints ---
+
+@app.get("/api/storage/diagnostics")
+def storage_diagnostics(user: User = Depends(officer_or_admin)):
+    """Returns local document storage diagnostics and directory health."""
+    return get_storage_diagnostics()
+
+
+@app.get("/api/documents/{did}/integrity")
+def check_document_integrity(
+    did: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Verifies physical file on disk matches its recorded SHA-256 hash."""
+    doc = db.get(Document, did)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    if not doc.file_hash:
+        return {"document_id": did, "integrity": "NO_RECORDED_HASH", "valid": False}
+
+    ref = doc.stored_filename or doc.file_path or doc.document_name
+    valid = verify_file_integrity(ref, doc.file_hash)
+    return {
+        "document_id": did,
+        "document_name": doc.document_name,
+        "file_hash": doc.file_hash,
+        "integrity_verified": valid,
+        "status": "VALID" if valid else "TAMPER_OR_CORRUPT"
+    }
+
+
+@app.post("/api/storage/reconcile")
+def storage_reconcile(db: Session = Depends(get_db), user: User = Depends(admin_only)):
+    """Admin utility to reconcile database document records with disk files."""
+    docs = db.query(Document).all()
+    doc_dicts = [
+        {
+            "id": d.id,
+            "document_name": d.document_name,
+            "stored_filename": d.stored_filename,
+            "file_path": d.file_path,
+            "file_hash": d.file_hash
+        }
+        for d in docs
+    ]
+    return reconcile_storage(doc_dicts)
+
+
+@app.get("/api/evc/evidence/{eid}/download")
+def download_evidence_file(
+    eid: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Downloads original inspection evidence file safely."""
+    ev = db.get(InspectionEvidence, eid)
+    if not ev:
+        raise HTTPException(status_code=404, detail="Inspection evidence not found.")
+
+    try:
+        ref = ev.file_path or ev.file_name
+        resolved_path = resolve_storage_path(ref)
+    except Exception:
+        resolved_path = None
+
+    if not resolved_path or not os.path.exists(resolved_path):
+        raise HTTPException(status_code=404, detail="Original evidence file not found on storage.")
+
+    return FileResponse(
+        path=resolved_path,
+        filename=ev.file_name,
+        media_type="application/octet-stream"
+    )

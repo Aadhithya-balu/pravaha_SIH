@@ -106,6 +106,7 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
   const [scrutinyFindings, setScrutinyFindings] = useState<ScrutinyFinding[]>([]);
   const [complianceItems, setComplianceItems] = useState<ComplianceItem[]>([]);
 
+
   // Stage Remarks & Decision Trail
   const [stageRemarks, setStageRemarks] = useState<StageRemark[]>([]);
   const [newRemarkText, setNewRemarkText] = useState('');
@@ -643,15 +644,43 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
     return false;
   }
 
+  async function handleAddRemark() {
+    if (!newRemarkText.trim()) return;
+    setIsPostingRemark(true);
+    try {
+      await addStageRemark(application.id, {
+        stage: details.current_stage,
+        remark_text: newRemarkText.trim(),
+        visibility: newRemarkVisibility
+      });
+      setNewRemarkText('');
+      await loadDetails();
+      setSuccessMsg('Official remark recorded successfully.');
+    } catch (e: any) {
+      setErrorMsg(e.message || 'Failed to submit remark.');
+    } finally {
+      setIsPostingRemark(false);
+    }
+  }
+
   function handleExecuteNextAction(nba: NextBestAction) {
     if (nba.action_code === 'SUBMIT_DRAFT') {
       handleSubmitDraft();
-    } else if (nba.action_code === 'RETURN_FOR_CLARIFICATION') {
+    } else if (nba.action_code === 'RETURN_FOR_CLARIFICATION' || nba.action_code === 'RETURN_DEFICIENCY') {
       setIsReturnOpen(true);
     } else if (nba.action_code === 'RESUBMIT_CLARIFICATION') {
       setIsResubmitOpen(true);
     } else if (nba.action_code === 'RUN_SCRUTINY') {
       handleRunScrutiny();
+    } else if (nba.action_code === 'REFER_EVC') {
+      handleTransition('SEND_EVC', 'Refer to Expert Visiting Committee (EVC) Inspection');
+    } else if (nba.action_code === 'SCHEDULE_EVC' || nba.action_code === 'CONFIRM_EVC_SCHEDULE') {
+      setActiveTab('evc');
+    } else if (nba.action_code === 'SUBMIT_EVC_REPORT') {
+      setActiveTab('evc');
+      setIsEvcModalOpen(true);
+    } else if (nba.action_code === 'VERIFY_COMPLIANCE_EVIDENCE') {
+      setActiveTab('compliance');
     } else {
       const matchingTrans = transitions.find((t) => t.action === nba.action_code);
       if (matchingTrans) {
@@ -1553,12 +1582,95 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                     </div>
                   )}
 
+                  {/* Statutory Requirements Checklist Table */}
+                  {(() => {
+                    const results = scrutinyRuns.length > 0
+                      ? (typeof scrutinyRuns[0].rule_results === 'string'
+                          ? (() => { try { return JSON.parse(scrutinyRuns[0].rule_results || '{}'); } catch { return {}; } })()
+                          : scrutinyRuns[0].rule_results)
+                      : null;
+                    const checklist = results?.requirements_checklist;
+                    if (!checklist || checklist.length === 0) return null;
+
+                    return (
+                      <div style={{ marginBottom: 14 }}>
+                        <h4 style={{ fontSize: 12, fontWeight: 700, margin: '0 0 8px', color: 'var(--text-primary)' }}>
+                          Statutory Document & Rule Verification Checklist (APH 2024-2027)
+                        </h4>
+                        <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                            <thead style={{ background: '#F8FAFC', color: '#475569', textAlign: 'left', fontWeight: 600 }}>
+                              <tr>
+                                <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-subtle)' }}>Requirement</th>
+                                <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-subtle)' }}>Status</th>
+                                <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-subtle)' }}>Matched Document</th>
+                                <th style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-subtle)' }}>Assessment Note</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {checklist.map((item: any, idx: number) => {
+                                const isSatisfied = item.status === 'SATISFIED' || item.status === 'PASS';
+                                return (
+                                  <tr key={idx} style={{ borderBottom: '1px solid var(--border-subtle)', background: isSatisfied ? '#FFFFFF' : '#FEF2F2' }}>
+                                    <td style={{ padding: '8px 10px' }}>
+                                      <span style={{ fontWeight: 600, display: 'block', color: 'var(--text-primary)' }}>{item.name}</span>
+                                      <code style={{ fontSize: 9.5, color: '#64748B' }}>{item.rule_id}</code>
+                                    </td>
+                                    <td style={{ padding: '8px 10px' }}>
+                                      <span
+                                        style={{
+                                          fontSize: 9.5,
+                                          fontWeight: 800,
+                                          padding: '2px 6px',
+                                          borderRadius: 4,
+                                          background: isSatisfied ? '#DCFCE7' : '#FEE2E2',
+                                          color: isSatisfied ? '#166534' : '#991B1B'
+                                        }}
+                                      >
+                                        {item.status}
+                                      </span>
+                                    </td>
+                                    <td style={{ padding: '8px 10px', color: 'var(--text-secondary)' }}>
+                                      {item.document_type || item.evidence_document || '—'}
+                                    </td>
+                                    <td style={{ padding: '8px 10px', color: '#475569' }}>
+                                      {item.remarks || item.notes || '—'}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* Findings List */}
-                  {scrutinyFindings.length === 0 ? (
-                    <div style={{ padding: '36px', textAlign: 'center', background: '#F8FAFC', borderRadius: 'var(--radius-md)' }}>
+                  {scrutinyRuns.length === 0 ? (
+                    <div style={{ padding: '36px', textAlign: 'center', background: '#F8FAFC', borderRadius: 'var(--radius-md)', border: '1px dashed #CBD5E1' }}>
+                      <Sparkles size={32} color="#7C3AED" style={{ margin: '0 auto 8px' }} />
+                      <b style={{ fontSize: 13, display: 'block', color: 'var(--text-primary)' }}>Regulatory Scrutiny Pending Execution</b>
+                      <span style={{ fontSize: 11.5, color: 'var(--text-muted)', display: 'block', maxWidth: 440, margin: '4px auto 14px' }}>
+                        The AI scrutiny pipeline has not yet evaluated uploaded documents against APH 2024-2027 statutory rules.
+                      </span>
+                      {isOfficerOrAdmin && (
+                        <button
+                          className="btn-primary"
+                          style={{ background: '#7C3AED', borderColor: '#7C3AED', fontSize: 12, padding: '7px 16px', margin: '0 auto' }}
+                          disabled={isActionLoading}
+                          onClick={handleRunScrutiny}
+                        >
+                          <Sparkles size={14} />
+                          <span>{isActionLoading ? 'Evaluating Rules...' : 'Run Scrutiny Pipeline Now'}</span>
+                        </button>
+                      )}
+                    </div>
+                  ) : scrutinyFindings.length === 0 ? (
+                    <div style={{ padding: '28px', textAlign: 'center', background: '#F0FDF4', borderRadius: 'var(--radius-md)', border: '1px solid #BBF7D0' }}>
                       <FileCheck size={32} color="#16A34A" style={{ margin: '0 auto 8px' }} />
-                      <b style={{ fontSize: 13, display: 'block', color: 'var(--text-primary)' }}>No Deficiencies Detected</b>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      <b style={{ fontSize: 13, display: 'block', color: '#166534' }}>All Statutory Requirements Satisfied</b>
+                      <span style={{ fontSize: 11, color: '#15803D' }}>
                         All uploaded documents and statutory thresholds satisfy current APH 2024-2027 rules.
                       </span>
                     </div>
@@ -1779,9 +1891,20 @@ export const ApplicationDetailModal: React.FC<ApplicationDetailModalProps> = ({
                     <div style={{ padding: '36px', textAlign: 'center', background: '#F8FAFC', borderRadius: 'var(--radius-md)' }}>
                       <Building2 size={32} color="#94A3B8" style={{ margin: '0 auto 8px' }} />
                       <b style={{ fontSize: 13, display: 'block', color: 'var(--text-primary)' }}>No EVC Inspection Scheduled</b>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 14 }}>
                         EVC inspection is initiated when an application progresses to the EVC_PENDING stage.
                       </span>
+                      {isOfficerOrAdmin && (details.current_stage === 'EVC_PENDING' || details.current_stage === 'SCRUTINY' || details.current_stage === 'RE_SCRUTINY') && (
+                        <button
+                          className="btn-primary"
+                          style={{ margin: '0 auto', fontSize: 11, padding: '7px 16px', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                          disabled={isActionLoading}
+                          onClick={() => handleTransition('SCHEDULE_EVC', 'EVC Inspection Committee Constituted')}
+                        >
+                          <Calendar size={13} />
+                          <span>Schedule EVC Inspection Panel</span>
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div
