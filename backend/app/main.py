@@ -14,11 +14,12 @@ from sqlalchemy import or_, and_, desc
 from jose import jwt, JWTError
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from .db import Base, engine, get_db, run_schema_migrations
+from .db import Base, engine, get_db, run_schema_migrations, get_database_diagnostics, DATABASE_READY, DATABASE_ERROR
+from .document_storage import init_storage, resolve_storage_path, get_storage_diagnostics, reconcile_storage, verify_file_integrity, delete_stored_document, STORAGE_DIR
 from .models import (
     User, Institution, Application, AuditEvent, Document, EVCVisit,
     ComplianceItem, Alert, ScrutinyRun, ScrutinyFinding, CorrectionRequest,
-    StageRemark, InspectionEvidence, RegulatoryCategory
+    StageRemark, InspectionEvidence, RegulatoryCategory, EmailDeliveryRecord
 )
 from .schemas import (
     StageRemarkCreate, StageRemarkOut,
@@ -161,39 +162,37 @@ def check_evc_assignment(user: User, application: Application, db: Session):
 
 @app.on_event("startup")
 def startup():
-    Base.metadata.create_all(engine)
-    run_schema_migrations(engine)
-    with next(get_db()) as db:
-        seed_database(db)
+    init_storage()
+    if DATABASE_READY:
+        Base.metadata.create_all(engine)
+        run_schema_migrations(engine)
+        with next(get_db()) as db:
+            seed_database(db)
+    else:
+        print(f"[STARTUP WARNING] Skipping DB migrations and seeding because database is not ready: {DATABASE_ERROR}")
 
 
 # --- Health & Auth Endpoints ---
 
 @app.get("/api/health")
 @app.get("/api/v1/health")
-def health(db: Session = Depends(get_db)):
-    db_ok = True
-    provider = "sqlite"
-    try:
-        from sqlalchemy import text as sa_text
-        db.execute(sa_text("SELECT 1"))
-        db_url = os.getenv("DATABASE_URL", "")
-        if "postgresql" in db_url or "supabase" in db_url:
-            provider = "postgresql/supabase"
-        else:
-            provider = "sqlite"
-    except Exception as e:
-        db_ok = False
-        provider = f"error: {e}"
+def health():
+    db_diag = get_database_diagnostics()
+    storage_diag = get_storage_diagnostics()
+
+    is_healthy = db_diag.get("database_ready", False) and storage_diag.get("status") == "healthy"
 
     return {
-        "status": "ok" if db_ok else "degraded",
+        "status": "ok" if is_healthy else "degraded",
         "service": "Pravaha AICTE Regulatory Workflow & Scrutiny Engine",
         "timestamp": datetime.utcnow().isoformat(),
-        "database_ready": db_ok,
-        "database_provider": provider,
+        "database_ready": db_diag.get("database_ready", False),
+        "database_provider": db_diag.get("database_provider", "sqlite"),
+        "database_error": db_diag.get("database_error"),
         "environment": os.getenv("APP_ENV", "development"),
-        "storage_provider": "supabase_storage",
+        "storage_provider": "local_storage",
+        "storage_directory": storage_diag.get("directory"),
+        "storage_ready": storage_diag.get("status") == "healthy",
         "routes_supported": ["Extension of Approval (EoA)", "New Programme / Level"]
     }
 
@@ -669,36 +668,48 @@ async def upload_application_document(
         text=upload_res["extracted_text"]
     )
 
-    doc = Document(
-        application_id=aid,
-        institution_name=a.institution_name,
-        document_name=upload_res["original_filename"],
-        document_type=document_type,
-        file_path=upload_res["stored_filepath"],
-        file_size=upload_res["file_size"],
-        mime_type=upload_res["mime_type"],
-        uploaded_by=user.email,
-        extracted_text=upload_res["extracted_text"][:10000],
-        ai_summary=ai_result.get("summary"),
-        ai_findings=json.dumps(ai_result),
-        ai_confidence=float(ai_result.get("confidence_score", 0.9)),
-        review_status="PENDING"
-    )
-    db.add(doc)
+    try:
+        doc = Document(
+            application_id=aid,
+            institution_name=a.institution_name,
+            document_name=upload_res["original_filename"],
+            stored_filename=upload_res.get("stored_filename"),
+            document_type=document_type,
+            file_path=upload_res["stored_filepath"],
+            file_size=upload_res["file_size"],
+            file_hash=upload_res.get("file_hash"),
+            mime_type=upload_res["mime_type"],
+            uploaded_by=user.email,
+            ocr_status=upload_res.get("extraction_status", "SUCCESS"),
+            processing_status="COMPLETED" if upload_res.get("is_readable") else "NEEDS_REVIEW",
+            authenticity_status="UNVERIFIED",
+            regulatory_status="PENDING_EVALUATION",
+            extracted_text=upload_res["extracted_text"][:10000],
+            extracted_fields=json.dumps(ai_result.get("extracted_fields", {})),
+            ai_summary=ai_result.get("summary"),
+            ai_findings=json.dumps(ai_result),
+            ai_confidence=float(ai_result.get("confidence_score", 0.9)),
+            review_status="PENDING"
+        )
+        db.add(doc)
 
-    record_audit_event(
-        db=db,
-        application_id=aid,
-        actor=user.email,
-        actor_role=user.role,
-        action="DOC_UPLOADED",
-        from_stage=a.current_stage,
-        to_stage=a.current_stage,
-        details=f"Uploaded '{upload_res['original_filename']}' ({document_type}, {round(upload_res['file_size']/1024, 1)} KB)."
-    )
+        record_audit_event(
+            db=db,
+            application_id=aid,
+            actor=user.email,
+            actor_role=user.role,
+            action="DOC_UPLOADED",
+            from_stage=a.current_stage,
+            to_stage=a.current_stage,
+            details=f"Uploaded '{upload_res['original_filename']}' ({document_type}, {round(upload_res['file_size']/1024, 1)} KB). SHA-256: {upload_res.get('file_hash', 'N/A')[:16]}..."
+        )
 
-    db.commit()
-    db.refresh(doc)
+        db.commit()
+        db.refresh(doc)
+    except Exception as db_err:
+        db.rollback()
+        delete_stored_document(upload_res.get("stored_filename", ""))
+        raise db_err
 
     return {
         "document": {
@@ -1775,22 +1786,26 @@ def download_document(
     elif user.role == "institution" and doc.institution_name != user.institution_name:
         raise HTTPException(status_code=403, detail="Forbidden. Cannot download other institutions' documents.")
 
-    if not doc.file_path or not os.path.exists(doc.file_path):
+    # Safely resolve target storage path (prevents traversal)
+    resolved_path = None
+    try:
+        if doc.file_path or doc.stored_filename:
+            ref = doc.stored_filename or doc.file_path
+            resolved_path = resolve_storage_path(ref)
+    except Exception:
+        resolved_path = None
+
+    if not resolved_path or not os.path.exists(resolved_path):
         if doc.extracted_text:
             return Response(
                 content=doc.extracted_text,
                 media_type="text/plain",
                 headers={"Content-Disposition": f'attachment; filename="{doc.document_name}.txt"'}
             )
-        raise HTTPException(status_code=404, detail="Document file not available on storage.")
-
-    norm_path = os.path.normcase(os.path.abspath(doc.file_path))
-    upload_norm = os.path.normcase(os.path.abspath(UPLOAD_DIR))
-    if not norm_path.startswith(upload_norm):
-        raise HTTPException(status_code=400, detail="Invalid document storage path.")
+        raise HTTPException(status_code=404, detail="Original document file not found on local storage.")
 
     return FileResponse(
-        path=norm_path,
+        path=resolved_path,
         filename=doc.document_name,
         media_type=doc.mime_type or "application/octet-stream"
     )
@@ -2408,37 +2423,49 @@ async def v1_upload_application_document(
         text=upload_res["extracted_text"]
     )
 
-    doc = Document(
-        application_id=aid,
-        institution_name=a.institution_name,
-        document_name=document_name or upload_res["original_filename"],
-        document_type=document_type,
-        file_path=upload_res["stored_filepath"],
-        file_size=upload_res["file_size"],
-        mime_type=upload_res["mime_type"],
-        uploaded_by=user.email,
-        extracted_text=upload_res["extracted_text"][:10000],
-        ai_summary=ai_result.get("summary"),
-        ai_findings=json.dumps(ai_result),
-        ai_confidence=float(ai_result.get("confidence_score", 0.9)),
-        review_status="PENDING"
-    )
-    db.add(doc)
-    db.flush()
+    try:
+        doc = Document(
+            application_id=aid,
+            institution_name=a.institution_name,
+            document_name=document_name or upload_res["original_filename"],
+            stored_filename=upload_res.get("stored_filename"),
+            document_type=document_type,
+            file_path=upload_res["stored_filepath"],
+            file_size=upload_res["file_size"],
+            file_hash=upload_res.get("file_hash"),
+            mime_type=upload_res["mime_type"],
+            uploaded_by=user.email,
+            ocr_status=upload_res.get("extraction_status", "SUCCESS"),
+            processing_status="COMPLETED" if upload_res.get("is_readable") else "NEEDS_REVIEW",
+            authenticity_status="UNVERIFIED",
+            regulatory_status="PENDING_EVALUATION",
+            extracted_text=upload_res["extracted_text"][:10000],
+            extracted_fields=json.dumps(ai_result.get("extracted_fields", {})),
+            ai_summary=ai_result.get("summary"),
+            ai_findings=json.dumps(ai_result),
+            ai_confidence=float(ai_result.get("confidence_score", 0.9)),
+            review_status="PENDING"
+        )
+        db.add(doc)
+        db.flush()
 
-    record_audit_event(
-        db=db,
-        application_id=aid,
-        actor=user.email,
-        actor_role=user.role,
-        action="DOC_UPLOADED",
-        from_stage=a.current_stage,
-        to_stage=a.current_stage,
-        details=f"Document '{doc.document_name}' ({doc.document_type}) uploaded by {user.name}."
-    )
-    a.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(doc)
+        record_audit_event(
+            db=db,
+            application_id=aid,
+            actor=user.email,
+            actor_role=user.role,
+            action="DOC_UPLOADED",
+            from_stage=a.current_stage,
+            to_stage=a.current_stage,
+            details=f"Document '{doc.document_name}' ({doc.document_type}) uploaded by {user.name}. SHA-256: {upload_res.get('file_hash', 'N/A')[:16]}..."
+        )
+        a.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(doc)
+    except Exception as db_err:
+        db.rollback()
+        delete_stored_document(upload_res.get("stored_filename", ""))
+        raise db_err
 
     return {
         "message": f"Document '{doc.document_name}' successfully attached to application {a.reference}.",
@@ -2827,11 +2854,7 @@ async def upload_inspection_evidence(
         raise HTTPException(status_code=404, detail="EVC visit not found.")
     
     upload_res = await process_and_store_upload(file)
-    
-    import hashlib
-    with open(upload_res["stored_filepath"], "rb") as f:
-        file_bytes = f.read()
-        f_hash = hashlib.sha256(file_bytes).hexdigest()
+    f_hash = upload_res.get("file_hash")
     
     evidence = InspectionEvidence(
         visit_id=vid,
@@ -2888,11 +2911,7 @@ async def replace_application_document(
         raise HTTPException(status_code=400, detail="Cannot replace documents on finalized applications.")
     
     upload_res = await process_and_store_upload(file)
-    
-    import hashlib
-    with open(upload_res["stored_filepath"], "rb") as f:
-        file_bytes = f.read()
-        f_hash = hashlib.sha256(file_bytes).hexdigest()
+    f_hash = upload_res.get("file_hash")
     
     # Mark old version as not latest
     old_doc.is_latest = False
@@ -2954,3 +2973,80 @@ def application_decision_alias(
 def get_system_email_status(user: User = Depends(officer_or_admin)):
     """Exposes real SMTP and notification delivery status for administrators."""
     return get_email_status()
+
+
+# --- Storage Diagnostics, Reconciliation & Integrity Endpoints ---
+
+@app.get("/api/storage/diagnostics")
+def storage_diagnostics(user: User = Depends(officer_or_admin)):
+    """Returns local document storage diagnostics and directory health."""
+    return get_storage_diagnostics()
+
+
+@app.get("/api/documents/{did}/integrity")
+def check_document_integrity(
+    did: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Verifies physical file on disk matches its recorded SHA-256 hash."""
+    doc = db.get(Document, did)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    if not doc.file_hash:
+        return {"document_id": did, "integrity": "NO_RECORDED_HASH", "valid": False}
+
+    ref = doc.stored_filename or doc.file_path or doc.document_name
+    valid = verify_file_integrity(ref, doc.file_hash)
+    return {
+        "document_id": did,
+        "document_name": doc.document_name,
+        "file_hash": doc.file_hash,
+        "integrity_verified": valid,
+        "status": "VALID" if valid else "TAMPER_OR_CORRUPT"
+    }
+
+
+@app.post("/api/storage/reconcile")
+def storage_reconcile(db: Session = Depends(get_db), user: User = Depends(admin_only)):
+    """Admin utility to reconcile database document records with disk files."""
+    docs = db.query(Document).all()
+    doc_dicts = [
+        {
+            "id": d.id,
+            "document_name": d.document_name,
+            "stored_filename": d.stored_filename,
+            "file_path": d.file_path,
+            "file_hash": d.file_hash
+        }
+        for d in docs
+    ]
+    return reconcile_storage(doc_dicts)
+
+
+@app.get("/api/evc/evidence/{eid}/download")
+def download_evidence_file(
+    eid: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Downloads original inspection evidence file safely."""
+    ev = db.get(InspectionEvidence, eid)
+    if not ev:
+        raise HTTPException(status_code=404, detail="Inspection evidence not found.")
+
+    try:
+        ref = ev.file_path or ev.file_name
+        resolved_path = resolve_storage_path(ref)
+    except Exception:
+        resolved_path = None
+
+    if not resolved_path or not os.path.exists(resolved_path):
+        raise HTTPException(status_code=404, detail="Original evidence file not found on storage.")
+
+    return FileResponse(
+        path=resolved_path,
+        filename=ev.file_name,
+        media_type="application/octet-stream"
+    )

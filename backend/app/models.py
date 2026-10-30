@@ -79,6 +79,7 @@ class Document(Base):
     application_id: Mapped[int | None] = mapped_column(ForeignKey("applications.id"), nullable=True, index=True)
     institution_name: Mapped[str] = mapped_column(String(200), index=True)
     document_name: Mapped[str] = mapped_column(String(255))
+    stored_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     document_type: Mapped[str] = mapped_column(String(80), default="LEASE_DEED")
     file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     file_size: Mapped[int] = mapped_column(Integer, default=0)
@@ -87,12 +88,17 @@ class Document(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
     is_latest: Mapped[bool] = mapped_column(Boolean, default=True)
     file_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    processing_status: Mapped[str] = mapped_column(String(40), default="COMPLETED")
+    processing_status: Mapped[str] = mapped_column(String(40), default="COMPLETED")  # UPLOADED, QUEUED, PROCESSING, COMPLETED, FAILED, NEEDS_REVIEW
+    ocr_status: Mapped[str | None] = mapped_column(String(40), default="SUCCESS")
     extracted_text: Mapped[str] = mapped_column(Text, default="")
+    extracted_fields: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
+    authenticity_status: Mapped[str] = mapped_column(String(50), default="UNVERIFIED")  # UNVERIFIED, POTENTIAL_AUTHENTICITY_CONCERN, VERIFIED_LEGITIMATE
+    regulatory_status: Mapped[str] = mapped_column(String(50), default="PENDING_EVALUATION")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     ai_findings: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
     ai_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
-    review_status: Mapped[str] = mapped_column(String(40), default="PENDING")  # PENDING, ACCEPTED, CORRECTION_REQUIRED
+    review_status: Mapped[str] = mapped_column(String(40), default="PENDING")  # PENDING, ACCEPTED, CORRECTION_REQUIRED, WAIVED
     reviewer_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -244,4 +250,16 @@ class RegulatoryCategory(Base):
     workflow_sequence_json: Mapped[str] = mapped_column(Text)
     sla_days: Mapped[int] = mapped_column(Integer, default=21)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class EmailDeliveryRecord(Base):
+    __tablename__ = "email_delivery_records"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    recipient: Mapped[str] = mapped_column(String(255), index=True)
+    subject: Mapped[str] = mapped_column(String(255))
+    template_type: Mapped[str] = mapped_column(String(80))
+    application_reference: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(40), default="QUEUED", index=True)  # QUEUED, SENT, DELIVERED, LOGGED_LOCAL, FAILED
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

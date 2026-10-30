@@ -1,7 +1,7 @@
 """
 PRAVAHA — AICTE Regulatory Workflow Notification & Email Service
-Handles asynchronous email delivery, SMTP transport, and template formatting
-for regulatory stage transitions, deficiency notices, and inspection schedules.
+Handles asynchronous email delivery, SMTP transport, template formatting,
+and persistent email delivery auditing in the authoritative database.
 """
 import os
 import smtplib
@@ -20,7 +20,7 @@ SMTP_PASS = os.getenv("SMTP_PASS", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "notifications@pravaha.aicte-india.org")
 EMAIL_ENABLED = os.getenv("EMAIL_ENABLED", "false").lower() in ["true", "1", "yes"]
 
-# Delivery Audit Log (in-memory buffer accessible for diagnostics)
+# In-memory delivery buffer accessible for fast diagnostics
 DELIVERY_LOGS = []
 
 
@@ -31,6 +31,16 @@ def is_email_configured() -> bool:
 
 def get_email_status() -> Dict[str, Any]:
     """Returns email service operational status and diagnostics."""
+    total_db_records = 0
+    try:
+        from .models import EmailDeliveryRecord
+        from .db import SessionLocal, DATABASE_READY
+        if DATABASE_READY:
+            with SessionLocal() as db:
+                total_db_records = db.query(EmailDeliveryRecord).count()
+    except Exception:
+        pass
+
     return {
         "configured": is_email_configured(),
         "enabled": EMAIL_ENABLED,
@@ -38,6 +48,7 @@ def get_email_status() -> Dict[str, Any]:
         "smtp_port": SMTP_PORT,
         "sender": SMTP_FROM,
         "total_attempted": len(DELIVERY_LOGS),
+        "total_persisted_in_db": total_db_records,
         "recent_deliveries": DELIVERY_LOGS[-10:]
     }
 
@@ -46,11 +57,12 @@ def send_workflow_email(
     recipient: str,
     subject: str,
     template_type: str,
-    context: Dict[str, Any]
+    context: Dict[str, Any],
+    db: Optional[Any] = None
 ) -> Dict[str, Any]:
     """
     Sends a formatted regulatory email to institutional applicants or officers.
-    If SMTP is unconfigured, logs the formatted message safely and records delivery audit.
+    Records delivery audit in both memory buffer and authoritative database.
     """
     app_ref = context.get("reference", "N/A")
     inst_name = context.get("institution_name", "Applicant Institution")
@@ -154,5 +166,32 @@ def send_workflow_email(
     DELIVERY_LOGS.append(delivery_record)
     if len(DELIVERY_LOGS) > 100:
         DELIVERY_LOGS.pop(0)
+
+    # Persist in authoritative database
+    try:
+        from .models import EmailDeliveryRecord
+        from .db import SessionLocal, DATABASE_READY
+
+        should_close = False
+        active_db = db
+        if active_db is None and DATABASE_READY:
+            active_db = SessionLocal()
+            should_close = True
+
+        if active_db:
+            rec = EmailDeliveryRecord(
+                recipient=recipient,
+                subject=subject,
+                template_type=template_type,
+                application_reference=app_ref,
+                status=delivery_record["status"],
+                error_message=delivery_record.get("error")
+            )
+            active_db.add(rec)
+            active_db.commit()
+            if should_close:
+                active_db.close()
+    except Exception as persist_err:
+        logger.warning(f"Failed to persist email delivery record to database: {persist_err}")
 
     return delivery_record
