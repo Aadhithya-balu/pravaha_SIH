@@ -29,6 +29,7 @@ interface CommandPaletteProps {
   onSwitchRole: (email: string) => void;
   onOpenGuide: () => void;
   onRunEscalation?: () => void;
+  currentUserRole?: string;
 }
 
 interface PaletteItem {
@@ -49,7 +50,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onSelectApplication,
   onSwitchRole,
   onOpenGuide,
-  onRunEscalation
+  onRunEscalation,
+  currentUserRole
 }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -95,9 +97,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           onNavigateTab('Overview');
         }
       },
-      {
+      ...((currentUserRole !== 'officer' && currentUserRole !== 'evc' && currentUserRole !== 'evc_expert') ? [{
         id: 'nav-applications',
-        category: 'Navigation',
+        category: 'Navigation' as const,
         title: 'Application Register',
         subtitle: 'All technical institution approval dossiers',
         icon: ClipboardList,
@@ -105,10 +107,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           onClose();
           onNavigateTab('Applications');
         }
-      },
-      {
+      }] : []),
+      ...((currentUserRole !== 'evc' && currentUserRole !== 'evc_expert') ? [{
         id: 'nav-scrutiny',
-        category: 'Navigation',
+        category: 'Navigation' as const,
         title: 'AI Document Scrutiny Workspace',
         subtitle: 'Automated OCR extraction & clause discrepancy checks',
         icon: Sparkles,
@@ -116,7 +118,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           onClose();
           onNavigateTab('Document Scrutiny');
         }
-      },
+      }] : []),
       {
         id: 'nav-evc',
         category: 'Navigation',
@@ -161,9 +163,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           onNavigateTab('Reports');
         }
       },
-      {
+      ...(currentUserRole === 'admin' ? [{
         id: 'nav-roles',
-        category: 'Navigation',
+        category: 'Navigation' as const,
         title: 'Role Matrix & Governance',
         subtitle: 'Inspect evaluation persona permissions',
         icon: Shield,
@@ -171,7 +173,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           onClose();
           onNavigateTab('Role Matrix');
         }
-      },
+      }] : []),
     ];
 
     if (onRunEscalation) {
@@ -206,7 +208,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     });
 
     return items;
-  }, [applications, onNavigateTab, onSelectApplication, onSwitchRole, onOpenGuide, onRunEscalation, onClose]);
+  }, [applications, onNavigateTab, onSelectApplication, onSwitchRole, onOpenGuide, onRunEscalation, onClose, currentUserRole]);
 
   // Filtered by query
   const filteredItems = useMemo(() => {

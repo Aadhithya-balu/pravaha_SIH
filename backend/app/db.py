@@ -234,8 +234,35 @@ def run_schema_migrations(eng):
                     if "error_message" not in cols:
                         conn.execute(text("ALTER TABLE documents ADD COLUMN error_message TEXT;"))
 
+                if "users" in tables:
+                    cols = get_cols("users")
+                    if "availability_status" not in cols:
+                        conn.execute(text("ALTER TABLE users ADD COLUMN availability_status VARCHAR(30) DEFAULT 'AVAILABLE';"))
+                    if "expertise" not in cols:
+                        conn.execute(text("ALTER TABLE users ADD COLUMN expertise VARCHAR(255) DEFAULT 'General Engineering, Technical Labs & Infrastructure';"))
+                    if "phone" not in cols:
+                        conn.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR(40);"))
+
                 if "evc_visits" in tables:
                     cols = get_cols("evc_visits")
+                    if "assigned_staff_id" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN assigned_staff_id INTEGER;"))
+                    if "assigned_staff_name" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN assigned_staff_name VARCHAR(120);"))
+                    if "assigned_staff_email" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN assigned_staff_email VARCHAR(255);"))
+                    if "assignment_method" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN assignment_method VARCHAR(30) DEFAULT 'MANUAL';"))
+                    if "assignment_status" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN assignment_status VARCHAR(40) DEFAULT 'ASSIGNMENT_PENDING';"))
+                    if "assignment_reason" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN assignment_reason TEXT;"))
+                    if "decline_reason" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN decline_reason TEXT;"))
+                    if "assigned_at" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN assigned_at DATETIME;"))
+                    if "responded_at" not in cols:
+                        conn.execute(text("ALTER TABLE evc_visits ADD COLUMN responded_at DATETIME;"))
                     if "actual_date" not in cols:
                         conn.execute(text("ALTER TABLE evc_visits ADD COLUMN actual_date DATE;"))
                     if "visit_occurred" not in cols:
@@ -326,6 +353,26 @@ def run_schema_migrations(eng):
                         conn.execute(text("ALTER TABLE stage_remarks ADD COLUMN is_resolved BOOLEAN DEFAULT 0;"))
                     if "resolution_notes" not in cols:
                         conn.execute(text("ALTER TABLE stage_remarks ADD COLUMN resolution_notes TEXT;"))
+
+                # Create evc_assignment_history if missing
+                if "evc_assignment_history" not in tables:
+                    conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS evc_assignment_history (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            application_id INTEGER NOT NULL,
+                            visit_id INTEGER,
+                            staff_id INTEGER NOT NULL,
+                            staff_name VARCHAR(120) NOT NULL,
+                            staff_email VARCHAR(255) NOT NULL,
+                            assignment_method VARCHAR(30) NOT NULL DEFAULT 'MANUAL',
+                            assigned_by VARCHAR(255) NOT NULL,
+                            assignment_status VARCHAR(40) NOT NULL DEFAULT 'ASSIGNMENT_PENDING',
+                            assignment_reason TEXT,
+                            decline_reason TEXT,
+                            assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            responded_at DATETIME
+                        );
+                    """))
 
                 # Create email_delivery_records if missing
                 if "email_delivery_records" not in tables:
@@ -439,6 +486,35 @@ def run_schema_migrations(eng):
                     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS authenticity_status VARCHAR(50) DEFAULT 'UNVERIFIED';",
                     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS regulatory_status VARCHAR(50) DEFAULT 'PENDING_EVALUATION';",
                     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS error_message TEXT;",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS availability_status VARCHAR(30) DEFAULT 'AVAILABLE';",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS expertise VARCHAR(255) DEFAULT 'General Engineering, Technical Labs & Infrastructure';",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(40);",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS assigned_staff_id INTEGER;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS assigned_staff_name VARCHAR(120);",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS assigned_staff_email VARCHAR(255);",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS assignment_method VARCHAR(30) DEFAULT 'MANUAL';",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS assignment_status VARCHAR(40) DEFAULT 'ASSIGNMENT_PENDING';",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS assignment_reason TEXT;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS decline_reason TEXT;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ;",
+                    "ALTER TABLE evc_visits ADD COLUMN IF NOT EXISTS responded_at TIMESTAMPTZ;",
+                    """
+                    CREATE TABLE IF NOT EXISTS public.evc_assignment_history (
+                        id SERIAL PRIMARY KEY,
+                        application_id INTEGER NOT NULL,
+                        visit_id INTEGER,
+                        staff_id INTEGER NOT NULL,
+                        staff_name VARCHAR(120) NOT NULL,
+                        staff_email VARCHAR(255) NOT NULL,
+                        assignment_method VARCHAR(30) NOT NULL DEFAULT 'MANUAL',
+                        assigned_by VARCHAR(255) NOT NULL,
+                        assignment_status VARCHAR(40) NOT NULL DEFAULT 'ASSIGNMENT_PENDING',
+                        assignment_reason TEXT,
+                        decline_reason TEXT,
+                        assigned_at TIMESTAMPTZ DEFAULT NOW(),
+                        responded_at TIMESTAMPTZ
+                    );
+                    """,
                     """
                     CREATE TABLE IF NOT EXISTS public.email_delivery_records (
                         id SERIAL PRIMARY KEY,

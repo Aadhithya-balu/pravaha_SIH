@@ -712,7 +712,7 @@ export default function App() {
         )}
 
         {currentTab === 'Role Matrix' && (
-          <RoleMatrixTab onSwitchRole={handleSwitchRole} />
+          <RoleMatrixTab onSwitchRole={handleSwitchRole} user={user} />
         )}
         </div>
 
@@ -741,6 +741,7 @@ export default function App() {
           onSwitchRole={handleSwitchRole}
           onOpenGuide={() => setIsGuideOpen(true)}
           onRunEscalation={handleRunEscalation}
+          currentUserRole={user?.role}
         />
 
         {/* Application Details & Workflow Timeline Modal */}

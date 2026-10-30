@@ -14,6 +14,9 @@ class User(Base):
     institution_name: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
     region: Mapped[str] = mapped_column(String(80), default="Northern")
     designation: Mapped[str] = mapped_column(String(120), default="Authorized Official")
+    availability_status: Mapped[str] = mapped_column(String(30), default="AVAILABLE")  # AVAILABLE, UNAVAILABLE, ON_LEAVE, BUSY
+    expertise: Mapped[str] = mapped_column(String(255), default="General Engineering, Technical Labs & Infrastructure")
+    phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -185,6 +188,15 @@ class EVCVisit(Base):
     report_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     recommendations: Mapped[str | None] = mapped_column(Text, nullable=True)
     assigned_by: Mapped[str] = mapped_column(String(255), default="Regional Officer")
+    assigned_staff_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    assigned_staff_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    assigned_staff_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    assignment_method: Mapped[str] = mapped_column(String(30), default="MANUAL")  # AI or MANUAL
+    assignment_status: Mapped[str] = mapped_column(String(40), default="ASSIGNMENT_PENDING")  # ASSIGNMENT_PENDING, ACCEPTED, DECLINED, INSPECTION_SCHEDULED, IN_PROGRESS, COMPLETED, REPORT_SUBMITTED, REPORT_VERIFIED, CANCELLED
+    assignment_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decline_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    assigned_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.utcnow)
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     proof_submission_status: Mapped[str] = mapped_column(String(50), default="NOT_SUBMITTED")  # NOT_SUBMITTED, EVIDENCE_UPLOADED, AI_COMPLETED, SUBMITTED, UNDER_REVIEW, ACCEPTED, ADDITIONAL_EVIDENCE_REQUIRED, REJECTED
     proof_submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     proof_declaration: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -303,3 +315,20 @@ class EmailDeliveryRecord(Base):
     status: Mapped[str] = mapped_column(String(40), default="QUEUED", index=True)  # QUEUED, SENT, DELIVERED, LOGGED_LOCAL, FAILED
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class EVCAssignmentHistory(Base):
+    __tablename__ = "evc_assignment_history"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    application_id: Mapped[int] = mapped_column(ForeignKey("applications.id"), index=True)
+    visit_id: Mapped[int | None] = mapped_column(ForeignKey("evc_visits.id"), nullable=True, index=True)
+    staff_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    staff_name: Mapped[str] = mapped_column(String(120))
+    staff_email: Mapped[str] = mapped_column(String(255))
+    assignment_method: Mapped[str] = mapped_column(String(30), default="MANUAL")  # AI or MANUAL
+    assigned_by: Mapped[str] = mapped_column(String(255))
+    assignment_status: Mapped[str] = mapped_column(String(40), default="ASSIGNMENT_PENDING")
+    assignment_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decline_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    assigned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

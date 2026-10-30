@@ -30,6 +30,9 @@ class UserOut(BaseModel):
     institution_name: Optional[str] = None
     region: str
     designation: str
+    availability_status: Optional[str] = "AVAILABLE"
+    expertise: Optional[str] = "General Engineering, Technical Labs & Infrastructure"
+    phone: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -308,6 +311,15 @@ class EVCVisitOut(BaseModel):
     report_summary: Optional[str] = None
     recommendations: Optional[str] = None
     assigned_by: str
+    assigned_staff_id: Optional[int] = None
+    assigned_staff_name: Optional[str] = None
+    assigned_staff_email: Optional[str] = None
+    assignment_method: Optional[str] = "MANUAL"
+    assignment_status: Optional[str] = "ASSIGNMENT_PENDING"
+    assignment_reason: Optional[str] = None
+    decline_reason: Optional[str] = None
+    assigned_at: Optional[datetime] = None
+    responded_at: Optional[datetime] = None
     created_at: datetime
     evidence_count: Optional[int] = 0
     proof_submission_status: Optional[str] = "NOT_SUBMITTED"
@@ -756,3 +768,71 @@ class RegulatoryCategoryOut(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class EVCStaffOut(BaseModel):
+    id: int
+    name: str
+    email: str
+    role: str
+    region: str
+    designation: str
+    is_active: bool = True
+    availability_status: str = "AVAILABLE"
+    expertise: str = "General Engineering, Technical Labs & Infrastructure"
+    phone: Optional[str] = None
+    active_assignments_count: int = 0
+    previous_inspections_count: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EVCAssignmentHistoryOut(BaseModel):
+    id: int
+    application_id: int
+    visit_id: Optional[int] = None
+    staff_id: int
+    staff_name: str
+    staff_email: str
+    assignment_method: str
+    assigned_by: str
+    assignment_status: str
+    assignment_reason: Optional[str] = None
+    decline_reason: Optional[str] = None
+    assigned_at: datetime
+    responded_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EVCAssignRequest(BaseModel):
+    staff_id: int
+    scheduled_date: Optional[date] = None
+    proposed_date: Optional[date] = None
+    visit_mode: str = "PHYSICAL"
+    committee_members: Optional[str] = None
+    location_details: Optional[str] = None
+    remarks: Optional[str] = None
+
+
+class EVCAutoAssignRequest(BaseModel):
+    scheduled_date: Optional[date] = None
+    proposed_date: Optional[date] = None
+    visit_mode: str = "PHYSICAL"
+    location_details: Optional[str] = None
+    remarks: Optional[str] = None
+
+
+class EVCRespondRequest(BaseModel):
+    action: str = Field(..., description="ACCEPT or DECLINE")
+    reason: Optional[str] = None
+
+
+class EVCStaffAvailabilityUpdateRequest(BaseModel):
+    availability_status: str = Field(..., description="AVAILABLE, UNAVAILABLE, or ON_LEAVE")
+
+
+class EVCEligibilityOut(BaseModel):
+    eligible: bool
+    reasons: List[str] = []
+    pending_items: List[str] = []

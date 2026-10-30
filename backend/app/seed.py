@@ -44,7 +44,10 @@ def seed_database(db: Session, force: bool = False):
             "name": "Prof. S. Ramanujan",
             "role": "evc_expert",
             "region": "Northern",
-            "designation": "Senior EVC Committee Chairperson"
+            "designation": "Senior EVC Committee Chairperson",
+            "availability_status": "AVAILABLE",
+            "expertise": "Computer Science, AI & Machine Learning Labs, Computing Facilities, Northern Engineering Infrastructure",
+            "phone": "+91-9810012345"
         },
         {
             "email": "admin@demo.local",
@@ -65,7 +68,20 @@ def seed_database(db: Session, force: bool = False):
             "name": "Dr. Priya Sharma",
             "role": "evc_expert",
             "region": "Southern",
-            "designation": "EVC Panel Member (Southern Region)"
+            "designation": "EVC Panel Member (Southern Region)",
+            "availability_status": "AVAILABLE",
+            "expertise": "Electronics & Communications, Electrical Laboratories, Fire Safety & Structural Soundness",
+            "phone": "+91-9840054321"
+        },
+        {
+            "email": "evc_west@demo.local",
+            "name": "Prof. Amit Joshi",
+            "role": "evc_expert",
+            "region": "Western",
+            "designation": "EVC Subject Expert (Western Region)",
+            "availability_status": "AVAILABLE",
+            "expertise": "Mechanical Workshops, Civil Engineering, Chemical & Pharmacy Labs, Western Region Campus Norms",
+            "phone": "+91-9820067890"
         },
         {
             "email": "officer_south@demo.local",
@@ -86,7 +102,10 @@ def seed_database(db: Session, force: bool = False):
                 role=u_data["role"],
                 institution_name=u_data.get("institution_name"),
                 region=u_data["region"],
-                designation=u_data["designation"]
+                designation=u_data["designation"],
+                availability_status=u_data.get("availability_status", "AVAILABLE"),
+                expertise=u_data.get("expertise", "General Engineering, Technical Labs & Infrastructure"),
+                phone=u_data.get("phone", "+91-9810012345")
             )
             db.add(new_u)
         else:
@@ -95,6 +114,12 @@ def seed_database(db: Session, force: bool = False):
             existing_u.designation = u_data["designation"]
             if u_data.get("institution_name"):
                 existing_u.institution_name = u_data["institution_name"]
+            if u_data.get("availability_status"):
+                existing_u.availability_status = u_data["availability_status"]
+            if u_data.get("expertise"):
+                existing_u.expertise = u_data["expertise"]
+            if u_data.get("phone"):
+                existing_u.phone = u_data["phone"]
 
     db.flush()
     users = db.query(User).all()
