@@ -47,10 +47,23 @@ if DATABASE_PROVIDER == "sqlite":
         URL = f"sqlite:///{abs_path}"
 else:
     # Supabase / PostgreSQL provider
-    if raw_url.startswith("postgres://"):
-        URL = raw_url.replace("postgres://", "postgresql://", 1)
-    else:
-        URL = raw_url
+    import urllib.parse
+    norm_url = raw_url
+    if norm_url.startswith("postgres://"):
+        norm_url = norm_url.replace("postgres://", "postgresql://", 1)
+
+    # Automatically fix unencoded '@' inside password (e.g. Pravaha@2026 -> Pravaha%402026)
+    if norm_url.startswith("postgresql://") and "://" in norm_url:
+        proto, rest = norm_url.split("://", 1)
+        if rest.count("@") > 1:
+            user_pass, host_rest = rest.rsplit("@", 1)
+            if ":" in user_pass:
+                user, password = user_pass.split(":", 1)
+                password = urllib.parse.unquote(password)
+                quoted_pass = urllib.parse.quote(password, safe="")
+                norm_url = f"{proto}://{user}:{quoted_pass}@{host_rest}"
+
+    URL = norm_url
 
 # Production Safety Assertion: Never silently use SQLite in production
 if APP_ENV == "production" and DATABASE_PROVIDER == "sqlite":
