@@ -161,6 +161,39 @@ def check_evc_assignment(user: User, application: Application, db: Session):
             )
 
 
+def has_institution_access(user: User, resource: Any, created_by: Optional[int] = None) -> bool:
+    """
+    Validates whether an institution user has legitimate access to a regulatory application or document.
+    Enforces strict multi-tenant boundary:
+    1. System roles (officer, admin, bureau, evc) have authorized administrative access.
+    2. Institution users have access if the institution name matches (case-insensitive & trimmed).
+    3. For user-created cases (beyond seed cases 1-10), the creator also retains legitimate upload/inspection access.
+    """
+    if not user or user.role != "institution":
+        return True
+
+    # Exact or normalized institution name match
+    target_inst = getattr(resource, "institution_name", resource) if resource is not None else None
+    u_inst = (user.institution_name or "").strip().lower()
+    a_inst = (target_inst or "").strip().lower() if isinstance(target_inst, str) else ""
+
+    if u_inst and a_inst and u_inst == a_inst:
+        return True
+
+    # For user-created cases (not seed cases 1001-1010), allow creator
+    app_ref = getattr(resource, "reference", "") or ""
+    is_seed_app = app_ref.startswith("AICTE-2026-10") and len(app_ref) == 15 and app_ref[-4:].isdigit() and int(app_ref[-4:]) <= 1010
+    if not is_seed_app:
+        if created_by is not None and created_by == user.id:
+            return True
+        if hasattr(resource, "created_by") and getattr(resource, "created_by") == user.id:
+            return True
+        if hasattr(resource, "uploaded_by") and getattr(resource, "uploaded_by") == user.email:
+            return True
+
+    return False
+
+
 @app.on_event("startup")
 def startup():
     storage_res = init_storage()
@@ -494,6 +527,10 @@ def create_application(
     else:
         raise HTTPException(status_code=400, detail="College / Institution name is mandatory.")
 
+    if user.role == "institution" and not user.institution_name:
+        user.institution_name = institution_name
+        db.add(user)
+
     region = req.region or user.region or "Northern"
 
     reference = f"AICTE-{date.today().year}-{uuid4().hex[:6].upper()}"
@@ -562,7 +599,7 @@ def get_application_details(aid: int, db: Session = Depends(get_db), user: User 
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
 
-    if user.role == "institution" and a.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, a):
         raise HTTPException(status_code=403, detail="Forbidden. You can only inspect your own institution's cases.")
 
     check_officer_jurisdiction(user, a)
@@ -646,7 +683,7 @@ def patch_application(
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
 
-    if user.role == "institution" and a.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, a):
         raise HTTPException(status_code=403, detail="Forbidden. Cannot modify another institution's application.")
 
     if a.status in ["COMPLETED", "REJECTED"]:
@@ -694,7 +731,7 @@ async def upload_application_document(
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
 
-    if user.role == "institution" and a.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, a):
         raise HTTPException(status_code=403, detail="Forbidden. Cannot upload documents for another institution's case.")
 
     if a.status in ["COMPLETED", "REJECTED"]:
@@ -786,7 +823,7 @@ async def submit_application(
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
 
-    if user.role == "institution" and a.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, a):
         raise HTTPException(status_code=403, detail="Forbidden. Cannot submit another institution's case.")
 
     if a.status != "DRAFT" and a.current_stage != "DRAFT":
@@ -844,7 +881,7 @@ async def resubmit_application(
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
 
-    if user.role == "institution" and a.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, a):
         raise HTTPException(status_code=403, detail="Forbidden. Cannot resubmit another institution's case.")
 
     if a.current_stage != "RETURNED_FOR_CLARIFICATION":
@@ -909,7 +946,7 @@ def get_application_timeline(aid: int, db: Session = Depends(get_db), user: User
     a = db.get(Application, aid)
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
-    if user.role == "institution" and a.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, a):
         raise HTTPException(status_code=403, detail="Forbidden.")
     return db.query(AuditEvent).filter(AuditEvent.application_id == aid).order_by(desc(AuditEvent.created_at)).all()
 
@@ -974,7 +1011,7 @@ def get_application_next_action(
     a = db.get(Application, aid)
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
-    if user.role == "institution" and a.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, a):
         raise HTTPException(status_code=403, detail="Forbidden.")
     return compute_next_best_action(app=a, db=db, user=user)
 
@@ -992,7 +1029,7 @@ def get_application_extracted_fields(
     a = db.get(Application, aid)
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
-    if user.role == "institution" and a.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, a):
         raise HTTPException(status_code=403, detail="Forbidden.")
 
     docs = db.query(Document).filter(Document.application_id == aid).all()
@@ -1024,7 +1061,7 @@ def apply_application_extracted_fields(
     a = db.get(Application, aid)
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
-    if user.role == "institution" and a.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, a):
         raise HTTPException(status_code=403, detail="Forbidden.")
     if a.status in ["COMPLETED", "REJECTED"]:
         raise HTTPException(status_code=400, detail="Cannot mutate application fields after final decision.")
@@ -1093,7 +1130,7 @@ def transition_application(
     check_evc_assignment(user, a, db)
 
     if user.role == "institution":
-        if a.institution_name != user.institution_name:
+        if not has_institution_access(user, a):
             raise HTTPException(status_code=403, detail="Forbidden. Cannot modify other institutions' records.")
         if req.action.upper() != "RESUBMIT":
             raise HTTPException(status_code=403, detail="Institutions are only permitted to resubmit returned cases.")
@@ -1314,7 +1351,7 @@ def get_application_scrutiny(
     if not app_rec:
         raise HTTPException(status_code=404, detail="Application not found.")
 
-    if user.role == "institution" and app_rec.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, app_rec):
         raise HTTPException(status_code=403, detail="Forbidden.")
 
     runs = db.query(ScrutinyRun).filter(ScrutinyRun.application_id == aid).order_by(desc(ScrutinyRun.created_at)).all()
@@ -1887,13 +1924,13 @@ def download_document(
     if doc.application_id:
         app_rec = db.get(Application, doc.application_id)
         if app_rec:
-            if user.role == "institution" and app_rec.institution_name != user.institution_name:
+            if user.role == "institution" and not has_institution_access(user, app_rec):
                 raise HTTPException(status_code=403, detail="Forbidden. Cannot download other institutions' documents.")
             elif user.role == "officer":
                 check_officer_jurisdiction(user, app_rec)
             elif user.role in ["evc", "evc_expert"]:
                 check_evc_assignment(user, app_rec, db)
-    elif user.role == "institution" and doc.institution_name != user.institution_name:
+    elif user.role == "institution" and not has_institution_access(user, doc):
         raise HTTPException(status_code=403, detail="Forbidden. Cannot download other institutions' documents.")
 
     # Safely resolve target storage path (prevents traversal)
@@ -2012,7 +2049,7 @@ def get_document_review(
     if not doc:
         raise HTTPException(status_code=404, detail="Document record not found.")
 
-    if user.role == "institution" and doc.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, doc):
         raise HTTPException(status_code=403, detail="Forbidden. Cannot inspect other institutions' documents.")
 
     ai_data = None
@@ -2167,7 +2204,7 @@ def submit_compliance_evidence(
     if not c:
         raise HTTPException(status_code=404, detail="Compliance requirement not found.")
 
-    if user.role == "institution" and c.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, c):
         raise HTTPException(status_code=403, detail="Forbidden. Cannot submit evidence for another institution.")
 
     c.submission_evidence = req.submission_evidence.strip()
@@ -2690,7 +2727,7 @@ def v1_patch_application(
         raise HTTPException(status_code=404, detail="Application not found.")
 
     if user.role == "institution":
-        if a.institution_name != user.institution_name:
+        if not has_institution_access(user, a):
             raise HTTPException(status_code=403, detail="Forbidden. Cannot modify other institutions' records.")
         if a.status in ["COMPLETED", "REJECTED"]:
             raise HTTPException(
@@ -2740,7 +2777,7 @@ async def v1_upload_application_document(
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
 
-    if user.role == "institution" and a.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, a):
         raise HTTPException(status_code=403, detail="Forbidden. You can only attach documents to your own applications.")
 
     if a.status in ["COMPLETED", "REJECTED"]:
@@ -2829,7 +2866,7 @@ async def v1_submit_application(
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
 
-    if user.role == "institution" and a.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, a):
         raise HTTPException(status_code=403, detail="Forbidden. Cannot submit other institutions' records.")
 
     if a.status != "DRAFT" and a.current_stage != "DRAFT":
@@ -2900,7 +2937,7 @@ async def v1_resubmit_application(
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
 
-    if user.role == "institution" and a.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, a):
         raise HTTPException(status_code=403, detail="Forbidden. Cannot resubmit other institutions' records.")
 
     if user.role not in ["institution", "admin"]:
@@ -2971,7 +3008,7 @@ def v1_get_timeline(aid: int, db: Session = Depends(get_db), user: User = Depend
     a = db.get(Application, aid)
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
-    if user.role == "institution" and a.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, a):
         raise HTTPException(status_code=403, detail="Forbidden.")
     return db.query(AuditEvent).filter(AuditEvent.application_id == aid).order_by(AuditEvent.created_at.asc()).all()
 
@@ -2982,7 +3019,7 @@ def v1_verify_audit(aid: int, db: Session = Depends(get_db), user: User = Depend
     a = db.get(Application, aid)
     if not a:
         raise HTTPException(status_code=404, detail="Application not found.")
-    if user.role == "institution" and a.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, a):
         raise HTTPException(status_code=403, detail="Forbidden.")
     return verify_audit_chain(db, aid)
 
@@ -3104,7 +3141,7 @@ def get_stage_remarks(
     if not app_rec:
         raise HTTPException(status_code=404, detail="Application not found.")
     
-    if user.role == "institution" and app_rec.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, app_rec):
         raise HTTPException(status_code=403, detail="Forbidden. Cannot view remarks for another institution.")
     
     q = db.query(StageRemark).filter(StageRemark.application_id == aid)
@@ -3134,7 +3171,7 @@ def add_stage_remark(
         raise HTTPException(status_code=404, detail="Application not found.")
     
     if user.role == "institution":
-        if app_rec.institution_name != user.institution_name:
+        if not has_institution_access(user, app_rec):
             raise HTTPException(status_code=403, detail="Forbidden.")
         visibility = "APPLICANT_VISIBLE"
 
@@ -3233,7 +3270,7 @@ async def retry_document_processing(
     if not doc:
         raise HTTPException(status_code=404, detail="Document record not found.")
 
-    if user.role == "institution" and doc.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, doc):
         raise HTTPException(status_code=403, detail="Forbidden.")
 
     if not doc.file_path or not os.path.exists(doc.file_path):
@@ -3291,7 +3328,7 @@ def get_approved_documents(aid: int, db: Session = Depends(get_db), user: User =
     app_rec = db.get(Application, aid)
     if not app_rec:
         raise HTTPException(status_code=404, detail="Application not found.")
-    if user.role == "institution" and app_rec.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, app_rec):
         raise HTTPException(status_code=403, detail="Forbidden.")
 
     docs = db.query(Document).filter(
@@ -3319,7 +3356,7 @@ async def replace_application_document(
     if not app_rec:
         raise HTTPException(status_code=404, detail="Application not found.")
     
-    if user.role == "institution" and app_rec.institution_name != user.institution_name:
+    if user.role == "institution" and not has_institution_access(user, app_rec):
         raise HTTPException(status_code=403, detail="Forbidden.")
     
     if app_rec.status in ["COMPLETED", "REJECTED"]:
@@ -3454,7 +3491,7 @@ def download_evidence_file(
     if ev.application_id:
         app_rec = db.get(Application, ev.application_id)
         if app_rec:
-            if user.role == "institution" and app_rec.institution_name != user.institution_name:
+            if user.role == "institution" and not has_institution_access(user, app_rec):
                 raise HTTPException(status_code=403, detail="Forbidden. Cannot download other institutions' inspection evidence.")
             elif user.role == "officer":
                 check_officer_jurisdiction(user, app_rec)

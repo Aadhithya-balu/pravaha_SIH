@@ -58,6 +58,12 @@ export async function apiUpload<T = any>(path: string, formData: FormData): Prom
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      localStorage.removeItem("ps4_token");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("auth:expired"));
+      }
+    }
     const message = errorBody.detail || `Upload failed with status ${res.status}`;
     throw new Error(message);
   }
