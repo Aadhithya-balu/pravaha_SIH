@@ -91,7 +91,10 @@ else:
     # PostgreSQL / Supabase pool configuration
     engine_kwargs["pool_pre_ping"] = True
     engine_kwargs["pool_recycle"] = 300
-    engine_kwargs["connect_args"] = {"connect_timeout": 6}
+    engine_kwargs["connect_args"] = {
+        "connect_timeout": 6,
+        "prepare_threshold": None
+    }
     print(f"[DATABASE] Environment: {APP_ENV.upper()} | Provider: SUPABASE (PostgreSQL Pooler)", flush=True)
 
 try:
