@@ -20,7 +20,8 @@ from .document_storage import init_storage, resolve_storage_path, get_storage_di
 from .models import (
     User, Institution, Application, AuditEvent, Document, EVCVisit,
     ComplianceItem, Alert, ScrutinyRun, ScrutinyFinding, CorrectionRequest,
-    StageRemark, InspectionEvidence, RegulatoryCategory, EmailDeliveryRecord
+    StageRemark, InspectionEvidence, RegulatoryCategory, EmailDeliveryRecord,
+    EVCAssignmentHistory
 )
 from .schemas import (
     EVCLocationCaptureRequest, EVCProofSubmitRequest, EVCProofVerifyRequest, EVCVisitProofDossierOut,
@@ -35,7 +36,9 @@ from .schemas import (
     OfficerRescrutinyComplete, OfficerAdvanceStage, OfficerDecisionRequest,
     FindingDispositionRequest, NextBestActionOut, CandidateFieldOut,
     ApplyExtractedFieldsRequest, BottleneckAnalyticsOut,
-    ScrutinyFindingDispositionUpdate, ScrutinyFindingOut, ScrutinyRunOut, DocumentReviewOut, RecentAuditEventOut
+    ScrutinyFindingDispositionUpdate, ScrutinyFindingOut, ScrutinyRunOut, DocumentReviewOut, RecentAuditEventOut,
+    EVCStaffOut, EVCAssignmentHistoryOut, EVCAssignRequest, EVCAutoAssignRequest, EVCRespondRequest,
+    EVCStaffAvailabilityUpdateRequest, EVCEligibilityOut
 )
 from .workflow import (
     get_available_transitions, validate_transition, TRANSITION_RULES,
@@ -122,6 +125,16 @@ officer_or_admin = require_roles(["officer", "bureau", "admin"])
 bureau_or_admin = require_roles(["bureau", "admin"])
 evc_or_officer = require_roles(["evc_expert", "officer", "admin"])
 admin_only = require_roles(["admin"])
+
+
+def strict_admin_only(user: User = Depends(get_current_user)) -> User:
+    """Strict Admin-only authorization dependency (strictly restricted to admin)."""
+    if user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden: Administrative privileges strictly required for this operation."
+        )
+    return user
 
 
 def check_officer_jurisdiction(user: User, application: Application):
@@ -2276,11 +2289,704 @@ def list_evc_visits(db: Session = Depends(get_db), user: User = Depends(get_curr
     elif user.role in ["evc", "evc_expert"]:
         q = q.filter(
             or_(
+                EVCVisit.assigned_staff_id == user.id,
+                EVCVisit.assigned_staff_email == user.email,
                 EVCVisit.assigned_by == user.email,
                 EVCVisit.committee_members.ilike(f"%{user.email}%"),
                 EVCVisit.committee_members.ilike(f"%{user.name}%")
             )
         )
+
+
+# =====================================================================
+# EVC STAFF ALLOCATION, ELIGIBILITY, AND ASSIGNMENT ENGINE
+# =====================================================================
+
+def check_application_evc_eligibility(app_rec: Application, db: Session) -> dict:
+    """
+    Checks if an application satisfies all statutory conditions for EVC inspection allocation:
+    - Scrutiny must be completed
+    - No unresolved mandatory deficiencies (officer_disposition must be ACCEPTED or WAIVED)
+    - Mandatory documents uploaded
+    - No active duplicate EVC assignment
+    """
+    reasons = []
+    pending_items = []
+    is_eligible = True
+
+    # 1. Stage Check
+    if app_rec.current_stage in ["DRAFT", "SUBMITTED"]:
+        is_eligible = False
+        reasons.append(f"Application is in '{app_rec.current_stage}' stage. Initial regulatory scrutiny must be completed first.")
+        pending_items.append("Complete initial Scrutiny")
+
+    # 2. Scrutiny Execution Check
+    scrutiny_run_count = db.query(ScrutinyRun).filter(ScrutinyRun.application_id == app_rec.id).count()
+    if scrutiny_run_count == 0 and app_rec.current_stage not in ["EVC_PENDING", "EVC_SCHEDULED"]:
+        is_eligible = False
+        reasons.append("Automated regulatory scrutiny pipeline has not been executed yet.")
+        pending_items.append("Execute Regulatory Scrutiny")
+
+    # 3. Unresolved Deficiencies Check
+    unresolved_deficiencies = db.query(ScrutinyFinding).filter(
+        ScrutinyFinding.application_id == app_rec.id,
+        ScrutinyFinding.severity == "DEFICIENCY",
+        ScrutinyFinding.officer_disposition.notin_(["ACCEPTED", "WAIVED"])
+    ).all()
+    if unresolved_deficiencies:
+        is_eligible = False
+        reasons.append(f"{len(unresolved_deficiencies)} unresolved mandatory deficiency finding(s) require officer waiver or applicant rectification.")
+        pending_items.append(f"Resolve {len(unresolved_deficiencies)} Deficiencies")
+
+    # 4. Mandatory Documents Check
+    doc_count = db.query(Document).filter(Document.application_id == app_rec.id).count()
+    if doc_count == 0:
+        is_eligible = False
+        reasons.append("No regulatory documents uploaded. Institutional records and title deeds must be submitted.")
+        pending_items.append("Upload Mandatory Documents")
+
+    # 5. Active EVC Assignment Check
+    existing_active_visit = db.query(EVCVisit).filter(
+        EVCVisit.application_id == app_rec.id,
+        EVCVisit.status.in_(["SCHEDULED", "IN_PROGRESS"]),
+        EVCVisit.assignment_status.in_(["ASSIGNMENT_PENDING", "ACCEPTED", "INSPECTION_SCHEDULED", "IN_PROGRESS"])
+    ).first()
+    if existing_active_visit:
+        is_eligible = False
+        reasons.append(f"Application already has an active EVC inspection assignment (Visit #{existing_active_visit.id}, Inspector: {existing_active_visit.assigned_staff_name or existing_active_visit.committee_members}, Status: {existing_active_visit.assignment_status}).")
+        pending_items.append("Active Assignment In Progress")
+
+    if is_eligible and not reasons:
+        reasons.append("Application satisfies all APH requirements. Scrutiny cleared without unresolved deficiencies. Ready for EVC staff allocation.")
+
+    return {
+        "eligible": is_eligible,
+        "reasons": reasons,
+        "pending_items": pending_items
+    }
+
+
+def run_ai_staff_allocation(app_rec: Application, scheduled_date: date, db: Session) -> tuple[User, str, int]:
+    """
+    Explainable EVC Staff Allocation Algorithm:
+    1. Filters active EVC experts marked as AVAILABLE.
+    2. Excludes staff with conflicting scheduled inspections on `scheduled_date`.
+    3. Evaluates regional proximity (match with institution region).
+    4. Evaluates workload (prefers lower active assignment count).
+    5. Evaluates expertise match against application type and notes.
+    Returns (best_staff_user, explainable_rationale, match_score).
+    """
+    candidates = db.query(User).filter(
+        User.role.in_(["evc", "evc_expert"]),
+        User.is_active == True,
+        User.availability_status == "AVAILABLE"
+    ).all()
+
+    if not candidates:
+        raise HTTPException(
+            status_code=422,
+            detail="No Available Staff: All registered EVC inspection experts are currently marked unavailable, on leave, or inactive. Manual assignment or later scheduling required."
+        )
+
+    eligible_scored = []
+    for cand in candidates:
+        # Check conflict on the scheduled date
+        conflict = db.query(EVCVisit).filter(
+            EVCVisit.assigned_staff_id == cand.id,
+            EVCVisit.scheduled_date == scheduled_date,
+            EVCVisit.status.in_(["SCHEDULED", "IN_PROGRESS"]),
+            EVCVisit.assignment_status.in_(["ACCEPTED", "ASSIGNMENT_PENDING", "INSPECTION_SCHEDULED", "IN_PROGRESS"])
+        ).first()
+        if conflict:
+            continue
+
+        # Count active workload
+        active_count = db.query(EVCVisit).filter(
+            EVCVisit.assigned_staff_id == cand.id,
+            EVCVisit.status.in_(["SCHEDULED", "IN_PROGRESS"]),
+            EVCVisit.assignment_status.in_(["ASSIGNMENT_PENDING", "ACCEPTED", "INSPECTION_SCHEDULED", "IN_PROGRESS"])
+        ).count()
+
+        # Workload limit: maximum 5 active assignments per inspector
+        if active_count >= 5:
+            continue
+
+        score = 100
+        reasons_list = ["Staff active & confirmed available"]
+
+        # Proximity match
+        if cand.region and app_rec.region and cand.region.lower() == app_rec.region.lower():
+            score += 40
+            reasons_list.append(f"{cand.region} jurisdictional proximity (+40 pts)")
+        elif cand.region == "HQ":
+            score += 20
+            reasons_list.append("National Headquarters observer pool (+20 pts)")
+
+        # Workload preference
+        workload_penalty = active_count * 15
+        score -= workload_penalty
+        if active_count == 0:
+            score += 20
+            reasons_list.append("Zero current active workload (+20 pts)")
+        else:
+            reasons_list.append(f"{active_count} active case(s) (-{workload_penalty} pts)")
+
+        # Expertise match
+        expertise_str = (cand.expertise or "").lower()
+        app_context = f"{app_rec.application_type} {app_rec.notes or ''}".lower()
+        matched_skills = []
+        for kw in ["ai", "computing", "computer", "engineering", "infrastructure", "civil", "mechanical", "electrical", "lab", "safety", "management"]:
+            if kw in expertise_str and kw in app_context:
+                matched_skills.append(kw)
+        if matched_skills:
+            score += 25
+            reasons_list.append(f"Domain expertise match: {', '.join(matched_skills)} (+25 pts)")
+
+        eligible_scored.append((score, cand, active_count, ", ".join(reasons_list)))
+
+    if not eligible_scored:
+        raise HTTPException(
+            status_code=422,
+            detail=f"No Available Staff: All {len(candidates)} registered EVC experts have scheduling conflicts on {scheduled_date} or exceeded workload limits. Please choose another date or assign manually."
+        )
+
+    # Sort descending by score, then ascending by active workload
+    eligible_scored.sort(key=lambda x: (x[0], -x[2]), reverse=True)
+    best_score, best_cand, best_workload, reasons_str = eligible_scored[0]
+
+    rationale = f"AI Auto-Assigned {best_cand.name} (Allocation Score: {best_score}) based on: {reasons_str}."
+    return best_cand, rationale, best_score
+
+
+@app.get("/api/applications/{aid}/evc-eligibility", response_model=EVCEligibilityOut)
+@app.get("/api/v1/applications/{aid}/evc-eligibility", response_model=EVCEligibilityOut)
+def get_evc_eligibility(aid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Inspects and returns eligibility verification for EVC staff allocation."""
+    app_rec = db.get(Application, aid)
+    if not app_rec:
+        raise HTTPException(status_code=404, detail="Application not found.")
+    return check_application_evc_eligibility(app_rec, db)
+
+
+@app.get("/api/evc/staff", response_model=List[EVCStaffOut])
+@app.get("/api/v1/evc/staff", response_model=List[EVCStaffOut])
+def list_evc_staff(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Retrieves all registered EVC inspection staff with live availability, expertise, and workload metrics."""
+    staff_users = db.query(User).filter(User.role.in_(["evc", "evc_expert"])).order_by(User.name).all()
+    res = []
+    for s in staff_users:
+        active_count = db.query(EVCVisit).filter(
+            EVCVisit.assigned_staff_id == s.id,
+            EVCVisit.status.in_(["SCHEDULED", "IN_PROGRESS"]),
+            EVCVisit.assignment_status.in_(["ASSIGNMENT_PENDING", "ACCEPTED", "INSPECTION_SCHEDULED", "IN_PROGRESS"])
+        ).count()
+        prev_count = db.query(EVCVisit).filter(
+            EVCVisit.assigned_staff_id == s.id,
+            EVCVisit.status == "COMPLETED"
+        ).count()
+        res.append(EVCStaffOut(
+            id=s.id,
+            name=s.name,
+            email=s.email,
+            role=s.role,
+            region=s.region,
+            designation=s.designation,
+            is_active=s.is_active,
+            availability_status=getattr(s, "availability_status", "AVAILABLE") or "AVAILABLE",
+            expertise=getattr(s, "expertise", "General Engineering, Technical Labs & Infrastructure") or "General Engineering, Technical Labs & Infrastructure",
+            phone=getattr(s, "phone", None),
+            active_assignments_count=active_count,
+            previous_inspections_count=prev_count
+        ))
+    return res
+
+
+@app.post("/api/applications/{aid}/evc/auto-assign", response_model=EVCVisitOut)
+@app.post("/api/v1/applications/{aid}/evc/auto-assign", response_model=EVCVisitOut)
+def evc_ai_auto_assign(
+    aid: int,
+    req: EVCAutoAssignRequest = EVCAutoAssignRequest(),
+    db: Session = Depends(get_db),
+    user: User = Depends(officer_or_admin)
+):
+    """
+    Officer-triggered AI Auto Assignment:
+    1. Validates application eligibility.
+    2. Runs explainable AI matching algorithm to select the best available expert.
+    3. Saves assignment with AI rationale.
+    4. Notifies assigned staff member and logs audit trail.
+    """
+    app_rec = db.get(Application, aid)
+    if not app_rec:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    if user.role == "officer":
+        check_officer_jurisdiction(user, app_rec)
+
+    # 1. Eligibility validation
+    eligibility = check_application_evc_eligibility(app_rec, db)
+    if not eligibility["eligible"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Application is not eligible for EVC staff assignment: {'; '.join(eligibility['reasons'])}"
+        )
+
+    # 2. Run AI allocation
+    sched_date = req.scheduled_date or getattr(req, 'proposed_date', None) or (date.today() + timedelta(days=7))
+    best_staff, rationale, match_score = run_ai_staff_allocation(app_rec, sched_date, db)
+
+    # 3. Create or update EVCVisit
+    committee_str = f"{best_staff.name} (Chairperson & Lead Expert), AICTE Regional Nominee"
+    loc_details = req.location_details or f"{app_rec.institution_name} Campus, {app_rec.region} Region"
+
+    visit = EVCVisit(
+        application_id=app_rec.id,
+        institution_name=app_rec.institution_name,
+        committee_members=committee_str,
+        scheduled_date=sched_date,
+        visit_mode=req.visit_mode or "PHYSICAL",
+        location_details=loc_details,
+        status="SCHEDULED",
+        assigned_by=user.email,
+        assigned_staff_id=best_staff.id,
+        assigned_staff_name=best_staff.name,
+        assigned_staff_email=best_staff.email,
+        assignment_method="AI",
+        assignment_status="ASSIGNMENT_PENDING",
+        assignment_reason=rationale,
+        assigned_at=datetime.utcnow()
+    )
+    db.add(visit)
+    db.flush()
+
+    # 4. Record in EVCAssignmentHistory
+    hist = EVCAssignmentHistory(
+        application_id=app_rec.id,
+        visit_id=visit.id,
+        staff_id=best_staff.id,
+        staff_name=best_staff.name,
+        staff_email=best_staff.email,
+        assignment_method="AI",
+        assigned_by=user.email,
+        assignment_status="ASSIGNMENT_PENDING",
+        assignment_reason=rationale,
+        assigned_at=datetime.utcnow()
+    )
+    db.add(hist)
+
+    # 5. Create notification for assigned EVC staff
+    db.add(Alert(
+        title=f"New EVC Assignment: {app_rec.institution_name}",
+        message=f"You have been allocated an EVC inspection for {app_rec.institution_name} ({app_rec.reference}) scheduled on {sched_date}. Please review and Accept or Decline.",
+        severity="HIGH",
+        target_role="evc_expert",
+        recipient_user_id=best_staff.id,
+        institution_name=app_rec.institution_name,
+        application_id=app_rec.id,
+        trigger_type="EVC_ASSIGNMENT"
+    ))
+
+    # 6. Record Audit Event & Stage Remark
+    prev_stg = app_rec.current_stage
+    app_rec.current_stage = "EVC_SCHEDULED"
+    app_rec.assigned_to = best_staff.name
+    app_rec.assigned_role = "evc_expert"
+
+    record_audit_event(
+        db=db,
+        application_id=app_rec.id,
+        actor=user.email,
+        actor_role=user.role,
+        action="AI_AUTO_ASSIGN_EVC",
+        from_stage=prev_stg,
+        to_stage="EVC_SCHEDULED",
+        details=f"AI Auto-assigned {best_staff.name} for EVC inspection on {sched_date}. {rationale}"
+    )
+
+    db.add(StageRemark(
+        application_id=app_rec.id,
+        stage="EVC_SCHEDULED",
+        author_name=user.name,
+        author_email=user.email,
+        author_role=user.role,
+        comment_text=f"EVC Inspection Allocated via AI: {rationale}",
+        action_type="EVC_OBSERVATION",
+        visibility="APPLICANT_VISIBLE",
+        created_at=datetime.utcnow()
+    ))
+
+    db.commit()
+    db.refresh(visit)
+    return visit
+
+
+@app.post("/api/applications/{aid}/evc/manual-assign", response_model=EVCVisitOut)
+@app.post("/api/v1/applications/{aid}/evc/manual-assign", response_model=EVCVisitOut)
+def evc_manual_assign(
+    aid: int,
+    req: EVCAssignRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(officer_or_admin)
+):
+    """
+    Officer-triggered Manual Assignment:
+    1. Validates application eligibility.
+    2. Validates selected staff exists, is active, and is available.
+    3. Saves assignment and notifies assigned staff.
+    """
+    app_rec = db.get(Application, aid)
+    if not app_rec:
+        raise HTTPException(status_code=404, detail="Application not found.")
+
+    if user.role == "officer":
+        check_officer_jurisdiction(user, app_rec)
+
+    # 1. Eligibility validation
+    eligibility = check_application_evc_eligibility(app_rec, db)
+    if not eligibility["eligible"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Application is not eligible for EVC staff assignment: {'; '.join(eligibility['reasons'])}"
+        )
+
+    # 2. Staff validation
+    staff = db.get(User, req.staff_id)
+    if not staff or staff.role not in ["evc", "evc_expert"] or not staff.is_active:
+        raise HTTPException(status_code=404, detail="Selected EVC staff member was not found or is inactive.")
+
+    if getattr(staff, "availability_status", "AVAILABLE") != "AVAILABLE":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot assign {staff.name}: Current availability status is '{staff.availability_status}'. Only AVAILABLE staff may be assigned."
+        )
+
+    sched_date = req.scheduled_date or getattr(req, 'proposed_date', None) or (date.today() + timedelta(days=7))
+
+    # Conflict check
+    conflict = db.query(EVCVisit).filter(
+        EVCVisit.assigned_staff_id == staff.id,
+        EVCVisit.scheduled_date == sched_date,
+        EVCVisit.status.in_(["SCHEDULED", "IN_PROGRESS"]),
+        EVCVisit.assignment_status.in_(["ACCEPTED", "ASSIGNMENT_PENDING", "INSPECTION_SCHEDULED", "IN_PROGRESS"])
+    ).first()
+    if conflict:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Scheduling conflict: {staff.name} already has an inspection assigned on {sched_date} (Visit #{conflict.id} for {conflict.institution_name})."
+        )
+
+    committee_str = req.committee_members or f"{staff.name} (Chairperson & Lead Expert), AICTE Regional Nominee"
+    loc_details = req.location_details or f"{app_rec.institution_name} Campus, {app_rec.region} Region"
+    remarks_str = req.remarks or f"Manual assignment delegated by Regional Officer {user.name}."
+
+    visit = EVCVisit(
+        application_id=app_rec.id,
+        institution_name=app_rec.institution_name,
+        committee_members=committee_str,
+        scheduled_date=sched_date,
+        visit_mode=req.visit_mode or "PHYSICAL",
+        location_details=loc_details,
+        status="SCHEDULED",
+        assigned_by=user.email,
+        assigned_staff_id=staff.id,
+        assigned_staff_name=staff.name,
+        assigned_staff_email=staff.email,
+        assignment_method="MANUAL",
+        assignment_status="ASSIGNMENT_PENDING",
+        assignment_reason=remarks_str,
+        assigned_at=datetime.utcnow()
+    )
+    db.add(visit)
+    db.flush()
+
+    # Record history
+    hist = EVCAssignmentHistory(
+        application_id=app_rec.id,
+        visit_id=visit.id,
+        staff_id=staff.id,
+        staff_name=staff.name,
+        staff_email=staff.email,
+        assignment_method="MANUAL",
+        assigned_by=user.email,
+        assignment_status="ASSIGNMENT_PENDING",
+        assignment_reason=remarks_str,
+        assigned_at=datetime.utcnow()
+    )
+    db.add(hist)
+
+    # Notification for staff
+    db.add(Alert(
+        title=f"New EVC Assignment: {app_rec.institution_name}",
+        message=f"You have been manually allocated an EVC inspection for {app_rec.institution_name} ({app_rec.reference}) scheduled on {req.scheduled_date}. Please review and Accept or Decline.",
+        severity="HIGH",
+        target_role="evc_expert",
+        recipient_user_id=staff.id,
+        institution_name=app_rec.institution_name,
+        application_id=app_rec.id,
+        trigger_type="EVC_ASSIGNMENT"
+    ))
+
+    prev_stg = app_rec.current_stage
+    app_rec.current_stage = "EVC_SCHEDULED"
+    app_rec.assigned_to = staff.name
+    app_rec.assigned_role = "evc_expert"
+
+    record_audit_event(
+        db=db,
+        application_id=app_rec.id,
+        actor=user.email,
+        actor_role=user.role,
+        action="MANUAL_ASSIGN_EVC",
+        from_stage=prev_stg,
+        to_stage="EVC_SCHEDULED",
+        details=f"Manually assigned {staff.name} for EVC inspection on {req.scheduled_date}. Remarks: {remarks_str}"
+    )
+
+    db.add(StageRemark(
+        application_id=app_rec.id,
+        stage="EVC_SCHEDULED",
+        author_name=user.name,
+        author_email=user.email,
+        author_role=user.role,
+        comment_text=f"EVC Inspection Manually Assigned to {staff.name}. Remarks: {remarks_str}",
+        action_type="EVC_OBSERVATION",
+        visibility="APPLICANT_VISIBLE",
+        created_at=datetime.utcnow()
+    ))
+
+    db.commit()
+    db.refresh(visit)
+    return visit
+
+
+@app.post("/api/evc/{vid}/respond", response_model=EVCVisitOut)
+@app.post("/api/v1/evc/{vid}/respond", response_model=EVCVisitOut)
+def respond_to_evc_assignment(
+    vid: int,
+    req: EVCRespondRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """
+    Assigned EVC Staff Member Accept / Decline Action:
+    - ACCEPT: Confirms willingness, updates status to ACCEPTED, notifies Officer.
+    - DECLINE: Requires reason, updates status to DECLINED, returns application to pending allocation, notifies Officer.
+    """
+    v = db.get(EVCVisit, vid)
+    if not v:
+        raise HTTPException(status_code=404, detail="EVC visit not found.")
+
+    # Authorization: user must be the assigned staff member or an administrator
+    is_assigned = (v.assigned_staff_id == user.id) or (v.assigned_staff_email == user.email) or (user.email in v.committee_members)
+    if not is_assigned and user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden: You are not the assigned EVC inspector for this visit."
+        )
+
+    action = req.action.upper().strip()
+    now_dt = datetime.utcnow()
+
+    app_rec = db.get(Application, v.application_id)
+
+    if action == "ACCEPT":
+        v.assignment_status = "ACCEPTED"
+        v.status = "SCHEDULED"
+        v.responded_at = now_dt
+        user.availability_status = "BUSY"
+
+        # Create history record
+        db.add(EVCAssignmentHistory(
+            application_id=v.application_id,
+            visit_id=v.id,
+            staff_id=user.id,
+            staff_name=user.name,
+            staff_email=user.email,
+            assignment_method=v.assignment_method or "MANUAL",
+            assigned_by=v.assigned_by,
+            assignment_status="ACCEPTED",
+            assignment_reason="Staff confirmed willingness and availability for inspection.",
+            assigned_at=v.assigned_at or now_dt,
+            responded_at=now_dt
+        ))
+
+        # Notify Regional Officer
+        db.add(Alert(
+            title=f"EVC Assignment Accepted: {v.institution_name}",
+            message=f"Expert {user.name} has ACCEPTED the EVC inspection for {v.institution_name} scheduled on {v.scheduled_date}.",
+            severity="INFO",
+            target_role="officer",
+            institution_name=v.institution_name,
+            application_id=v.application_id,
+            trigger_type="EVC_CONFIRMATION"
+        ))
+
+        if app_rec:
+            record_audit_event(
+                db=db,
+                application_id=app_rec.id,
+                actor=user.email,
+                actor_role=user.role,
+                action="EVC_ASSIGNMENT_ACCEPTED",
+                from_stage=app_rec.current_stage,
+                to_stage=app_rec.current_stage,
+                details=f"{user.name} accepted EVC inspection on {v.scheduled_date}."
+            )
+            db.add(StageRemark(
+                application_id=app_rec.id,
+                stage=app_rec.current_stage,
+                author_name=user.name,
+                author_email=user.email,
+                author_role=user.role,
+                comment_text=f"EVC Inspection Accepted by {user.name} for {v.scheduled_date}.",
+                action_type="EVC_OBSERVATION",
+                visibility="APPLICANT_VISIBLE",
+                created_at=now_dt
+            ))
+
+    elif action == "DECLINE":
+        if not req.reason or len(req.reason.strip()) < 5:
+            raise HTTPException(
+                status_code=400,
+                detail="Mandatory justification required: Please provide a substantive reason for declining this inspection assignment."
+            )
+        decline_str = req.reason.strip()
+        v.assignment_status = "DECLINED"
+        v.status = "PENDING"
+        v.decline_reason = decline_str
+        v.responded_at = now_dt
+
+        # Release staff availability
+        user.availability_status = "AVAILABLE"
+
+        # Return application to EVC_PENDING queue for Officer reassignment
+        if app_rec:
+            prev_stg = app_rec.current_stage
+            app_rec.current_stage = "EVC_PENDING"
+            app_rec.assigned_to = "Regional Officer (Reassignment Required)"
+            app_rec.assigned_role = "officer"
+
+            record_audit_event(
+                db=db,
+                application_id=app_rec.id,
+                actor=user.email,
+                actor_role=user.role,
+                action="EVC_ASSIGNMENT_DECLINED",
+                from_stage=prev_stg,
+                to_stage="EVC_PENDING",
+                details=f"{user.name} declined EVC inspection on {v.scheduled_date}. Reason: {decline_str}"
+            )
+            db.add(StageRemark(
+                application_id=app_rec.id,
+                stage="EVC_PENDING",
+                author_name=user.name,
+                author_email=user.email,
+                author_role=user.role,
+                comment_text=f"EVC Inspection Declined by {user.name}. Reason: {decline_str}. Case returned to Officer allocation queue.",
+                action_type="EVC_OBSERVATION",
+                visibility="APPLICANT_VISIBLE",
+                created_at=now_dt
+            ))
+
+        db.add(EVCAssignmentHistory(
+            application_id=v.application_id,
+            visit_id=v.id,
+            staff_id=user.id,
+            staff_name=user.name,
+            staff_email=user.email,
+            assignment_method=v.assignment_method or "MANUAL",
+            assigned_by=v.assigned_by,
+            assignment_status="DECLINED",
+            decline_reason=decline_str,
+            assigned_at=v.assigned_at or now_dt,
+            responded_at=now_dt
+        ))
+
+        # Urgent notification to Regional Officer
+        db.add(Alert(
+            title=f"EVC Assignment DECLINED: {v.institution_name}",
+            message=f"Expert {user.name} has DECLINED the EVC inspection for {v.institution_name}. Reason: {decline_str}. Reassignment required.",
+            severity="HIGH",
+            target_role="officer",
+            institution_name=v.institution_name,
+            application_id=v.application_id,
+            trigger_type="EVC_DECLINE"
+        ))
+
+    else:
+        raise HTTPException(status_code=400, detail="Invalid action: Expected 'ACCEPT' or 'DECLINE'.")
+
+    db.commit()
+    db.refresh(v)
+    return v
+
+
+@app.post("/api/evc/staff/availability", response_model=UserOut)
+@app.post("/api/v1/evc/staff/availability", response_model=UserOut)
+def update_evc_staff_availability(
+    req: EVCStaffAvailabilityUpdateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """Allows EVC staff to manually update their live availability status (AVAILABLE, UNAVAILABLE, ON_LEAVE)."""
+    valid_statuses = ["AVAILABLE", "UNAVAILABLE", "ON_LEAVE", "BUSY"]
+    new_status = req.availability_status.upper().strip()
+    if new_status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid availability status. Must be one of: {valid_statuses}")
+
+    user.availability_status = new_status
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.get("/api/applications/{aid}/evc/history", response_model=List[EVCAssignmentHistoryOut])
+@app.get("/api/v1/applications/{aid}/evc/history", response_model=List[EVCAssignmentHistoryOut])
+def get_evc_assignment_history(aid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Retrieves full chronological history of EVC assignments, acceptances, rejections, and reassignments."""
+    return db.query(EVCAssignmentHistory).filter(
+        EVCAssignmentHistory.application_id == aid
+    ).order_by(EVCAssignmentHistory.assigned_at.desc()).all()
+
+
+@app.get("/api/admin/role-matrix")
+@app.get("/api/v1/admin/role-matrix")
+def get_role_matrix(db: Session = Depends(get_db), admin: User = Depends(strict_admin_only)):
+    """Admin-only endpoint returning system role definitions and permissions matrix."""
+    users = db.query(User).filter(User.is_active == True).all()
+    user_roster = [
+        {
+            "id": u.id,
+            "name": u.name,
+            "email": u.email,
+            "role": u.role,
+            "region": u.region,
+            "designation": u.designation,
+            "availability_status": getattr(u, "availability_status", "AVAILABLE") or "AVAILABLE"
+        }
+        for u in users
+    ]
+    return {
+        "status": "AUTHORIZED",
+        "admin_user": admin.email,
+        "users": user_roster,
+        "matrix": [
+            {"feature": "Create New Application", "institution": True, "officer": True, "bureau": True, "evc_expert": False, "admin": True},
+            {"feature": "Application Register Access", "institution": True, "officer": False, "bureau": True, "evc_expert": False, "admin": True},
+            {"feature": "Scrutiny & Re-Scrutiny", "institution": False, "officer": True, "bureau": True, "evc_expert": False, "admin": True},
+            {"feature": "Return Case for Clarification", "institution": False, "officer": True, "bureau": True, "evc_expert": False, "admin": True},
+            {"feature": "Resubmit Returned Application", "institution": True, "officer": False, "bureau": False, "evc_expert": False, "admin": True},
+            {"feature": "AI & Manual EVC Staff Assignment", "institution": False, "officer": True, "bureau": True, "evc_expert": False, "admin": True},
+            {"feature": "Confirm / Decline EVC Assignment", "institution": False, "officer": False, "bureau": False, "evc_expert": True, "admin": True},
+            {"feature": "Submit EVC Inspection Report & Proof", "institution": False, "officer": False, "bureau": False, "evc_expert": True, "admin": True},
+            {"feature": "Approve Next Stage (EVC Clearance)", "institution": False, "officer": True, "bureau": True, "evc_expert": False, "admin": True},
+            {"feature": "Verify Compliance Evidence", "institution": False, "officer": True, "bureau": True, "evc_expert": False, "admin": True},
+            {"feature": "Submit Compliance Evidence", "institution": True, "officer": False, "bureau": False, "evc_expert": False, "admin": True},
+            {"feature": "SAC / SHC Final Approval", "institution": False, "officer": False, "bureau": True, "evc_expert": False, "admin": True},
+            {"feature": "Role Matrix & Governance", "institution": False, "officer": False, "bureau": False, "evc_expert": False, "admin": True}
+        ]
+    }
+
     return q.order_by(EVCVisit.scheduled_date).all()
 
 
@@ -2393,7 +3099,7 @@ def reschedule_evc_visit(
     vid: int,
     req: EVCRescheduleRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(evc_or_officer)
+    user: User = Depends(officer_or_admin)
 ):
     """Reschedules an EVC visit with mandatory justification and triggers notifications."""
     v = db.get(EVCVisit, vid)
@@ -2453,7 +3159,7 @@ def evc_approve_next_stage(
     vid: int,
     req: EVCApproveNextStageRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(evc_or_officer)
+    user: User = Depends(officer_or_admin)
 ):
     """
     Approve Next Stage action on EVC review screen:

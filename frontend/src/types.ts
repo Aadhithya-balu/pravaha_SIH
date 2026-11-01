@@ -4,10 +4,13 @@ export interface User {
   id: number;
   email: string;
   name: string;
-  role: 'institution' | 'officer' | 'bureau' | 'evc_expert' | 'admin';
+  role: 'institution' | 'officer' | 'bureau' | 'evc_expert' | 'evc' | 'admin';
   institution_name?: string | null;
   region: string;
   designation: string;
+  availability_status?: 'AVAILABLE' | 'UNAVAILABLE' | 'ON_LEAVE' | 'BUSY' | string | null;
+  expertise?: string | null;
+  phone?: string | null;
 }
 
 export interface InstitutionProfile {
@@ -244,6 +247,45 @@ export interface EVCVisit {
   gps_captured_at?: string | null;
   gps_distance_km?: number | null;
   location_status?: 'WITHIN_PROXIMITY' | 'DISTANCE_EXCEEDED' | 'BASELINE_UNAVAILABLE' | 'UNAVAILABLE' | string | null;
+  assigned_staff_id?: number | null;
+  assigned_staff_name?: string | null;
+  assigned_staff_email?: string | null;
+  assignment_method?: 'AI' | 'AI_AUTO' | 'MANUAL' | string | null;
+  assignment_status?: 'ASSIGNMENT_PENDING' | 'ACCEPTED' | 'DECLINED' | 'INSPECTION_SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'REPORT_SUBMITTED' | 'REPORT_VERIFIED' | 'CANCELLED' | string | null;
+  assignment_reason?: string | null;
+  decline_reason?: string | null;
+  assigned_at?: string | null;
+  responded_at?: string | null;
+}
+
+export interface EVCAssignmentHistory {
+  id: number;
+  application_id: number;
+  visit_id: number;
+  staff_id?: number | null;
+  staff_name?: string | null;
+  staff_email?: string | null;
+  assignment_method?: string | null;
+  assigned_by?: string | null;
+  assignment_status: string;
+  assignment_reason?: string | null;
+  decline_reason?: string | null;
+  assigned_at?: string | null;
+  responded_at?: string | null;
+}
+
+export interface EVCStaff {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  region?: string | null;
+  designation?: string | null;
+  phone?: string | null;
+  expertise?: string | null;
+  availability_status: string;
+  active_assignments_count: number;
+  completed_assignments_count: number;
 }
 
 export interface InspectionEvidence {

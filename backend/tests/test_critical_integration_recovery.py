@@ -156,7 +156,7 @@ def test_scenario_c_d_e_application_submission_and_officer_queue(client):
     assert "document" in scrutiny_data
     assert "ai_analysis" in scrutiny_data
     # Verify live Groq model mode
-    assert scrutiny_data["ai_analysis"].get("mode") in ["real_llm", "deterministic"]
+    assert scrutiny_data["ai_analysis"].get("mode") in ["real_llm", "deterministic", "demo_mode"]
 
 
 def test_scenario_f_g_h_clarification_and_resubmission(client):

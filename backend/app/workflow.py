@@ -162,7 +162,7 @@ TRANSITION_RULES: Dict[str, Dict[str, Dict[str, Any]]] = {
         "RESCHEDULE_EVC": {
             "target_stage": "EVC_SCHEDULED",
             "target_status": "IN_PROGRESS",
-            "allowed_roles": ["evc_expert", "officer", "admin"],
+            "allowed_roles": ["officer", "admin"],
             "assigned_to": "EVC Inspection Panel",
             "description": "Inspection date updated with mandatory justification"
         },
@@ -176,7 +176,7 @@ TRANSITION_RULES: Dict[str, Dict[str, Dict[str, Any]]] = {
         "POSTPONE_EVC": {
             "target_stage": "EVC_PENDING",
             "target_status": "IN_PROGRESS",
-            "allowed_roles": ["evc_expert", "officer", "admin"],
+            "allowed_roles": ["officer", "admin"],
             "assigned_to": "EVC Coordinator",
             "description": "EVC visit postponed due to logistical constraints"
         }
@@ -185,7 +185,7 @@ TRANSITION_RULES: Dict[str, Dict[str, Dict[str, Any]]] = {
         "APPROVE_NEXT": {
             "target_stage": "SAC_SHC_REVIEW",
             "target_status": "IN_PROGRESS",
-            "allowed_roles": ["evc_expert", "officer", "bureau", "admin"],
+            "allowed_roles": ["officer", "bureau", "admin"],
             "assigned_to": "Bureau Officer",
             "description": "Approve EVC inspection outcome and advance to Further Review"
         },

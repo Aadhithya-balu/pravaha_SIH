@@ -56,8 +56,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const isInst = user?.role === 'institution';
+  const isAdmin = user?.role === 'admin';
+  const isOfficer = user?.role === 'officer';
+  const isEvc = user?.role === 'evc' || user?.role === 'evc_expert';
 
-  // Structured enterprise GovTech navigation groups
+  // Role-customized navigation groups conforming strictly to SIH RBAC specifications
   const navSections = isInst
     ? [
         {
@@ -73,15 +76,51 @@ export const Sidebar: React.FC<SidebarProps> = ({
             { id: 'Compliance', label: 'Compliance Proofs', icon: FileCheck2 },
             { id: 'Alerts', label: 'Notifications', icon: Bell, badge: unreadAlertsCount },
           ]
+        }
+      ]
+    : isEvc
+    ? [
+        {
+          group: 'Inspection Operations',
+          items: [
+            { id: 'Overview', label: 'Command Centre', icon: LayoutDashboard },
+            { id: 'EVC Inspections', label: 'My Assigned Inspections', icon: Calendar },
+          ]
         },
         {
-          group: 'System Access',
+          group: 'Governance & Analytics',
           items: [
-            { id: 'Role Matrix', label: 'Evaluation Roles', icon: Shield },
+            { id: 'Alerts', label: 'Alerts & Notifications', icon: Bell, badge: unreadAlertsCount },
+            { id: 'Reports', label: 'Statutory Reports', icon: BarChart3 },
+          ]
+        }
+      ]
+    : isOfficer
+    ? [
+        {
+          group: 'Core Operations',
+          items: [
+            { id: 'Overview', label: 'Command Centre', icon: LayoutDashboard },
+          ]
+        },
+        {
+          group: 'Regulatory Scrutiny',
+          items: [
+            { id: 'AI Assistant', label: 'Document Scrutiny', icon: Sparkles },
+            { id: 'EVC Inspections', label: 'EVC Committee Queue', icon: Calendar },
+            { id: 'Compliance', label: 'Compliance & Validity', icon: FileCheck2 },
+          ]
+        },
+        {
+          group: 'Governance & Analytics',
+          items: [
+            { id: 'Alerts', label: 'Alerts & Escalations', icon: Bell, badge: unreadAlertsCount },
+            { id: 'Reports', label: 'Reports & Export', icon: BarChart3 },
           ]
         }
       ]
     : [
+        // Admin & Central Bureau Authority
         {
           group: 'Core Operations',
           items: [
@@ -102,7 +141,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           items: [
             { id: 'Alerts', label: 'Alerts & Escalations', icon: Bell, badge: unreadAlertsCount },
             { id: 'Reports', label: 'Reports & Export', icon: BarChart3 },
-            { id: 'Role Matrix', label: 'Roles & Access Matrix', icon: Shield },
+            ...(isAdmin ? [{ id: 'Role Matrix', label: 'Roles & Access Matrix', icon: Shield }] : [])
           ]
         }
       ];

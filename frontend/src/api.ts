@@ -487,3 +487,64 @@ export function getEvidenceImageUrl(evidenceId: number): string {
   const t = token();
   return `${BASE_URL}/v1/evc/evidence/${evidenceId}/download${t ? `?token=${encodeURIComponent(t)}` : ''}`;
 }
+
+export async function fetchEvcEligibility(appId: number): Promise<{
+  eligible: boolean;
+  reasons: string[];
+  pending_items: string[];
+}> {
+  return api(`/applications/${appId}/evc-eligibility`);
+}
+
+export async function fetchEvcStaff(params?: { region?: string; availability?: string }): Promise<any[]> {
+  const query = new URLSearchParams();
+  if (params?.region) query.append('region', params.region);
+  if (params?.availability) query.append('availability', params.availability);
+  const qStr = query.toString() ? `?${query.toString()}` : '';
+  return api(`/evc/staff${qStr}`);
+}
+
+export async function autoAssignEvc(appId: number, data?: { proposed_date?: string; scheduled_date?: string; remarks?: string }): Promise<any> {
+  return api(`/applications/${appId}/evc/auto-assign`, {
+    method: 'POST',
+    body: JSON.stringify(data || {})
+  });
+}
+
+export async function manualAssignEvc(appId: number, data: {
+  staff_id: number;
+  proposed_date?: string;
+  scheduled_date?: string;
+  remarks?: string;
+}): Promise<any> {
+  return api(`/applications/${appId}/evc/manual-assign`, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
+
+export async function respondToEvcAssignment(
+  visitId: number,
+  action: 'ACCEPT' | 'DECLINE',
+  reason?: string
+): Promise<any> {
+  return api(`/evc/${visitId}/respond`, {
+    method: 'POST',
+    body: JSON.stringify({ action, reason })
+  });
+}
+
+export async function updateEvcStaffAvailability(availability_status: string): Promise<any> {
+  return api('/evc/staff/availability', {
+    method: 'POST',
+    body: JSON.stringify({ availability_status })
+  });
+}
+
+export async function fetchEvcAssignmentHistory(appId: number): Promise<any[]> {
+  return api(`/applications/${appId}/evc/history`);
+}
+
+export async function fetchAdminRoleMatrix(): Promise<any> {
+  return api('/admin/role-matrix');
+}

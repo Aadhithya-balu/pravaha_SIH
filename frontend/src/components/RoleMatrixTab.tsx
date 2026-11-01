@@ -1,181 +1,186 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Shield,
   CheckCircle2,
   XCircle,
-  LogIn,
-  Key,
-  Users
+  Users,
+  Lock,
+  AlertTriangle,
+  RefreshCw,
+  UserCheck
 } from 'lucide-react';
+import { User } from '../types';
+import { fetchAdminRoleMatrix } from '../api';
 
 interface RoleMatrixTabProps {
   onSwitchRole: (email: string) => void;
+  user?: User | null;
 }
 
-export const RoleMatrixTab: React.FC<RoleMatrixTabProps> = ({ onSwitchRole }) => {
-  const roles = [
-    {
-      title: 'Regional Officer / Admin (Combined Role)',
-      role: 'officer',
-      email: 'officer@demo.local',
-      name: 'Dr. Rajesh Verma',
-      designation: 'Regional Officer & Systems Administrator',
-      scope: 'Unified Scrutiny, Compliance Verification & IT Governance',
-      permissions: [
-        'Perform primary and re-scrutiny workflow transitions',
-        'Return applications with mandatory deficiency justifications',
-        'Verify submitted compliance and statutory undertakings',
-        'Schedule Expert Visiting Committees (EVC)',
-        'Trigger regulatory deadline evaluations and view alerts'
-      ]
-    },
-    {
-      title: 'Institution Applicant',
-      role: 'institution',
-      email: 'college@demo.local',
-      name: 'Prof. Anand Deshmukh',
-      designation: 'Principal, ABC Engineering College',
-      scope: 'Strict Tenant Isolation (Own College records only)',
-      permissions: [
-        'Register new AICTE applications with academic details',
-        'Upload regulatory documents (lease deeds, NOCs, affidavits)',
-        'Resubmit returned cases with institutional justifications',
-        'Submit documentary evidence for pending undertakings',
-        'Restricted from viewing or altering other colleges'
-      ]
-    },
-    {
-      title: 'Bureau Officer (HQ)',
-      role: 'bureau',
-      email: 'bureau@demo.local',
-      name: 'Dr. Sunita Rao',
-      designation: 'Advisor & Bureau Head (Approval Bureau New Delhi)',
-      scope: 'National Regulatory Oversight & Appellate Review',
-      permissions: [
-        'Conduct Standing Appellate / Hearing Committee (SAC/SHC) determinations',
-        'Grant final approval orders for technical institutions',
-        'Review comprehensive national and regional throughput dashboards',
-        'Export full regulatory CSV registers'
-      ]
-    },
-    {
-      title: 'EVC Expert / Coordinator',
-      role: 'evc_expert',
-      email: 'evc@demo.local',
-      name: 'Prof. S. Ramanujan',
-      designation: 'Senior EVC Committee Chairperson',
-      scope: 'Assigned Physical & Hybrid Inspection Cases',
-      permissions: [
-        'Access assigned inspection portfolios',
-        'Record lab equipment and physical campus observations',
-        'Submit official committee recommendations and visit reports'
-      ]
-    },
-    {
-      title: 'System Administrator',
-      role: 'admin',
-      email: 'admin@demo.local',
-      name: 'AICTE System Administrator',
-      designation: 'Lead IT Systems Administrator',
-      scope: 'Global System Configuration & Master Data',
-      permissions: [
-        'Full administrative access to all entities and workflow steps',
-        'Override workflow stage locks in exceptional administrative circumstances',
-        'Evaluate system escalation rules and audit integrity'
-      ]
-    }
-  ];
+export const RoleMatrixTab: React.FC<RoleMatrixTabProps> = ({ onSwitchRole, user }) => {
+  const [matrixData, setMatrixData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [errorMsg, setErrorMsg] = useState<string>('');
 
-  const permissionsMatrix = [
+  const isAdmin = user?.role === 'admin';
+
+  useEffect(() => {
+    if (isAdmin) {
+      loadMatrix();
+    }
+  }, [isAdmin]);
+
+  async function loadMatrix() {
+    setIsLoading(true);
+    setErrorMsg('');
+    try {
+      const data = await fetchAdminRoleMatrix();
+      setMatrixData(data);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to load official administrative role matrix.');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  // Non-Admin Restricted View
+  if (!isAdmin) {
+    return (
+      <div className="page-container">
+        <div className="panel-card" style={{ maxWidth: 640, margin: '40px auto', textAlign: 'center', padding: '36px 24px' }}>
+          <div style={{
+            width: 54,
+            height: 54,
+            borderRadius: '50%',
+            background: '#FEE2E2',
+            color: '#DC2626',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 16px'
+          }}>
+            <Lock size={26} />
+          </div>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1E293B', marginBottom: 8 }}>
+            Restricted Administrative Access
+          </h2>
+          <p style={{ fontSize: 13.5, color: '#64748B', lineHeight: 1.6, marginBottom: 20 }}>
+            The <b>Role Matrix & Security Governance</b> module is strictly restricted to certified System Administrators.
+            Your current authenticated role is <b>{user?.role?.toUpperCase()}</b>.
+          </p>
+          <div style={{
+            padding: '12px 16px',
+            background: '#F8FAFC',
+            border: '1px solid #E2E8F0',
+            borderRadius: 6,
+            fontSize: 12.5,
+            color: '#475569',
+            textAlign: 'left'
+          }}>
+            <strong>Statutory Rule Reference:</strong> In accordance with AICTE e-Governance protocols, role assignments and statutory privilege matrices can only be audited and configured by System Administrators.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const defaultMatrix = [
     { feature: 'Create New Application', inst: true, ro: true, bureau: true, evc: false, admin: true },
-    { feature: 'View All Regional Applications', inst: false, ro: true, bureau: true, evc: true, admin: true },
-    { feature: 'Scrutiny Stage Transitions', inst: false, ro: true, bureau: true, evc: false, admin: true },
+    { feature: 'Application Register Access', inst: true, ro: false, bureau: true, evc: false, admin: true },
+    { feature: 'Scrutiny & Re-Scrutiny Transitions', inst: false, ro: true, bureau: true, evc: false, admin: true },
     { feature: 'Return Case for Clarification', inst: false, ro: true, bureau: true, evc: false, admin: true },
     { feature: 'Resubmit Returned Application', inst: true, ro: false, bureau: false, evc: false, admin: true },
-    { feature: 'Schedule EVC Committee', inst: false, ro: true, bureau: true, evc: true, admin: true },
-    { feature: 'Submit EVC Inspection Report', inst: false, ro: true, bureau: false, evc: true, admin: true },
+    { feature: 'AI & Manual EVC Staff Assignment', inst: false, ro: true, bureau: true, evc: false, admin: true },
+    { feature: 'Confirm / Decline EVC Assignment', inst: false, ro: false, bureau: false, evc: true, admin: true },
+    { feature: 'Submit EVC Inspection Report & Proof', inst: false, ro: false, bureau: false, evc: true, admin: true },
+    { feature: 'Approve Next Stage (EVC Clearance)', inst: false, ro: true, bureau: true, evc: false, admin: true },
     { feature: 'Verify Compliance Evidence', inst: false, ro: true, bureau: true, evc: false, admin: true },
     { feature: 'Submit Compliance Evidence', inst: true, ro: false, bureau: false, evc: false, admin: true },
-    { feature: 'SAC / SHC Final Approval', inst: false, ro: false, bureau: true, evc: false, admin: true },
-    { feature: 'Trigger Deadline Scan', inst: false, ro: true, bureau: true, evc: false, admin: true },
-    { feature: 'Export Regulatory CSV', inst: false, ro: true, bureau: true, evc: false, admin: true },
+    { feature: 'SAC / SHC Final Statutory Approval', inst: false, ro: false, bureau: true, evc: false, admin: true },
+    { feature: 'Role Matrix & Governance (Admin Only)', inst: false, ro: false, bureau: false, evc: false, admin: true }
   ];
+
+  const displayMatrix = matrixData?.matrix
+    ? matrixData.matrix.map((m: any) => ({
+        feature: m.feature,
+        inst: m.institution,
+        ro: m.officer,
+        bureau: m.bureau,
+        evc: m.evc_expert,
+        admin: m.admin
+      }))
+    : defaultMatrix;
 
   return (
     <div className="page-container">
-      {/* Demo Credentials Box */}
-      <div className="panel-card">
-        <div className="panel-header">
+      {/* Top Banner */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '16px 20px',
+        background: '#EFF6FF',
+        border: '1px solid #BFDBFE',
+        borderRadius: 8,
+        marginBottom: 20
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Shield size={24} color="#1D4ED8" />
           <div>
-            <h3>Prototype Role Matrix & Evaluator Credentials</h3>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              Standard password for all demo accounts: <code style={{ color: 'var(--primary)', fontWeight: 700 }}>DemoPass123!</code>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#1E3A8A' }}>
+              System Administrator Security & Role Matrix Governance
+            </h3>
+            <span style={{ fontSize: 12, color: '#3B82F6' }}>
+              Authoritative server-side RBAC validation with endpoint protection (Strict Admin Access)
             </span>
           </div>
         </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-          {roles.map((r) => (
-            <div
-              key={r.role}
-              style={{
-                background: '#ffffff',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-lg)',
-                padding: '18px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 12,
-                boxShadow: 'var(--shadow-sm)'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span className="user-role-badge">{r.role}</span>
-                <span
-                  style={{
-                    padding: '3px 8px',
-                    fontSize: 10.5,
-                    fontWeight: 700,
-                    borderRadius: 4,
-                    background: '#F1F5F9',
-                    color: '#475569',
-                    border: '1px solid #CBD5E1'
-                  }}
-                >
-                  Authorized Persona
-                </span>
-              </div>
-
-              <div>
-                <b style={{ fontSize: 14, display: 'block', color: 'var(--text-main)' }}>{r.name}</b>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{r.designation}</span>
-                <span style={{ fontSize: 11, color: 'var(--primary)', display: 'block', marginTop: 2 }}>{r.email}</span>
-              </div>
-
-              <div style={{ fontSize: 11, background: '#f8fafc', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-                <b style={{ color: '#475569', display: 'block', marginBottom: 2 }}>Scope of Authority:</b>
-                <span>{r.scope}</span>
-              </div>
-
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11, color: '#475569', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {r.permissions.map((p, i) => (
-                  <li key={i}>{p}</li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
+        <button
+          type="button"
+          onClick={loadMatrix}
+          disabled={isLoading}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            background: '#FFFFFF',
+            border: '1px solid #93C5FD',
+            borderRadius: 6,
+            fontSize: 12,
+            fontWeight: 600,
+            color: '#1D4ED8',
+            cursor: 'pointer'
+          }}
+        >
+          <RefreshCw size={14} className={isLoading ? 'spin' : ''} />
+          <span>Refresh Matrix</span>
+        </button>
       </div>
 
+      {errorMsg && (
+        <div style={{
+          padding: '10px 14px',
+          borderRadius: 6,
+          background: '#FDF2F2',
+          border: '1px solid #FDE2E2',
+          color: '#D64545',
+          fontSize: 13,
+          marginBottom: 16
+        }}>
+          {errorMsg}
+        </div>
+      )}
+
       {/* Role-Based Permissions Matrix Table */}
-      <div className="panel-card">
+      <div className="panel-card" style={{ marginBottom: 24 }}>
         <div className="panel-header">
           <h3>
             <Shield size={18} color="var(--primary)" />
             Server-Enforced Role-Based Access Control (RBAC) Matrix
           </h3>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-            All rules are validated on FastAPI backend endpoints, not merely hidden in the frontend
+            Configured on FastAPI backend dependencies — unauthorized roles receive HTTP 403 Forbidden
           </span>
         </div>
 
@@ -188,11 +193,11 @@ export const RoleMatrixTab: React.FC<RoleMatrixTabProps> = ({ onSwitchRole }) =>
                 <th style={{ textAlign: 'center' }}>RO Officer</th>
                 <th style={{ textAlign: 'center' }}>Bureau HQ</th>
                 <th style={{ textAlign: 'center' }}>EVC Expert</th>
-                <th style={{ textAlign: 'center' }}>Admin</th>
+                <th style={{ textAlign: 'center' }}>System Admin</th>
               </tr>
             </thead>
             <tbody>
-              {permissionsMatrix.map((row) => (
+              {displayMatrix.map((row: any) => (
                 <tr key={row.feature}>
                   <td>
                     <b>{row.feature}</b>
@@ -218,6 +223,67 @@ export const RoleMatrixTab: React.FC<RoleMatrixTabProps> = ({ onSwitchRole }) =>
           </table>
         </div>
       </div>
+
+      {/* Live System Evaluator Roster */}
+      {matrixData?.users && (
+        <div className="panel-card">
+          <div className="panel-header">
+            <h3>
+              <Users size={18} color="var(--primary)" />
+              Registered Evaluator & Staff Directory ({matrixData.users.length} Active Accounts)
+            </h3>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              Live server users and live availability state
+            </span>
+          </div>
+
+          <div className="table-responsive">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>User ID</th>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>System Role</th>
+                  <th>Region</th>
+                  <th>Live Availability</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matrixData.users.map((u: any) => (
+                  <tr key={u.id}>
+                    <td><code>#{u.id}</code></td>
+                    <td><b>{u.name}</b></td>
+                    <td><span style={{ color: '#2563EB', fontSize: 12 }}>{u.email}</span></td>
+                    <td>
+                      <span className="user-role-badge" style={{ textTransform: 'uppercase' }}>
+                        {u.role}
+                      </span>
+                    </td>
+                    <td>{u.region || 'National'}</td>
+                    <td>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: 4,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        background:
+                          u.availability_status === 'AVAILABLE' ? '#DCFCE7' :
+                          u.availability_status === 'BUSY' ? '#FEF3C7' : '#FEE2E2',
+                        color:
+                          u.availability_status === 'AVAILABLE' ? '#166534' :
+                          u.availability_status === 'BUSY' ? '#92400E' : '#991B1B'
+                      }}>
+                        {u.availability_status || 'AVAILABLE'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
